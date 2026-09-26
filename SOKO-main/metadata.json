@@ -1,0 +1,8 @@
+{
+  "name": "SOKO.ae- B2B Procurement Network",
+  "description": "A LinkedIn-inspired B2B procurement platform connecting verified suppliers, buyers, and contractors with live feed RFQs, direct messaging, digital business cards, sourcing opportunities, jobs, and procurement analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

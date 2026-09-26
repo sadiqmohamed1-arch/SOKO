@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="100%" height="100%">
+  <rect width="240" height="240" rx="52" fill="#000000" />
+  <text
+    x="120"
+    y="146"
+    text-anchor="middle"
+    fill="#FFFFFF"
+    font-family="'Plus Jakarta Sans', 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+    font-weight="900"
+    font-size="68"
+    letter-spacing="-1px"
+  >SOKO</text>
+</svg>
