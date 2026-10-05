@@ -18,6 +18,7 @@ import {
   Layers,
   Copy,
   Check,
+  ImagePlus,
 } from 'lucide-react';
 import { UserProfile, UserRole } from '../types';
 
@@ -68,6 +69,20 @@ export const BusinessCardView: React.FC<BusinessCardViewProps> = ({
     );
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2000);
+  };
+
+  const handleProfilePhotoChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        onUpdateUserProfile({ avatarUrl: reader.result });
+      }
+    };
+    reader.readAsDataURL(file);
+    event.target.value = '';
   };
 
   // Generate and download a real .vcf file
@@ -208,6 +223,34 @@ export const BusinessCardView: React.FC<BusinessCardViewProps> = ({
                 >
                   {/* Subtle Background Circuit Mesh */}
                   <div className="absolute -right-16 -top-16 w-56 h-56 rounded-full bg-blue-500/10 blur-2xl pointer-events-none" />
+
+                  {/* Editable Profile Photo */}
+                  <div
+                    className="absolute right-5 top-14 z-20 group/photo"
+                    onClick={(event: React.MouseEvent<HTMLDivElement>) => event.stopPropagation()}
+                  >
+                    <img
+                      src={currentUser.avatarUrl}
+                      alt={`${currentUser.name} profile`}
+                      className="w-14 h-14 sm:w-16 sm:h-16 rounded-full object-cover border-2 border-white/70 shadow-lg ring-2 ring-blue-400/30"
+                    />
+                    <label
+                      htmlFor="business-card-profile-photo"
+                      className="absolute -bottom-1 -right-1 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border border-white/80 bg-blue-600 text-white shadow-md transition-transform group-hover/photo:scale-110"
+                      title="Change profile photo"
+                      onClick={(event: React.MouseEvent<HTMLLabelElement>) => event.stopPropagation()}
+                    >
+                      <ImagePlus className="h-3.5 w-3.5" />
+                    </label>
+                    <input
+                      id="business-card-profile-photo"
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      className="sr-only"
+                      onChange={handleProfilePhotoChange}
+                      onClick={(event: React.MouseEvent<HTMLInputElement>) => event.stopPropagation()}
+                    />
+                  </div>
 
                   {/* Card Top: Logo & Verified Badges */}
                   <div className="flex items-center justify-between relative z-10">
