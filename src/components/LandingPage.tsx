@@ -10,7 +10,6 @@ import {
   CheckCircle2,
   FileText,
   MapPin,
-  Clock,
   Lock,
   ChevronRight,
   ExternalLink,
@@ -22,26 +21,21 @@ import {
   Layers,
   FileCheck,
   Tablet,
-  FolderKanban,
   Database,
   BarChart3,
-  Sliders,
   Scale,
   Leaf,
   Star,
-  History,
-  Briefcase,
   Globe2,
   Menu,
-  ChevronDown,
   Building,
   CheckCircle,
-  AlertCircle,
-  HelpCircle,
   Eye,
   Activity,
-  Send,
   UserCheck,
+  Compass,
+  TrendingUp,
+  Cpu,
 } from 'lucide-react';
 
 // Authentic Official LinkedIn SVG Logo Icon
@@ -108,13 +102,16 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
   // Mobile navigation state
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Two-sided view filter: 'side-by-side' | 'contractors' | 'suppliers'
+  // Two-sided view filter: 'all' | 'contractors' | 'suppliers'
   const [networkView, setNetworkView] = useState<'all' | 'contractors' | 'suppliers'>('all');
 
   // Interactive 8-Question Selector
   const [activeQuestionIndex, setActiveQuestionIndex] = useState(0);
 
-  // Interactive Modal State (Self-contained + integrates with onOpenAuth/onEnterApp)
+  // Hero Interactive Preview Tab (Inspired by Supplier.io live platform interactive preview)
+  const [heroPreviewTab, setHeroPreviewTab] = useState<'dossier' | 'compliance' | 'kiosk'>('dossier');
+
+  // Interactive Modal State
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'join' | 'login'>('join');
   const [modalRole, setModalRole] = useState<'buyer' | 'supplier' | 'contractor'>('buyer');
@@ -433,16 +430,16 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
   };
 
   return (
-    <div className="min-h-screen bg-white text-slate-900 font-sans selection:bg-amber-500 selection:text-slate-950">
-      {/* 1. STICKY NAVIGATION HEADER */}
-      <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200">
+    <div className="min-h-screen bg-white text-slate-900 font-sans selection:bg-blue-600 selection:text-white">
+      {/* 1. TOP BAR (3-Zone Contract: Brand — 5 Nav Links — 2 Actions) */}
+      <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-2xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-18 flex items-center justify-between gap-4">
-          {/* Brand Logo */}
+          {/* Zone 1: Single text element wordmark */}
           <div className="flex items-center gap-3">
             <a href="#" className="flex items-center gap-2.5 group cursor-pointer">
               <SokoLogo size="md" className="shadow-xs" />
               <div className="flex flex-col">
-                <span className="text-xl font-extrabold tracking-tight text-slate-950 flex items-center">
+                <span className="text-xl font-black tracking-tight text-slate-950 flex items-center">
                   SOKO<span className="text-blue-600">.ae</span>
                 </span>
                 <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest -mt-0.5 hidden sm:block">
@@ -452,59 +449,59 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
             </a>
           </div>
 
-          {/* Desktop Navigation Links */}
-          <nav className="hidden lg:flex items-center gap-6 text-xs font-bold text-slate-700">
+          {/* Zone 2: 5 Clean Text Navigation Links with Hover States */}
+          <nav className="hidden lg:flex items-center gap-7 text-xs font-semibold text-slate-600">
             <a
               href="#how-it-works"
-              className="hover:text-slate-950 hover:bg-slate-50 px-2.5 py-1.5 rounded-md transition-colors"
+              className="hover:text-blue-600 transition-colors py-1 hover:border-b-2 hover:border-blue-600"
             >
               How It Works
             </a>
             <a
               href="#solution"
-              className="hover:text-slate-950 hover:bg-slate-50 px-2.5 py-1.5 rounded-md transition-colors"
+              className="hover:text-blue-600 transition-colors py-1 hover:border-b-2 hover:border-blue-600"
             >
               Platform
             </a>
             <a
               href="#contractors"
-              className="hover:text-slate-950 hover:bg-slate-50 px-2.5 py-1.5 rounded-md transition-colors"
+              className="hover:text-blue-600 transition-colors py-1 hover:border-b-2 hover:border-blue-600"
             >
               For Contractors
             </a>
             <a
               href="#suppliers"
-              className="hover:text-slate-950 hover:bg-slate-50 px-2.5 py-1.5 rounded-md transition-colors"
+              className="hover:text-blue-600 transition-colors py-1 hover:border-b-2 hover:border-blue-600"
             >
               For Suppliers
             </a>
             <a
               href="#principles"
-              className="hover:text-slate-950 hover:bg-slate-50 px-2.5 py-1.5 rounded-md transition-colors"
+              className="hover:text-blue-600 transition-colors py-1 hover:border-b-2 hover:border-blue-600"
             >
               Core Principles
             </a>
           </nav>
 
-          {/* Right Action Buttons: Consolidated Join/Login */}
-          <div className="hidden sm:flex items-center gap-2.5">
-            <button
-              onClick={() => handleOpenModal('join', 'buyer')}
-              className="px-4 py-2 text-xs font-bold text-white bg-slate-950 hover:bg-slate-900 rounded-md shadow-xs flex items-center gap-1.5 transition-all cursor-pointer group"
-            >
-              <span>Join/Login</span>
-              <ArrowRight className="w-3.5 h-3.5 text-amber-400 group-hover:translate-x-0.5 transition-transform" />
-            </button>
+          {/* Zone 3: Primary Actions */}
+          <div className="hidden sm:flex items-center gap-3">
             {onEnterApp && (
               <button
                 onClick={onEnterApp}
-                className="ml-1 px-3 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-md transition-all cursor-pointer flex items-center gap-1"
+                className="px-3.5 py-2 text-xs font-semibold text-slate-700 hover:text-slate-950 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5"
                 title="Direct access to live portal demonstration workspace"
               >
                 <Eye className="w-3.5 h-3.5 text-slate-500" />
-                <span className="hidden md:inline">Open App</span>
+                <span>Open App</span>
               </button>
             )}
+            <button
+              onClick={() => handleOpenModal('join', 'buyer')}
+              className="px-4.5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm hover:shadow transition-all flex items-center gap-1.5 cursor-pointer group whitespace-nowrap"
+            >
+              <span>Join / Login</span>
+              <ArrowRight className="w-3.5 h-3.5 text-blue-200 group-hover:translate-x-0.5 transition-transform" />
+            </button>
           </div>
 
           {/* Mobile Menu Toggle Button */}
@@ -512,14 +509,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
             {onEnterApp && (
               <button
                 onClick={onEnterApp}
-                className="px-2.5 py-1.5 text-xs font-bold bg-slate-100 border border-slate-200 rounded-md text-slate-800"
+                className="px-2.5 py-1.5 text-xs font-bold bg-slate-100 border border-slate-200 rounded-lg text-slate-800"
               >
                 App
               </button>
             )}
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="p-2 text-slate-700 hover:bg-slate-100 rounded-md"
+              className="p-2 text-slate-700 hover:bg-slate-100 rounded-lg"
               aria-label="Toggle navigation menu"
             >
               {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -534,35 +531,35 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
               <a
                 href="#how-it-works"
                 onClick={() => setMobileMenuOpen(false)}
-                className="px-3 py-2 rounded-md hover:bg-slate-50"
+                className="px-3 py-2 rounded-lg hover:bg-slate-50"
               >
                 How It Works
               </a>
               <a
                 href="#solution"
                 onClick={() => setMobileMenuOpen(false)}
-                className="px-3 py-2 rounded-md hover:bg-slate-50"
+                className="px-3 py-2 rounded-lg hover:bg-slate-50"
               >
                 Platform
               </a>
               <a
                 href="#contractors"
                 onClick={() => setMobileMenuOpen(false)}
-                className="px-3 py-2 rounded-md hover:bg-slate-50"
+                className="px-3 py-2 rounded-lg hover:bg-slate-50"
               >
                 For Contractors
               </a>
               <a
                 href="#suppliers"
                 onClick={() => setMobileMenuOpen(false)}
-                className="px-3 py-2 rounded-md hover:bg-slate-50"
+                className="px-3 py-2 rounded-lg hover:bg-slate-50"
               >
                 For Suppliers
               </a>
               <a
                 href="#principles"
                 onClick={() => setMobileMenuOpen(false)}
-                className="px-3 py-2 rounded-md hover:bg-slate-50"
+                className="px-3 py-2 rounded-lg hover:bg-slate-50"
               >
                 Core Principles
               </a>
@@ -573,74 +570,311 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
                   setMobileMenuOpen(false);
                   handleOpenModal('join', 'buyer');
                 }}
-                className="w-full py-2.5 text-xs font-bold text-center bg-slate-950 text-white rounded-md flex items-center justify-center gap-2 shadow-xs cursor-pointer"
+                className="w-full py-2.5 text-xs font-bold text-center bg-blue-600 text-white rounded-lg flex items-center justify-center gap-2 shadow-xs cursor-pointer"
               >
-                <span>Join/Login</span>
-                <ArrowRight className="w-4 h-4 text-amber-400" />
+                <span>Join / Login</span>
+                <ArrowRight className="w-4 h-4 text-blue-200" />
               </button>
             </div>
           </div>
         )}
       </header>
 
-      {/* 2. HERO SECTION */}
-      <section className="relative pt-12 pb-16 md:pt-20 md:pb-24 overflow-hidden border-b border-slate-200 bg-white blueprint-grid">
+      {/* 2. HERO SECTION (Supplier.io-Inspired Split Layout with Live Interactive Product Preview) */}
+      <section className="relative pt-12 pb-16 md:pt-18 md:pb-24 overflow-hidden border-b border-slate-200 bg-gradient-to-b from-[#F8FAFC] via-white to-slate-50/50">
+        {/* Subtle geometric grid background */}
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#e2e8f0_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f0_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] opacity-35 pointer-events-none" />
+
         <div className="max-w-7xl mx-auto px-4 sm:px-6 relative z-10">
-          <div className="max-w-4xl mx-auto text-center space-y-6">
-            {/* Top Monospace Kicker */}
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-slate-900 text-slate-100 text-xs font-mono font-medium border border-slate-800 shadow-xs">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
-              </span>
-              <span>Global Vendor Management & Supplier Intelligence</span>
-            </div>
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-8 items-center">
+            {/* Left Column: Proposition & CTAs */}
+            <div className="lg:col-span-6 space-y-6 text-left">
+              {/* Category Kicker */}
+              <div className="inline-flex items-center gap-2.5 px-3 py-1 rounded-full bg-blue-50 border border-blue-200/80 text-blue-900 text-xs font-semibold shadow-2xs">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-500 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-600" />
+                </span>
+                <span className="font-mono text-[11px] tracking-wide uppercase font-bold text-blue-700">
+                  Global Vendor Management & Supplier Intelligence
+                </span>
+              </div>
 
-            {/* Headline */}
-            <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black text-slate-950 tracking-tight leading-[1.12]">
-              The Intelligence Layer for the{' '}
-              <span className="text-slate-950 relative inline-block">
-                Construction Supply Chain.
-                <span className="absolute bottom-1 left-0 w-full h-2 bg-amber-400/40 -z-1" />
-              </span>
-            </h1>
+              {/* Bold Headline */}
+              <h1 className="text-3xl sm:text-5xl lg:text-[54px] font-black text-slate-950 tracking-tight leading-[1.12]">
+                The Intelligence Layer for the{' '}
+                <span className="text-blue-600 relative inline-block">
+                  Construction Supply Chain.
+                  <span className="absolute bottom-1 left-0 w-full h-2 bg-blue-100 -z-1" />
+                </span>
+              </h1>
 
-            {/* Sub-headline */}
-            <p className="text-lg sm:text-2xl font-bold text-slate-800 tracking-tight">
-              Discover verified suppliers. Understand capabilities. Build stronger supplier relationships.
-            </p>
-
-            {/* Supporting Paragraph */}
-            <p className="text-sm sm:text-base text-slate-600 max-w-2xl mx-auto leading-relaxed">
-              SOKO transforms fragmented supplier records into structured, verifiable intelligence.
-              Not an ecommerce marketplace or an ERP replacement—SOKO is the common relationship layer
-              connecting contractors and suppliers seamlessly alongside SAP, Oracle, Procore, and Viewpoint.
-            </p>
-
-            {/* Dual CTA Buttons */}
-            <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3.5">
-              <button
-                onClick={() => handleOpenModal('join', 'contractor')}
-                className="w-full sm:w-auto px-6 py-3.5 bg-slate-950 hover:bg-slate-900 text-white rounded-md font-bold text-sm shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer group"
-              >
-                <span>For Contractors → Join SOKO</span>
-                <ArrowRight className="w-4 h-4 text-amber-400 group-hover:translate-x-0.5 transition-transform" />
-              </button>
-
-              <button
-                onClick={() => handleOpenModal('join', 'supplier')}
-                className="w-full sm:w-auto px-6 py-3.5 bg-white hover:bg-amber-50/50 text-slate-900 border border-amber-400 rounded-md font-bold text-sm shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <span>For Suppliers → Create Free Profile</span>
-                <span className="w-2 h-2 rounded-full bg-amber-500" />
-              </button>
-            </div>
-
-            {/* Positioning Bar */}
-            <div className="pt-4 border-t border-slate-200/80 mt-8">
-              <p className="font-mono text-xs text-slate-600 tracking-tight">
-                Free Access for Contractors &nbsp;·&nbsp; Verified Trade Licenses & ISOs &nbsp;·&nbsp; No Ecommerce Checkout &nbsp;·&nbsp; Informational Product Intelligence
+              {/* Sub-headline */}
+              <p className="text-lg sm:text-xl font-bold text-slate-800 tracking-tight leading-snug">
+                Discover verified suppliers. Understand capabilities. Build stronger supplier relationships.
               </p>
+
+              {/* Supporting Paragraph */}
+              <p className="text-sm sm:text-base text-slate-600 leading-relaxed max-w-xl">
+                SOKO transforms fragmented supplier records into structured, verifiable intelligence.
+                Not an ecommerce marketplace or an ERP replacement—SOKO is the common relationship layer
+                connecting contractors and suppliers seamlessly alongside SAP, Oracle, Procore, and Viewpoint.
+              </p>
+
+              {/* Dual CTA Buttons */}
+              <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-3.5">
+                <button
+                  onClick={() => handleOpenModal('join', 'contractor')}
+                  className="px-6 py-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-sm shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer group"
+                >
+                  <span>For Contractors → Join SOKO</span>
+                  <ArrowRight className="w-4 h-4 text-blue-200 group-hover:translate-x-0.5 transition-transform" />
+                </button>
+
+                <button
+                  onClick={() => handleOpenModal('join', 'supplier')}
+                  className="px-6 py-3.5 bg-white hover:bg-slate-50 text-slate-900 border border-slate-300 hover:border-slate-400 rounded-lg font-bold text-sm shadow-2xs transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <span>For Suppliers → Create Free Profile</span>
+                  <span className="w-2 h-2 rounded-full bg-blue-600" />
+                </button>
+              </div>
+
+              {/* Trust Bar with Unboxed Clean Metadata */}
+              <div className="pt-3 border-t border-slate-200">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-slate-500 font-mono">
+                  <span>Free Access for Contractors</span>
+                  <span aria-hidden="true" className="text-slate-300">·</span>
+                  <span>Verified Trade Licenses & ISOs</span>
+                  <span aria-hidden="true" className="text-slate-300">·</span>
+                  <span>No Ecommerce Checkout</span>
+                  <span aria-hidden="true" className="text-slate-300">·</span>
+                  <span>Informational Product Intelligence</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column: Interactive Live SaaS Product Intelligence Mockup (Supplier.io style) */}
+            <div className="lg:col-span-6">
+              <div className="relative rounded-2xl bg-slate-950 p-2 shadow-2xl border border-slate-800">
+                {/* Glow accent behind card */}
+                <div className="absolute -inset-1 rounded-2xl bg-gradient-to-r from-blue-600/30 to-indigo-600/30 blur-xl opacity-50 -z-10" />
+
+                {/* Top Window Chrome */}
+                <div className="bg-slate-900 rounded-xl border border-slate-800 p-4 space-y-4">
+                  {/* Chrome header with window dots and interactive tabs */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="flex gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full bg-rose-500/80" />
+                        <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80" />
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/80" />
+                      </div>
+                      <span className="text-[11px] font-mono text-slate-400 pl-2">
+                        SOKO Supplier Intelligence Console
+                      </span>
+                    </div>
+
+                    {/* Interactive Tab Switcher */}
+                    <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-[11px] font-mono">
+                      <button
+                        onClick={() => setHeroPreviewTab('dossier')}
+                        className={`px-2.5 py-1 rounded transition-colors cursor-pointer ${
+                          heroPreviewTab === 'dossier'
+                            ? 'bg-blue-600 text-white font-bold'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        Verified Dossier
+                      </button>
+                      <button
+                        onClick={() => setHeroPreviewTab('compliance')}
+                        className={`px-2.5 py-1 rounded transition-colors cursor-pointer ${
+                          heroPreviewTab === 'compliance'
+                            ? 'bg-blue-600 text-white font-bold'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        Compliance & ESG
+                      </button>
+                      <button
+                        onClick={() => setHeroPreviewTab('kiosk')}
+                        className={`px-2.5 py-1 rounded transition-colors cursor-pointer ${
+                          heroPreviewTab === 'kiosk'
+                            ? 'bg-blue-600 text-white font-bold'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        Kiosk & Memory
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Dynamic Tab Body */}
+                  {heroPreviewTab === 'dossier' && (
+                    <div className="space-y-4 animate-in fade-in duration-200">
+                      {/* Entity Header */}
+                      <div className="flex items-start justify-between gap-3 bg-slate-950/70 p-3.5 rounded-lg border border-slate-800">
+                        <div className="flex items-center gap-3">
+                          <div className="w-11 h-11 rounded-lg bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400 font-black text-sm">
+                            ESI
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h4 className="text-white text-sm font-bold tracking-tight">
+                                Emirates Rebar Fabrication Industries LLC
+                              </h4>
+                              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                            </div>
+                            <p className="text-[11px] text-slate-400 font-mono">
+                              Trade License CN-2940291 · Dubai Industrial City (DIC)
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-800/80 px-2 py-0.5 rounded">
+                            Verified Registrar
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* 3 Metric Pills */}
+                      <div className="grid grid-cols-3 gap-2.5">
+                        <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                          <span className="text-[10px] font-mono text-slate-400 block">Production Yard</span>
+                          <span className="text-sm font-bold text-white font-mono tabular-nums">45,000 m²</span>
+                          <span className="text-[10px] text-emerald-400 block">Geofenced GPS</span>
+                        </div>
+                        <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                          <span className="text-[10px] font-mono text-slate-400 block">CSI MasterFormat</span>
+                          <span className="text-sm font-bold text-white font-mono">03 21 00</span>
+                          <span className="text-[10px] text-blue-400 block">Rebar & Mesh</span>
+                        </div>
+                        <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                          <span className="text-[10px] font-mono text-slate-400 block">Monthly Cut/Bend</span>
+                          <span className="text-sm font-bold text-white font-mono tabular-nums">85,000 MT</span>
+                          <span className="text-[10px] text-amber-400 block">4 CNC Lines</span>
+                        </div>
+                      </div>
+
+                      {/* Specifications and Approvals */}
+                      <div className="bg-slate-950/80 p-3 rounded-lg border border-slate-800 space-y-2 text-xs">
+                        <div className="flex items-center justify-between text-slate-300">
+                          <span className="text-slate-400 font-mono text-[11px]">Material Standards:</span>
+                          <span className="font-semibold text-white">ASTM A615 · BS 4449 (B500B) · Grade 60</span>
+                        </div>
+                        <div className="flex items-center justify-between text-slate-300">
+                          <span className="text-slate-400 font-mono text-[11px]">Approved Consultants:</span>
+                          <span className="font-semibold text-white">Khatib & Alami, Parsons, Atkins, Dar</span>
+                        </div>
+                        <div className="flex items-center justify-between text-slate-300">
+                          <span className="text-slate-400 font-mono text-[11px]">Third-Party MTC:</span>
+                          <span className="text-emerald-400 font-mono">Batch Heat Traceable Archive (100%)</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {heroPreviewTab === 'compliance' && (
+                    <div className="space-y-4 animate-in fade-in duration-200">
+                      <div className="bg-slate-950/70 p-3.5 rounded-lg border border-slate-800 flex items-center justify-between">
+                        <div>
+                          <span className="text-xs font-bold text-white block">Audit & Decarbonization Profile</span>
+                          <span className="text-[11px] text-slate-400 font-mono">
+                            Independent Environmental Product Declaration (EPD)
+                          </span>
+                        </div>
+                        <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-800 px-2 py-0.5 rounded">
+                          CARES Certified #120401
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-1">
+                          <span className="text-[10px] font-mono text-slate-400 block">Embodied Carbon</span>
+                          <div className="text-lg font-bold text-emerald-400 font-mono tabular-nums">0.62 tCO2e/MT</div>
+                          <span className="text-[10px] text-slate-400">68% below blast furnace benchmark</span>
+                        </div>
+                        <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-1">
+                          <span className="text-[10px] font-mono text-slate-400 block">Recycled EAF Content</span>
+                          <div className="text-lg font-bold text-blue-400 font-mono tabular-nums">98.4%</div>
+                          <span className="text-[10px] text-slate-400">LEED v4.1 & Estidama Pearl 3+</span>
+                        </div>
+                      </div>
+
+                      <div className="bg-slate-950/80 p-3 rounded-lg border border-slate-800 space-y-2 text-xs">
+                        <div className="flex items-center justify-between text-slate-300">
+                          <span className="text-slate-400 font-mono text-[11px]">Quality Management:</span>
+                          <span className="text-white font-semibold">ISO 9001:2015 · TÜV SÜD Audited</span>
+                        </div>
+                        <div className="flex items-center justify-between text-slate-300">
+                          <span className="text-slate-400 font-mono text-[11px]">Safety Standard:</span>
+                          <span className="text-white font-semibold">ISO 45001:2018 Occupational H&S</span>
+                        </div>
+                        <div className="flex items-center justify-between text-slate-300">
+                          <span className="text-slate-400 font-mono text-[11px]">Commercial Standing:</span>
+                          <span className="text-emerald-400 font-semibold">Zero active dispute filings (MoE verified)</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {heroPreviewTab === 'kiosk' && (
+                    <div className="space-y-4 animate-in fade-in duration-200">
+                      <div className="bg-slate-950/70 p-3.5 rounded-lg border border-slate-800 flex items-center justify-between">
+                        <div>
+                          <span className="text-xs font-bold text-white block">Reception Kiosk & Institutional Memory</span>
+                          <span className="text-[11px] text-slate-400 font-mono">
+                            Front-desk vendor check-in synchronized with procurement notes
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-mono text-blue-400 bg-blue-950/60 border border-blue-800 px-2 py-0.5 rounded">
+                          14 Authenticated Visits
+                        </span>
+                      </div>
+
+                      <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-2">
+                        <div className="flex items-center justify-between text-xs">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                            <span className="text-white font-semibold">Latest Office Interaction: March 18, 2026</span>
+                          </div>
+                          <span className="text-[10px] font-mono text-slate-400">Headquarters Kiosk</span>
+                        </div>
+                        <div className="p-2.5 rounded bg-slate-900 border border-slate-800 text-[11px] text-slate-300 italic">
+                          "Commercial review completed. Verified prompt delivery on structural package; flexible on 60-day LC for tenders &gt; AED 10M."
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                          <span className="text-[10px] font-mono text-slate-400 block">On-Time Pour Window</span>
+                          <span className="text-sm font-bold text-emerald-400 font-mono tabular-nums">98.4%</span>
+                        </div>
+                        <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                          <span className="text-[10px] font-mono text-slate-400 block">Site Rejection Rate</span>
+                          <span className="text-sm font-bold text-blue-400 font-mono tabular-nums">&lt;0.2%</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Console Footer */}
+                  <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-400">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                      Live SOKO Intelligence Network Active
+                    </span>
+                    <button
+                      onClick={() => handleOpenModal('join', 'buyer')}
+                      className="text-blue-400 hover:text-blue-300 font-semibold flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>Explore Live Platform</span>
+                      <ArrowRight className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -653,24 +887,24 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
             </p>
           </div>
 
-          <div className="relative w-full overflow-hidden bg-slate-50 py-4 border-y border-slate-200">
+          <div className="relative w-full overflow-hidden bg-white/70 py-4 border-y border-slate-200">
             {/* Fade Gradients for edge masking */}
-            <div className="absolute left-0 top-0 bottom-0 w-20 bg-gradient-to-r from-slate-50 to-transparent z-10 pointer-events-none" />
-            <div className="absolute right-0 top-0 bottom-0 w-20 bg-gradient-to-l from-slate-50 to-transparent z-10 pointer-events-none" />
+            <div className="absolute left-0 top-0 bottom-0 w-24 bg-gradient-to-r from-white to-transparent z-10 pointer-events-none" />
+            <div className="absolute right-0 top-0 bottom-0 w-24 bg-gradient-to-l from-white to-transparent z-10 pointer-events-none" />
 
             {/* Continuous Ticker */}
-            <div className="animate-marquee flex items-center gap-8">
+            <div className="animate-marquee flex items-center gap-6">
               {[...enterprisePartners, ...enterprisePartners].map((partner, index) => (
                 <div
                   key={`${partner.name}-${index}`}
-                  className="flex items-center gap-2.5 px-4 py-2 bg-white rounded-md border border-slate-200 shadow-2xs shrink-0 hover:border-slate-400 transition-colors"
+                  className="flex items-center gap-2.5 px-4 py-2 bg-slate-50 rounded-lg border border-slate-200/80 shadow-2xs shrink-0 hover:border-blue-400 hover:bg-white transition-colors"
                 >
-                  <Building2 className="w-4 h-4 text-slate-600" />
+                  <Building2 className="w-4 h-4 text-blue-600" />
                   <div className="flex flex-col text-left">
-                    <span className="text-xs font-extrabold text-slate-900 tracking-tight whitespace-nowrap">
+                    <span className="text-xs font-bold text-slate-900 tracking-tight whitespace-nowrap">
                       {partner.name}
                     </span>
-                    <span className="text-[9px] font-mono text-slate-500 whitespace-nowrap">
+                    <span className="text-[10px] font-mono text-slate-500 whitespace-nowrap">
                       {partner.location} · <strong className="text-slate-700">{partner.badge}</strong>
                     </span>
                   </div>
@@ -681,11 +915,43 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
         </div>
       </section>
 
-      {/* 3. HOW SOKO WORKS (4-STEP PROCESS) */}
-      <section id="how-it-works" className="py-20 bg-white border-b border-slate-200">
+      {/* 3. KEY METRICS RIBBON (Supplier.io Style Impact Bar) */}
+      <section className="py-12 bg-white border-b border-slate-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 sm:gap-8">
+            <div className="border-l-2 border-blue-600 pl-4 space-y-1">
+              <div className="text-2xl sm:text-3xl font-black text-slate-950 font-mono tabular-nums">
+                100% Free
+              </div>
+              <p className="text-xs text-slate-600 font-medium">For Commercial Contractors & Estimators</p>
+            </div>
+            <div className="border-l-2 border-blue-600 pl-4 space-y-1">
+              <div className="text-2xl sm:text-3xl font-black text-slate-950 font-mono tabular-nums">
+                8-Point
+              </div>
+              <p className="text-xs text-slate-600 font-medium">Audited Supplier Intelligence Dossier</p>
+            </div>
+            <div className="border-l-2 border-blue-600 pl-4 space-y-1">
+              <div className="text-2xl sm:text-3xl font-black text-slate-950 font-mono tabular-nums">
+                450+
+              </div>
+              <p className="text-xs text-slate-600 font-medium">Verified Regional Specs & CSI Codes</p>
+            </div>
+            <div className="border-l-2 border-blue-600 pl-4 space-y-1">
+              <div className="text-2xl sm:text-3xl font-black text-slate-950 font-mono tabular-nums">
+                0%
+              </div>
+              <p className="text-xs text-slate-600 font-medium">Disruption to SAP, Oracle & Procore</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 4. HOW SOKO WORKS (4-STEP PROCESS) */}
+      <section id="how-it-works" className="py-20 bg-[#f5fafc] border-b border-slate-200" style={{ backgroundColor: '#f5fafc' }}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="max-w-3xl mb-14 space-y-3">
-            <span className="inline-block font-mono text-xs font-bold uppercase tracking-wider text-slate-800 bg-white border border-slate-300 rounded-md px-2.5 py-1">
+            <span className="font-mono text-xs font-bold uppercase tracking-wider text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-2.5 py-1 inline-block">
               SIMPLE PROCESS
             </span>
             <h2 className="text-3xl sm:text-4xl font-black text-slate-950 tracking-tight">
@@ -700,9 +966,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
           {/* 4 Process Cards in a responsive 4-column grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {/* Step 1 */}
-            <div className="p-6 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-white hover:border-slate-400 hover:shadow-md transition-all flex flex-col justify-between group">
+            <div className="p-6 rounded-xl border border-slate-200 bg-white hover:border-blue-400 hover:shadow-md transition-all flex flex-col justify-between group">
               <div className="space-y-4">
-                <div className="w-10 h-10 rounded-md bg-slate-950 text-white font-mono font-bold text-sm flex items-center justify-center shadow-xs group-hover:bg-amber-600 transition-colors">
+                <div className="w-10 h-10 rounded-lg bg-blue-50 text-blue-700 font-mono font-bold text-sm flex items-center justify-center border border-blue-200 group-hover:bg-blue-600 group-hover:text-white transition-colors">
                   01
                 </div>
                 <h3 className="text-base font-extrabold text-slate-950 tracking-tight">
@@ -713,16 +979,16 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
                   certifications, and business documents for automated and audited registrar review.
                 </p>
               </div>
-              <div className="pt-6 mt-6 border-t border-slate-200/60 font-mono text-[11px] text-slate-500 flex items-center gap-1.5">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+              <div className="pt-6 mt-6 border-t border-slate-100 font-mono text-[11px] text-slate-500 flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-emerald-600" />
                 <span>Trade License & ISO Audit</span>
               </div>
             </div>
 
             {/* Step 2 */}
-            <div className="p-6 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-white hover:border-slate-400 hover:shadow-md transition-all flex flex-col justify-between group">
+            <div className="p-6 rounded-xl border border-slate-200 bg-white hover:border-blue-400 hover:shadow-md transition-all flex flex-col justify-between group">
               <div className="space-y-4">
-                <div className="w-10 h-10 rounded-md bg-slate-950 text-white font-mono font-bold text-sm flex items-center justify-center shadow-xs group-hover:bg-amber-600 transition-colors">
+                <div className="w-10 h-10 rounded-lg bg-blue-50 text-blue-700 font-mono font-bold text-sm flex items-center justify-center border border-blue-200 group-hover:bg-blue-600 group-hover:text-white transition-colors">
                   02
                 </div>
                 <h3 className="text-base font-extrabold text-slate-950 tracking-tight">
@@ -733,16 +999,16 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
                   companies and products by technical specs (ASTM, BS, DIN) and geographical proximity.
                 </p>
               </div>
-              <div className="pt-6 mt-6 border-t border-slate-200/60 font-mono text-[11px] text-slate-500 flex items-center gap-1.5">
-                <Users className="w-3.5 h-3.5 text-blue-600" />
+              <div className="pt-6 mt-6 border-t border-slate-100 font-mono text-[11px] text-slate-500 flex items-center gap-1.5">
+                <Users className="w-4 h-4 text-blue-600" />
                 <span>Direct Verified Directory</span>
               </div>
             </div>
 
             {/* Step 3 */}
-            <div className="p-6 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-white hover:border-slate-400 hover:shadow-md transition-all flex flex-col justify-between group">
+            <div className="p-6 rounded-xl border border-slate-200 bg-white hover:border-blue-400 hover:shadow-md transition-all flex flex-col justify-between group">
               <div className="space-y-4">
-                <div className="w-10 h-10 rounded-md bg-slate-950 text-white font-mono font-bold text-sm flex items-center justify-center shadow-xs group-hover:bg-amber-600 transition-colors">
+                <div className="w-10 h-10 rounded-lg bg-blue-50 text-blue-700 font-mono font-bold text-sm flex items-center justify-center border border-blue-200 group-hover:bg-blue-600 group-hover:text-white transition-colors">
                   03
                 </div>
                 <h3 className="text-base font-extrabold text-slate-950 tracking-tight">
@@ -753,16 +1019,16 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
                   kiosk check-ins, and follow-up actions automatically to eliminate tribal knowledge.
                 </p>
               </div>
-              <div className="pt-6 mt-6 border-t border-slate-200/60 font-mono text-[11px] text-slate-500 flex items-center gap-1.5">
-                <Tablet className="w-3.5 h-3.5 text-amber-600" />
+              <div className="pt-6 mt-6 border-t border-slate-100 font-mono text-[11px] text-slate-500 flex items-center gap-1.5">
+                <Tablet className="w-4 h-4 text-blue-600" />
                 <span>Office Kiosk & Notes Integration</span>
               </div>
             </div>
 
             {/* Step 4 */}
-            <div className="p-6 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-white hover:border-slate-400 hover:shadow-md transition-all flex flex-col justify-between group">
+            <div className="p-6 rounded-xl border border-slate-200 bg-white hover:border-blue-400 hover:shadow-md transition-all flex flex-col justify-between group">
               <div className="space-y-4">
-                <div className="w-10 h-10 rounded-md bg-slate-950 text-white font-mono font-bold text-sm flex items-center justify-center shadow-xs group-hover:bg-amber-600 transition-colors">
+                <div className="w-10 h-10 rounded-lg bg-blue-50 text-blue-700 font-mono font-bold text-sm flex items-center justify-center border border-blue-200 group-hover:bg-blue-600 group-hover:text-white transition-colors">
                   04
                 </div>
                 <h3 className="text-base font-extrabold text-slate-950 tracking-tight">
@@ -773,8 +1039,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
                   supplier intelligence without disrupting existing ERP purchase orders or accounting workflows.
                 </p>
               </div>
-              <div className="pt-6 mt-6 border-t border-slate-200/60 font-mono text-[11px] text-slate-500 flex items-center gap-1.5">
-                <BarChart3 className="w-3.5 h-3.5 text-emerald-600" />
+              <div className="pt-6 mt-6 border-t border-slate-100 font-mono text-[11px] text-slate-500 flex items-center gap-1.5">
+                <BarChart3 className="w-4 h-4 text-emerald-600" />
                 <span>Audited Performance Scores</span>
               </div>
             </div>
@@ -782,11 +1048,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
         </div>
       </section>
 
-      {/* 4. THE SOKO PLATFORM (CORE ARCHITECTURE & CAPABILITIES) */}
-      <section id="solution" className="py-20 bg-slate-50 border-b border-slate-200">
+      {/* 5. THE SOKO PLATFORM (CORE ARCHITECTURE & CAPABILITIES) */}
+      <section id="solution" className="py-20 bg-white border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="max-w-3xl mb-14 space-y-3">
-            <span className="inline-block font-mono text-xs font-bold uppercase tracking-wider text-amber-800 bg-amber-50 border border-amber-300 rounded-md px-2.5 py-1">
+            <span className="font-mono text-xs font-bold uppercase tracking-wider text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-2.5 py-1 inline-block">
               THE SOKO ARCHITECTURE
             </span>
             <h2 className="text-3xl sm:text-4xl font-black text-slate-950 tracking-tight">
@@ -802,9 +1068,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
           {/* 4 Platform Capability Cards in 4-column responsive grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {/* Card 1 */}
-            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs hover:border-slate-400 hover:shadow-md transition-all flex flex-col justify-between">
+            <div className="bg-slate-50/70 p-6 rounded-xl border border-slate-200 shadow-2xs hover:border-blue-400 hover:bg-white hover:shadow-md transition-all flex flex-col justify-between">
               <div className="space-y-3">
-                <div className="w-10 h-10 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center font-bold">
+                <div className="w-10 h-10 rounded-lg bg-blue-100/80 text-blue-700 flex items-center justify-center font-bold">
                   <Database className="w-5 h-5" />
                 </div>
                 <h3 className="text-base font-extrabold text-slate-950">
@@ -815,20 +1081,20 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
                   material category, regional jurisdiction, certified standards (ASTM, BS, DIN), and audited verification tiers.
                 </p>
               </div>
-              <ul className="mt-6 pt-4 border-t border-slate-100 space-y-1.5 font-mono text-[11px] text-slate-600">
+              <ul className="mt-6 pt-4 border-t border-slate-200/80 space-y-1.5 font-mono text-[11px] text-slate-600">
                 <li className="flex items-center gap-1.5">
-                  <Check className="w-3 h-3 text-emerald-600" /> Granular CSI MasterFormat filter
+                  <Check className="w-3.5 h-3.5 text-blue-600 shrink-0" /> Granular CSI MasterFormat filter
                 </li>
                 <li className="flex items-center gap-1.5">
-                  <Check className="w-3 h-3 text-emerald-600" /> Factory geofence confirmation
+                  <Check className="w-3.5 h-3.5 text-blue-600 shrink-0" /> Factory geofence confirmation
                 </li>
               </ul>
             </div>
 
             {/* Card 2 */}
-            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs hover:border-slate-400 hover:shadow-md transition-all flex flex-col justify-between">
+            <div className="bg-slate-50/70 p-6 rounded-xl border border-slate-200 shadow-2xs hover:border-blue-400 hover:bg-white hover:shadow-md transition-all flex flex-col justify-between">
               <div className="space-y-3">
-                <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold">
+                <div className="w-10 h-10 rounded-lg bg-emerald-100/80 text-emerald-700 flex items-center justify-center font-bold">
                   <ShieldCheck className="w-5 h-5" />
                 </div>
                 <h3 className="text-base font-extrabold text-slate-950">
@@ -839,20 +1105,20 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
                   and active legal standing. Never award tenders to shell entities or defunct operations.
                 </p>
               </div>
-              <ul className="mt-6 pt-4 border-t border-slate-100 space-y-1.5 font-mono text-[11px] text-slate-600">
+              <ul className="mt-6 pt-4 border-t border-slate-200/80 space-y-1.5 font-mono text-[11px] text-slate-600">
                 <li className="flex items-center gap-1.5">
-                  <Check className="w-3 h-3 text-emerald-600" /> Registrar trade license audit
+                  <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> Registrar trade license audit
                 </li>
                 <li className="flex items-center gap-1.5">
-                  <Check className="w-3 h-3 text-emerald-600" /> Verified executive contacts
+                  <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> Verified executive contacts
                 </li>
               </ul>
             </div>
 
             {/* Card 3 */}
-            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs hover:border-slate-400 hover:shadow-md transition-all flex flex-col justify-between">
+            <div className="bg-slate-50/70 p-6 rounded-xl border border-slate-200 shadow-2xs hover:border-blue-400 hover:bg-white hover:shadow-md transition-all flex flex-col justify-between">
               <div className="space-y-3">
-                <div className="w-10 h-10 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center font-bold">
+                <div className="w-10 h-10 rounded-lg bg-amber-100/80 text-amber-700 flex items-center justify-center font-bold">
                   <FileText className="w-5 h-5" />
                 </div>
                 <h3 className="text-base font-extrabold text-slate-950">
@@ -863,21 +1129,21 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
                   parameters, consultant approvals, and sustainability declarations (LEED / Estidama).
                 </p>
               </div>
-              <ul className="mt-6 pt-4 border-t border-slate-100 space-y-1.5 font-mono text-[11px] text-slate-600">
+              <ul className="mt-6 pt-4 border-t border-slate-200/80 space-y-1.5 font-mono text-[11px] text-slate-600">
                 <li className="flex items-center gap-1.5">
-                  <Check className="w-3 h-3 text-emerald-600" /> Material Test Reports (MTC) linked
+                  <Check className="w-3.5 h-3.5 text-amber-600 shrink-0" /> Material Test Reports (MTC) linked
                 </li>
                 <li className="flex items-center gap-1.5">
-                  <Check className="w-3 h-3 text-emerald-600" /> Consultant approval matrices
+                  <Check className="w-3.5 h-3.5 text-amber-600 shrink-0" /> Consultant approval matrices
                 </li>
               </ul>
             </div>
 
             {/* Card 4 */}
-            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs hover:border-slate-400 hover:shadow-md transition-all flex flex-col justify-between">
+            <div className="bg-slate-50/70 p-6 rounded-xl border border-slate-200 shadow-2xs hover:border-blue-400 hover:bg-white hover:shadow-md transition-all flex flex-col justify-between">
               <div className="space-y-3">
-                <div className="w-10 h-10 rounded-lg bg-slate-900 text-white flex items-center justify-center font-bold">
-                  <Tablet className="w-5 h-5 text-amber-400" />
+                <div className="w-10 h-10 rounded-lg bg-indigo-100/80 text-indigo-700 flex items-center justify-center font-bold">
+                  <Tablet className="w-5 h-5" />
                 </div>
                 <h3 className="text-base font-extrabold text-slate-950">
                   4. Visit Tracking & Internal Notes
@@ -887,12 +1153,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
                   evaluations and performance notes so your company never loses institutional relationship memory.
                 </p>
               </div>
-              <ul className="mt-6 pt-4 border-t border-slate-100 space-y-1.5 font-mono text-[11px] text-slate-600">
+              <ul className="mt-6 pt-4 border-t border-slate-200/80 space-y-1.5 font-mono text-[11px] text-slate-600">
                 <li className="flex items-center gap-1.5">
-                  <Check className="w-3 h-3 text-emerald-600" /> Office kiosk visitor logs
+                  <Check className="w-3.5 h-3.5 text-indigo-600 shrink-0" /> Office kiosk visitor logs
                 </li>
                 <li className="flex items-center gap-1.5">
-                  <Check className="w-3 h-3 text-emerald-600" /> Team-private encrypted notes
+                  <Check className="w-3.5 h-3.5 text-indigo-600 shrink-0" /> Team-private encrypted notes
                 </li>
               </ul>
             </div>
@@ -900,11 +1166,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
         </div>
       </section>
 
-      {/* 5. TWO-SIDED NETWORK ARCHITECTURE (CONTRACTOR VS. SUPPLIER DEEP DIVE) */}
-      <section id="contractors" className="py-20 bg-white border-b border-slate-200">
+      {/* 6. TWO-SIDED NETWORK ARCHITECTURE (CONTRACTOR VS. SUPPLIER DEEP DIVE) */}
+      <section id="contractors" className="py-20 bg-[#f4f7f8] border-b border-slate-200" style={{ backgroundColor: '#f4f7f8' }}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="max-w-3xl mb-10 space-y-3">
-            <span className="inline-block font-mono text-xs font-bold uppercase tracking-wider text-slate-800 bg-white border border-slate-300 rounded-md px-2.5 py-1">
+            <span className="font-mono text-xs font-bold uppercase tracking-wider text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-2.5 py-1 inline-block">
               TWO-SIDED VALUE
             </span>
             <h2 className="text-3xl sm:text-4xl font-black text-slate-950 tracking-tight">
@@ -920,20 +1186,20 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
             <span className="text-xs font-mono text-slate-500 uppercase mr-2 hidden sm:inline">View Perspective:</span>
             <button
               onClick={() => setNetworkView('all')}
-              className={`px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer transition-all ${
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-all ${
                 networkView === 'all'
-                  ? 'bg-slate-950 text-white shadow-xs'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
               }`}
             >
               Side-by-Side View
             </button>
             <button
               onClick={() => setNetworkView('contractors')}
-              className={`px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer transition-all ${
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-all ${
                 networkView === 'contractors'
-                  ? 'bg-slate-950 text-white shadow-xs'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
               }`}
             >
               For Contractors Only
@@ -941,10 +1207,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
             <button
               id="suppliers"
               onClick={() => setNetworkView('suppliers')}
-              className={`px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer transition-all ${
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-all ${
                 networkView === 'suppliers'
-                  ? 'bg-slate-950 text-white shadow-xs'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
               }`}
             >
               For Suppliers Only
@@ -955,13 +1221,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
             {/* Left Column: For Buyers & Contractors */}
             {(networkView === 'all' || networkView === 'contractors') && (
-              <div className="bg-slate-50 border border-slate-300 rounded-xl p-6 sm:p-8 flex flex-col justify-between space-y-6">
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 flex flex-col justify-between space-y-6 shadow-2xs hover:shadow-md transition-shadow">
                 <div className="space-y-4">
                   <div className="flex items-center justify-between gap-3">
                     <span className="font-mono text-xs font-bold uppercase tracking-wider text-slate-500">
                       Commercial Ecosystem
                     </span>
-                    <span className="inline-flex items-center gap-1 font-mono text-[11px] font-bold bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-md border border-emerald-300">
+                    <span className="inline-flex items-center gap-1 font-mono text-[11px] font-bold bg-emerald-50 text-emerald-800 px-2.5 py-0.5 rounded-md border border-emerald-200">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
                       100% Free Access
                     </span>
@@ -1013,13 +1279,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
                   </div>
                 </div>
 
-                <div className="pt-4 border-t border-slate-200">
+                <div className="pt-4 border-t border-slate-100">
                   <button
                     onClick={() => handleOpenModal('join', 'contractor')}
-                    className="w-full py-3.5 bg-slate-950 hover:bg-slate-900 text-white rounded-md font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs group"
+                    className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs group"
                   >
                     <span>Join SOKO as a Contractor (Free Access)</span>
-                    <ArrowRight className="w-4 h-4 text-amber-400 group-hover:translate-x-0.5 transition-transform" />
+                    <ArrowRight className="w-4 h-4 text-blue-200 group-hover:translate-x-0.5 transition-transform" />
                   </button>
                 </div>
               </div>
@@ -1027,14 +1293,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
 
             {/* Right Column: For Suppliers */}
             {(networkView === 'all' || networkView === 'suppliers') && (
-              <div className="bg-amber-50/40 border border-amber-300 rounded-xl p-6 sm:p-8 flex flex-col justify-between space-y-6">
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 flex flex-col justify-between space-y-6 shadow-2xs hover:shadow-md transition-shadow">
                 <div className="space-y-4">
                   <div className="flex items-center justify-between gap-3">
-                    <span className="font-mono text-xs font-bold uppercase tracking-wider text-amber-800">
+                    <span className="font-mono text-xs font-bold uppercase tracking-wider text-blue-700">
                       Commercial Ecosystem
                     </span>
-                    <span className="inline-flex items-center gap-1 font-mono text-[11px] font-bold bg-amber-100 text-amber-900 px-2.5 py-0.5 rounded-md border border-amber-300">
-                      <Star className="w-3.5 h-3.5 text-amber-700" />
+                    <span className="inline-flex items-center gap-1 font-mono text-[11px] font-bold bg-blue-50 text-blue-800 px-2.5 py-0.5 rounded-md border border-blue-200">
+                      <Star className="w-3.5 h-3.5 text-blue-600" />
                       Freemium Entry
                     </span>
                   </div>
@@ -1051,47 +1317,47 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
                   {/* 8 Verified Value Points */}
                   <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                     <div className="flex items-start gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                      <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                       <span className="text-slate-800 font-semibold">Professional Digital Supplier Profile</span>
                     </div>
                     <div className="flex items-start gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                      <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                       <span className="text-slate-800 font-semibold">Structured Product Showcase</span>
                     </div>
                     <div className="flex items-start gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                      <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                       <span className="text-slate-800 font-semibold">Verified Digital Identity</span>
                     </div>
                     <div className="flex items-start gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                      <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                       <span className="text-slate-800 font-semibold">Direct Contractor Visibility</span>
                     </div>
                     <div className="flex items-start gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                      <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                       <span className="text-slate-800 font-semibold">Credibility Over Cold Calls</span>
                     </div>
                     <div className="flex items-start gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                      <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                       <span className="text-slate-800 font-semibold">Ecosystem Presence Tracking</span>
                     </div>
                     <div className="flex items-start gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                      <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                       <span className="text-slate-800 font-semibold">Zero In-House Platform Costs</span>
                     </div>
                     <div className="flex items-start gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                      <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                       <span className="text-slate-800 font-semibold">Priority Prequalification Support</span>
                     </div>
                   </div>
                 </div>
 
-                <div className="pt-4 border-t border-amber-200">
+                <div className="pt-4 border-t border-slate-100">
                   <button
                     onClick={() => handleOpenModal('join', 'supplier')}
-                    className="w-full py-3.5 bg-amber-600 hover:bg-amber-700 text-white rounded-md font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs"
+                    className="w-full py-3.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs"
                   >
                     <span>Create Free Supplier Profile</span>
-                    <ArrowRight className="w-4 h-4 text-white" />
+                    <ArrowRight className="w-4 h-4 text-blue-400" />
                   </button>
                 </div>
               </div>
@@ -1100,11 +1366,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
         </div>
       </section>
 
-      {/* 6. SOKO'S CORE PRINCIPLE (THE 8 INTELLIGENCE QUESTIONS) */}
-      <section id="principles" className="py-20 bg-slate-50 border-b border-slate-200">
+      {/* 7. SOKO'S CORE PRINCIPLE (THE 8 INTELLIGENCE QUESTIONS - INTERACTIVE DIAGNOSTIC) */}
+      <section id="principles" className="py-20 bg-white border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="max-w-3xl mb-12 space-y-3">
-            <span className="inline-block font-mono text-xs font-bold uppercase tracking-wider text-slate-800 bg-white border border-slate-300 rounded-md px-2.5 py-1">
+            <span className="font-mono text-xs font-bold uppercase tracking-wider text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-2.5 py-1 inline-block">
               SOKO'S CORE PRINCIPLE
             </span>
             <h2 className="text-3xl sm:text-4xl font-black text-slate-950 tracking-tight">
@@ -1126,16 +1392,16 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
                   <button
                     key={q.id}
                     onClick={() => setActiveQuestionIndex(idx)}
-                    className={`w-full text-left p-3.5 rounded-lg border transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                    className={`w-full text-left p-3.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
                       isActive
-                        ? 'bg-slate-950 text-white border-slate-950 shadow-md translate-x-1'
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-sm translate-x-1'
                         : 'bg-white text-slate-800 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
                     }`}
                   >
                     <div className="flex items-center gap-3">
                       <span
                         className={`font-mono text-xs font-black px-2 py-0.5 rounded ${
-                          isActive ? 'bg-amber-500 text-slate-950' : 'bg-slate-100 text-slate-600'
+                          isActive ? 'bg-white text-blue-600' : 'bg-slate-100 text-slate-600'
                         }`}
                       >
                         {q.number}
@@ -1146,7 +1412,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
                         </span>
                         <span
                           className={`text-[10px] font-mono block ${
-                            isActive ? 'text-slate-300' : 'text-slate-500'
+                            isActive ? 'text-blue-100' : 'text-slate-500'
                           }`}
                         >
                           {q.category}
@@ -1155,7 +1421,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
                     </div>
                     <ChevronRight
                       className={`w-4 h-4 shrink-0 transition-transform ${
-                        isActive ? 'text-amber-400 translate-x-1' : 'text-slate-400'
+                        isActive ? 'text-white translate-x-1' : 'text-slate-400'
                       }`}
                     />
                   </button>
@@ -1164,14 +1430,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
             </div>
 
             {/* Right Detail Card for Selected Question */}
-            <div className="lg:col-span-7 bg-white rounded-xl border border-slate-300 p-6 sm:p-8 shadow-lg space-y-6">
+            <div className="lg:col-span-7 bg-slate-50 rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
               {(() => {
                 const current = intelligenceQuestions[activeQuestionIndex];
                 return (
                   <>
-                    <div className="space-y-3 border-b border-slate-100 pb-5">
+                    <div className="space-y-3 border-b border-slate-200 pb-5">
                       <div className="flex items-center justify-between gap-3">
-                        <span className="font-mono text-xs font-bold uppercase tracking-wider text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                        <span className="font-mono text-xs font-bold uppercase tracking-wider text-blue-700 bg-blue-100/70 px-2.5 py-0.5 rounded border border-blue-200">
                           Question {current.number} · {current.category}
                         </span>
                         <span className="font-mono text-xs text-slate-500">Live Verifiable Metric</span>
@@ -1189,7 +1455,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
                         {current.tags.map((tag) => (
                           <span
                             key={tag}
-                            className="font-mono text-[11px] font-semibold bg-slate-100 text-slate-800 px-2.5 py-1 rounded border border-slate-200"
+                            className="font-mono text-[11px] font-semibold bg-white text-slate-800 px-2.5 py-1 rounded border border-slate-200 shadow-2xs"
                           >
                             ✓ {tag}
                           </span>
@@ -1198,7 +1464,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
                     </div>
 
                     {/* Detailed Data Box */}
-                    <div className="space-y-3 bg-slate-50 p-5 rounded-lg border border-slate-200">
+                    <div className="space-y-3 bg-white p-5 rounded-xl border border-slate-200 shadow-2xs">
                       <span className="font-mono text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
                         Example Verified Dossier Record:
                       </span>
@@ -1207,7 +1473,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
                         {Object.entries(current.details).map(([key, value]) => (
                           <div
                             key={key}
-                            className="flex flex-col sm:flex-row sm:items-center justify-between py-1 border-b border-slate-200/60 last:border-none gap-1"
+                            className="flex flex-col sm:flex-row sm:items-center justify-between py-1 border-b border-slate-100 last:border-none gap-1"
                           >
                             <span className="text-slate-500 font-mono capitalize">
                               {key.replace(/([A-Z])/g, ' $1')}:
@@ -1220,11 +1486,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
                       </div>
                     </div>
 
-                    <div className="p-4 rounded-lg bg-amber-50/60 border border-amber-200 text-xs text-amber-950 flex items-start gap-3">
-                      <ShieldCheck className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+                    <div className="p-4 rounded-xl bg-blue-50/80 border border-blue-200 text-xs text-blue-950 flex items-start gap-3">
+                      <ShieldCheck className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
                       <div>
                         <strong>Institutional Confidence Guarantee:</strong>
-                        <p className="text-slate-600 mt-0.5">
+                        <p className="text-slate-600 mt-0.5 leading-relaxed">
                           Every data point displayed in SOKO is backed by authenticated documentation,
                           registrar cross-referencing, or recorded commercial interaction.
                         </p>
@@ -1238,8 +1504,40 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
         </div>
       </section>
 
-      {/* 7. ENTERPRISE FOOTER */}
-      <footer className="bg-slate-950 text-slate-300 pt-16 pb-12 border-t border-slate-800">
+      {/* 8. SUPPLIER.IO-INSPIRED CONVERSION BANNER */}
+      <section className="py-16 bg-[#0B1B3D] text-white relative overflow-hidden border-b border-slate-800">
+        <div className="absolute inset-0 bg-[radial-gradient(#2563eb_1px,transparent_1px)] [background-size:16px_16px] opacity-15 pointer-events-none" />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 relative z-10 text-center space-y-6">
+          <span className="font-mono text-xs font-bold uppercase tracking-wider text-blue-300 bg-blue-900/60 border border-blue-700/60 rounded-full px-3 py-1 inline-block">
+            ENTERPRISE ACCESS
+          </span>
+          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight max-w-2xl mx-auto">
+            Ready to transform your construction supply chain intelligence?
+          </h2>
+          <p className="text-sm sm:text-base text-slate-300 max-w-xl mx-auto leading-relaxed">
+            Join premier contractors and verified suppliers across the region. Free for contractors. Fast, verified onboarding for suppliers.
+          </p>
+          <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-4">
+            <button
+              onClick={() => handleOpenModal('join', 'contractor')}
+              className="w-full sm:w-auto px-6 py-3.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer group"
+            >
+              <span>Join SOKO Free as a Contractor</span>
+              <ArrowRight className="w-4 h-4 text-blue-200 group-hover:translate-x-0.5 transition-transform" />
+            </button>
+            <button
+              onClick={() => handleOpenModal('join', 'supplier')}
+              className="w-full sm:w-auto px-6 py-3.5 bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 rounded-lg font-bold text-sm shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <span>Create Verified Supplier Profile</span>
+              <CheckCircle className="w-4 h-4 text-emerald-400" />
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* 9. ENTERPRISE FOOTER */}
+      <footer className="bg-slate-950 text-slate-300 pt-16 pb-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-10 pb-12 border-b border-slate-800">
             {/* Brand Column */}
@@ -1263,7 +1561,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
 
               <div className="space-y-1 font-mono text-[11px] text-slate-400 pt-2">
                 <div className="flex items-center gap-2 text-slate-300">
-                  <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <MapPin className="w-3.5 h-3.5 text-blue-400 shrink-0" />
                   <span>Global HQ · Gate Precinct, DIFC, Dubai, UAE</span>
                 </div>
                 <p className="text-slate-500 pl-5.5">Operating globally across GCC, MENA, and international markets.</p>
@@ -1387,22 +1685,22 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
         </div>
       </footer>
 
-      {/* 8. INTERACTIVE JOIN & SIGN-IN MODAL */}
+      {/* 10. INTERACTIVE JOIN & SIGN-IN MODAL (FULL CAPABILITY PRESERVED) */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200">
           <div
-            className="bg-white rounded-xl border border-slate-300 shadow-2xl max-w-lg w-full overflow-hidden relative max-h-[92vh] flex flex-col"
+            className="bg-white rounded-2xl border border-slate-300 shadow-2xl max-w-lg w-full overflow-hidden relative max-h-[92vh] flex flex-col"
             role="dialog"
             aria-modal="true"
           >
             {/* Modal Header */}
-            <div className="p-5 bg-slate-900 text-white flex items-center justify-between shrink-0">
+            <div className="p-5 bg-slate-950 text-white flex items-center justify-between shrink-0 border-b border-slate-800">
               <div className="flex items-center gap-2.5">
                 <SokoLogo size="sm" className="shadow-xs border border-white/20" />
                 <div>
                   <h3 className="font-bold text-sm tracking-tight text-white flex items-center gap-2">
                     <span>{modalMode === 'join' ? 'Join SOKO.ae' : 'Sign In to SOKO.ae'}</span>
-                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-400/30 uppercase font-semibold">
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-400/30 uppercase font-semibold">
                       {modalRole}
                     </span>
                   </h3>
@@ -1418,7 +1716,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
 
               <button
                 onClick={() => setModalOpen(false)}
-                className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
                 aria-label="Close modal"
               >
                 <X className="w-5 h-5" />
@@ -1432,7 +1730,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
                 <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
                   Select Action:
                 </span>
-                <div className="grid grid-cols-2 gap-2 bg-slate-200 p-1 rounded-lg text-xs font-bold text-center">
+                <div className="grid grid-cols-2 gap-2 bg-slate-200/80 p-1 rounded-lg text-xs font-bold text-center">
                   <button
                     type="button"
                     onClick={() => setModalMode('join')}
@@ -1442,7 +1740,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
                         : 'text-slate-600 hover:text-slate-950'
                     }`}
                   >
-                    <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                    <Sparkles className="w-3.5 h-3.5 text-blue-600" />
                     <span>Join SOKO (New Account)</span>
                   </button>
                   <button
@@ -1485,11 +1783,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
                     onClick={() => setModalRole('supplier')}
                     className={`p-2.5 rounded-lg border text-left cursor-pointer transition-all ${
                       modalRole === 'supplier'
-                        ? 'bg-white border-amber-600 ring-2 ring-amber-500/20 text-slate-950 shadow-xs'
+                        ? 'bg-white border-blue-600 ring-2 ring-blue-500/20 text-slate-950 shadow-xs'
                         : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
                     }`}
                   >
-                    <span className="block text-[10px] font-mono text-amber-600 font-bold uppercase">Tier-1 Supplier</span>
+                    <span className="block text-[10px] font-mono text-blue-600 font-bold uppercase">Tier-1 Supplier</span>
                     <span className="block text-xs font-bold text-slate-900">Supplier</span>
                     <span className="block text-[10px] text-slate-400 truncate">Stockist & Fab</span>
                   </button>
@@ -1625,404 +1923,392 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth, onEnterApp
                   </div>
 
                   {modalMode === 'login' ? (
-                /* ================= LOGIN FOR BUYER / SUPPLIER / CONTRACTOR ================= */
-                <div className="space-y-4">
-                  {/* Quick One-Click Demo Login Banner */}
-                  <div className="p-3 rounded-lg bg-blue-50/70 border border-blue-200/80 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-blue-600 shrink-0" />
+                    /* ================= LOGIN FOR BUYER / SUPPLIER / CONTRACTOR ================= */
+                    <div className="space-y-4">
+                      {/* Quick One-Click Demo Login Banner */}
+                      <div className="p-3 rounded-lg bg-blue-50/70 border border-blue-200/80 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <Sparkles className="w-4 h-4 text-blue-600 shrink-0" />
+                          <div>
+                            <span className="text-[11px] font-bold text-blue-950 block">
+                              Instant One-Click Demo Login:
+                            </span>
+                            <span className="text-[10px] text-slate-600 font-mono">
+                              {modalRole === 'buyer'
+                                ? 'buyer@soko.ae (Marcus Vance)'
+                                : modalRole === 'supplier'
+                                ? 'supplier@soko.ae (Elena Rostova)'
+                                : 'contractor@soko.ae (Sarah Jenkins)'}
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (modalRole === 'buyer') {
+                              setBuyerForm((prev) => ({ ...prev, workEmail: 'buyer@soko.ae', password: 'Password123!' }));
+                            } else if (modalRole === 'supplier') {
+                              setSupplierForm((prev) => ({ ...prev, contactEmail: 'supplier@soko.ae', password: 'Password123!' }));
+                            } else {
+                              setContractorForm((prev) => ({ ...prev, workEmail: 'contractor@soko.ae', password: 'Password123!' }));
+                            }
+                          }}
+                          className="px-2.5 py-1 text-[11px] font-bold bg-white text-blue-700 hover:bg-blue-100 border border-blue-200 rounded-md transition-colors shrink-0 cursor-pointer shadow-2xs"
+                        >
+                          Autofill
+                        </button>
+                      </div>
+
                       <div>
-                        <span className="text-[11px] font-bold text-blue-950 block">
-                          Instant One-Click Demo Login:
-                        </span>
-                        <span className="text-[10px] text-slate-600 font-mono">
+                        <label className="block text-xs font-bold text-slate-700 mb-1">
                           {modalRole === 'buyer'
-                            ? 'buyer@soko.ae (Marcus Vance)'
+                            ? 'Buyer Corporate Email'
                             : modalRole === 'supplier'
-                            ? 'supplier@soko.ae (Elena Rostova)'
-                            : 'contractor@soko.ae (Sarah Jenkins)'}
-                        </span>
+                            ? 'Supplier Commercial Email'
+                            : 'Contractor Work Email'}
+                        </label>
+                        <input
+                          type="email"
+                          required
+                          value={
+                            modalRole === 'buyer'
+                              ? buyerForm.workEmail
+                              : modalRole === 'supplier'
+                              ? supplierForm.contactEmail
+                              : contractorForm.workEmail
+                          }
+                          onChange={(e) => {
+                            if (modalRole === 'buyer') {
+                              setBuyerForm({ ...buyerForm, workEmail: e.target.value });
+                            } else if (modalRole === 'supplier') {
+                              setSupplierForm({ ...supplierForm, contactEmail: e.target.value });
+                            } else {
+                              setContractorForm({ ...contractorForm, workEmail: e.target.value });
+                            }
+                          }}
+                          className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:outline-hidden focus:border-blue-600 font-mono"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">
+                          Account Password
+                        </label>
+                        <input
+                          type="password"
+                          required
+                          value={
+                            modalRole === 'buyer'
+                              ? buyerForm.password
+                              : modalRole === 'supplier'
+                              ? supplierForm.password
+                              : contractorForm.password
+                          }
+                          onChange={(e) => {
+                            if (modalRole === 'buyer') {
+                              setBuyerForm({ ...buyerForm, password: e.target.value });
+                            } else if (modalRole === 'supplier') {
+                              setSupplierForm({ ...supplierForm, password: e.target.value });
+                            } else {
+                              setContractorForm({ ...contractorForm, password: e.target.value });
+                            }
+                          }}
+                          className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:outline-hidden focus:border-blue-600 font-mono"
+                        />
+                      </div>
+
+                      <div className="pt-2">
+                        <button
+                          type="submit"
+                          disabled={isSubmitting}
+                          className="w-full py-3 rounded-lg font-bold text-xs text-white bg-blue-600 hover:bg-blue-700 transition-all shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
+                        >
+                          <span>
+                            {isSubmitting
+                              ? 'Authenticating...'
+                              : `Login as ${
+                                  modalRole === 'buyer'
+                                    ? 'Buyer (Enterprise)'
+                                    : modalRole === 'supplier'
+                                    ? 'Supplier (Tier-1)'
+                                    : 'Contractor'
+                                } →`}
+                          </span>
+                        </button>
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (modalRole === 'buyer') {
-                          setBuyerForm((prev) => ({ ...prev, workEmail: 'buyer@soko.ae', password: 'Password123!' }));
-                        } else if (modalRole === 'supplier') {
-                          setSupplierForm((prev) => ({ ...prev, contactEmail: 'supplier@soko.ae', password: 'Password123!' }));
-                        } else {
-                          setContractorForm((prev) => ({ ...prev, workEmail: 'contractor@soko.ae', password: 'Password123!' }));
-                        }
-                      }}
-                      className="px-2.5 py-1 text-[11px] font-bold bg-white text-blue-700 hover:bg-blue-100 border border-blue-200 rounded-md transition-colors shrink-0 cursor-pointer shadow-2xs"
-                    >
-                      Autofill
-                    </button>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      {modalRole === 'buyer'
-                        ? 'Buyer Corporate Email'
-                        : modalRole === 'supplier'
-                        ? 'Supplier Commercial Email'
-                        : 'Contractor Work Email'}
-                    </label>
-                    <input
-                      type="email"
-                      required
-                      value={
-                        modalRole === 'buyer'
-                          ? buyerForm.workEmail
-                          : modalRole === 'supplier'
-                          ? supplierForm.contactEmail
-                          : contractorForm.workEmail
-                      }
-                      onChange={(e) => {
-                        if (modalRole === 'buyer') {
-                          setBuyerForm({ ...buyerForm, workEmail: e.target.value });
-                        } else if (modalRole === 'supplier') {
-                          setSupplierForm({ ...supplierForm, contactEmail: e.target.value });
-                        } else {
-                          setContractorForm({ ...contractorForm, workEmail: e.target.value });
-                        }
-                      }}
-                      className="w-full text-xs px-3 py-2 border border-slate-300 rounded-md focus:outline-hidden focus:border-slate-950 font-mono"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Account Password
-                    </label>
-                    <input
-                      type="password"
-                      required
-                      value={
-                        modalRole === 'buyer'
-                          ? buyerForm.password
-                          : modalRole === 'supplier'
-                          ? supplierForm.password
-                          : contractorForm.password
-                      }
-                      onChange={(e) => {
-                        if (modalRole === 'buyer') {
-                          setBuyerForm({ ...buyerForm, password: e.target.value });
-                        } else if (modalRole === 'supplier') {
-                          setSupplierForm({ ...supplierForm, password: e.target.value });
-                        } else {
-                          setContractorForm({ ...contractorForm, password: e.target.value });
-                        }
-                      }}
-                      className="w-full text-xs px-3 py-2 border border-slate-300 rounded-md focus:outline-hidden focus:border-slate-950 font-mono"
-                    />
-                  </div>
-
-                  <div className="pt-2">
-                    <button
-                      type="submit"
-                      disabled={isSubmitting}
-                      className={`w-full py-3 rounded-md font-bold text-xs text-white transition-all shadow-xs cursor-pointer flex items-center justify-center gap-1.5 ${
-                        modalRole === 'buyer'
-                          ? 'bg-blue-600 hover:bg-blue-700'
-                          : modalRole === 'supplier'
-                          ? 'bg-amber-600 hover:bg-amber-700'
-                          : 'bg-slate-950 hover:bg-slate-900'
-                      }`}
-                    >
-                      <span>
-                        {isSubmitting
-                          ? 'Authenticating...'
-                          : `Login as ${
-                              modalRole === 'buyer'
-                                ? 'Buyer (Enterprise)'
-                                : modalRole === 'supplier'
-                                ? 'Supplier (Tier-1)'
-                                : 'Contractor'
-                            } →`}
-                      </span>
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                /* ================= JOIN FOR BUYER / SUPPLIER / CONTRACTOR ================= */
-                <>
-                  {modalRole === 'buyer' && (
+                  ) : (
+                    /* ================= JOIN FOR BUYER / SUPPLIER / CONTRACTOR ================= */
                     <>
+                      {modalRole === 'buyer' && (
+                        <>
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1">
+                              Enterprise Organization / Sourcing Group Name
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              value={buyerForm.companyName}
+                              onChange={(e) => setBuyerForm({ ...buyerForm, companyName: e.target.value })}
+                              className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:outline-hidden focus:border-blue-600"
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-xs font-bold text-slate-700 mb-1">
+                                Trade License / Commercial ID
+                              </label>
+                              <input
+                                type="text"
+                                required
+                                value={buyerForm.tradeLicense}
+                                onChange={(e) => setBuyerForm({ ...buyerForm, tradeLicense: e.target.value })}
+                                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:outline-hidden focus:border-blue-600 font-mono"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-bold text-slate-700 mb-1">
+                                Sourcing Department
+                              </label>
+                              <input
+                                type="text"
+                                required
+                                value={buyerForm.primaryDepartment}
+                                onChange={(e) => setBuyerForm({ ...buyerForm, primaryDepartment: e.target.value })}
+                                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:outline-hidden focus:border-blue-600"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1">
+                              Corporate Procurement Work Email
+                            </label>
+                            <input
+                              type="email"
+                              required
+                              value={buyerForm.workEmail}
+                              onChange={(e) => setBuyerForm({ ...buyerForm, workEmail: e.target.value })}
+                              className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:outline-hidden focus:border-blue-600 font-mono"
+                            />
+                          </div>
+                        </>
+                      )}
+
+                      {modalRole === 'contractor' && (
+                        <>
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1">
+                              Contractor / Developer Name
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              value={contractorForm.companyName}
+                              onChange={(e) =>
+                                setContractorForm({ ...contractorForm, companyName: e.target.value })
+                              }
+                              className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:outline-hidden focus:border-blue-600"
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-xs font-bold text-slate-700 mb-1">
+                                Trade License #
+                              </label>
+                              <input
+                                type="text"
+                                required
+                                value={contractorForm.tradeLicense}
+                                onChange={(e) =>
+                                  setContractorForm({ ...contractorForm, tradeLicense: e.target.value })
+                                }
+                                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:outline-hidden focus:border-blue-600 font-mono"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-bold text-slate-700 mb-1">
+                                Jurisdiction
+                              </label>
+                              <input
+                                type="text"
+                                required
+                                value={contractorForm.jurisdiction}
+                                onChange={(e) =>
+                                  setContractorForm({ ...contractorForm, jurisdiction: e.target.value })
+                                }
+                                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:outline-hidden focus:border-blue-600"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1">
+                              Primary Department / Role
+                            </label>
+                            <select
+                              value={contractorForm.primaryRole}
+                              onChange={(e) =>
+                                setContractorForm({ ...contractorForm, primaryRole: e.target.value })
+                              }
+                              className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:outline-hidden focus:border-blue-600 bg-white"
+                            >
+                              <option>Commercial & Procurement</option>
+                              <option>Tendering & Estimating</option>
+                              <option>Project Engineering & Site QC</option>
+                              <option>Executive Leadership</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1">
+                              Corporate Work Email
+                            </label>
+                            <input
+                              type="email"
+                              required
+                              value={contractorForm.workEmail}
+                              onChange={(e) =>
+                                setContractorForm({ ...contractorForm, workEmail: e.target.value })
+                              }
+                              className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:outline-hidden focus:border-blue-600 font-mono"
+                            />
+                          </div>
+                        </>
+                      )}
+
+                      {modalRole === 'supplier' && (
+                        <>
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1">
+                              Manufacturing / Stockist Entity Name
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              value={supplierForm.entityName}
+                              onChange={(e) =>
+                                setSupplierForm({ ...supplierForm, entityName: e.target.value })
+                              }
+                              className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:outline-hidden focus:border-blue-600"
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-xs font-bold text-slate-700 mb-1">
+                                Trade License #
+                              </label>
+                              <input
+                                type="text"
+                                required
+                                value={supplierForm.tradeLicense}
+                                onChange={(e) =>
+                                  setSupplierForm({ ...supplierForm, tradeLicense: e.target.value })
+                                }
+                                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:outline-hidden focus:border-blue-600 font-mono"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-bold text-slate-700 mb-1">
+                                Primary Material Category
+                              </label>
+                              <input
+                                type="text"
+                                required
+                                value={supplierForm.materialCategory}
+                                onChange={(e) =>
+                                  setSupplierForm({ ...supplierForm, materialCategory: e.target.value })
+                                }
+                                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:outline-hidden focus:border-blue-600"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1">
+                              Factory / Main Yard Location
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              value={supplierForm.facilityLocation}
+                              onChange={(e) =>
+                                setSupplierForm({ ...supplierForm, facilityLocation: e.target.value })
+                              }
+                              className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:outline-hidden focus:border-blue-600"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1">
+                              Commercial Contact Email
+                            </label>
+                            <input
+                              type="email"
+                              required
+                              value={supplierForm.contactEmail}
+                              onChange={(e) =>
+                                setSupplierForm({ ...supplierForm, contactEmail: e.target.value })
+                              }
+                              className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:outline-hidden focus:border-blue-600 font-mono"
+                            />
+                          </div>
+                        </>
+                      )}
+
                       <div>
                         <label className="block text-xs font-bold text-slate-700 mb-1">
-                          Enterprise Organization / Sourcing Group Name
+                          Account Password
                         </label>
                         <input
-                          type="text"
+                          type="password"
                           required
-                          value={buyerForm.companyName}
-                          onChange={(e) => setBuyerForm({ ...buyerForm, companyName: e.target.value })}
-                          className="w-full text-xs px-3 py-2 border border-slate-300 rounded-md focus:outline-hidden focus:border-blue-600"
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs font-bold text-slate-700 mb-1">
-                            Trade License / Commercial ID
-                          </label>
-                          <input
-                            type="text"
-                            required
-                            value={buyerForm.tradeLicense}
-                            onChange={(e) => setBuyerForm({ ...buyerForm, tradeLicense: e.target.value })}
-                            className="w-full text-xs px-3 py-2 border border-slate-300 rounded-md focus:outline-hidden focus:border-blue-600 font-mono"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-bold text-slate-700 mb-1">
-                            Sourcing Department
-                          </label>
-                          <input
-                            type="text"
-                            required
-                            value={buyerForm.primaryDepartment}
-                            onChange={(e) => setBuyerForm({ ...buyerForm, primaryDepartment: e.target.value })}
-                            className="w-full text-xs px-3 py-2 border border-slate-300 rounded-md focus:outline-hidden focus:border-blue-600"
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1">
-                          Corporate Procurement Work Email
-                        </label>
-                        <input
-                          type="email"
-                          required
-                          value={buyerForm.workEmail}
-                          onChange={(e) => setBuyerForm({ ...buyerForm, workEmail: e.target.value })}
-                          className="w-full text-xs px-3 py-2 border border-slate-300 rounded-md focus:outline-hidden focus:border-blue-600 font-mono"
-                        />
-                      </div>
-                    </>
-                  )}
-
-                  {modalRole === 'contractor' && (
-                    <>
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1">
-                          Contractor / Developer Name
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          value={contractorForm.companyName}
-                          onChange={(e) =>
-                            setContractorForm({ ...contractorForm, companyName: e.target.value })
+                          value={
+                            modalRole === 'buyer'
+                              ? buyerForm.password
+                              : modalRole === 'supplier'
+                              ? supplierForm.password
+                              : contractorForm.password
                           }
-                          className="w-full text-xs px-3 py-2 border border-slate-300 rounded-md focus:outline-hidden focus:border-slate-950"
+                          onChange={(e) => {
+                            if (modalRole === 'buyer') {
+                              setBuyerForm({ ...buyerForm, password: e.target.value });
+                            } else if (modalRole === 'supplier') {
+                              setSupplierForm({ ...supplierForm, password: e.target.value });
+                            } else {
+                              setContractorForm({ ...contractorForm, password: e.target.value });
+                            }
+                          }}
+                          className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:outline-hidden focus:border-blue-600 font-mono"
                         />
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs font-bold text-slate-700 mb-1">
-                            Trade License #
-                          </label>
-                          <input
-                            type="text"
-                            required
-                            value={contractorForm.tradeLicense}
-                            onChange={(e) =>
-                              setContractorForm({ ...contractorForm, tradeLicense: e.target.value })
-                            }
-                            className="w-full text-xs px-3 py-2 border border-slate-300 rounded-md focus:outline-hidden focus:border-slate-950 font-mono"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-bold text-slate-700 mb-1">
-                            Jurisdiction
-                          </label>
-                          <input
-                            type="text"
-                            required
-                            value={contractorForm.jurisdiction}
-                            onChange={(e) =>
-                              setContractorForm({ ...contractorForm, jurisdiction: e.target.value })
-                            }
-                            className="w-full text-xs px-3 py-2 border border-slate-300 rounded-md focus:outline-hidden focus:border-slate-950"
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1">
-                          Primary Department / Role
-                        </label>
-                        <select
-                          value={contractorForm.primaryRole}
-                          onChange={(e) =>
-                            setContractorForm({ ...contractorForm, primaryRole: e.target.value })
-                          }
-                          className="w-full text-xs px-3 py-2 border border-slate-300 rounded-md focus:outline-hidden focus:border-slate-950 bg-white"
+                      <div className="pt-2">
+                        <button
+                          type="submit"
+                          disabled={isSubmitting}
+                          className="w-full py-3 rounded-lg font-bold text-xs text-white bg-blue-600 hover:bg-blue-700 transition-all shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
                         >
-                          <option>Commercial & Procurement</option>
-                          <option>Tendering & Estimating</option>
-                          <option>Project Engineering & Site QC</option>
-                          <option>Executive Leadership</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1">
-                          Corporate Work Email
-                        </label>
-                        <input
-                          type="email"
-                          required
-                          value={contractorForm.workEmail}
-                          onChange={(e) =>
-                            setContractorForm({ ...contractorForm, workEmail: e.target.value })
-                          }
-                          className="w-full text-xs px-3 py-2 border border-slate-300 rounded-md focus:outline-hidden focus:border-slate-950 font-mono"
-                        />
+                          <span>
+                            {isSubmitting
+                              ? 'Processing...'
+                              : modalRole === 'buyer'
+                              ? 'Join SOKO as Enterprise Buyer →'
+                              : modalRole === 'supplier'
+                              ? 'Create Verified Supplier Profile →'
+                              : 'Register Contractor (100% Free Access) →'}
+                          </span>
+                        </button>
                       </div>
                     </>
                   )}
-
-                  {modalRole === 'supplier' && (
-                    <>
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1">
-                          Manufacturing / Stockist Entity Name
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          value={supplierForm.entityName}
-                          onChange={(e) =>
-                            setSupplierForm({ ...supplierForm, entityName: e.target.value })
-                          }
-                          className="w-full text-xs px-3 py-2 border border-slate-300 rounded-md focus:outline-hidden focus:border-amber-600"
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs font-bold text-slate-700 mb-1">
-                            Trade License #
-                          </label>
-                          <input
-                            type="text"
-                            required
-                            value={supplierForm.tradeLicense}
-                            onChange={(e) =>
-                              setSupplierForm({ ...supplierForm, tradeLicense: e.target.value })
-                            }
-                            className="w-full text-xs px-3 py-2 border border-slate-300 rounded-md focus:outline-hidden focus:border-amber-600 font-mono"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-bold text-slate-700 mb-1">
-                            Primary Material Category
-                          </label>
-                          <input
-                            type="text"
-                            required
-                            value={supplierForm.materialCategory}
-                            onChange={(e) =>
-                              setSupplierForm({ ...supplierForm, materialCategory: e.target.value })
-                            }
-                            className="w-full text-xs px-3 py-2 border border-slate-300 rounded-md focus:outline-hidden focus:border-amber-600"
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1">
-                          Factory / Main Yard Location
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          value={supplierForm.facilityLocation}
-                          onChange={(e) =>
-                            setSupplierForm({ ...supplierForm, facilityLocation: e.target.value })
-                          }
-                          className="w-full text-xs px-3 py-2 border border-slate-300 rounded-md focus:outline-hidden focus:border-amber-600"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1">
-                          Commercial Contact Email
-                        </label>
-                        <input
-                          type="email"
-                          required
-                          value={supplierForm.contactEmail}
-                          onChange={(e) =>
-                            setSupplierForm({ ...supplierForm, contactEmail: e.target.value })
-                          }
-                          className="w-full text-xs px-3 py-2 border border-slate-300 rounded-md focus:outline-hidden focus:border-amber-600 font-mono"
-                        />
-                      </div>
-                    </>
-                  )}
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Account Password
-                    </label>
-                    <input
-                      type="password"
-                      required
-                      value={
-                        modalRole === 'buyer'
-                          ? buyerForm.password
-                          : modalRole === 'supplier'
-                          ? supplierForm.password
-                          : contractorForm.password
-                      }
-                      onChange={(e) => {
-                        if (modalRole === 'buyer') {
-                          setBuyerForm({ ...buyerForm, password: e.target.value });
-                        } else if (modalRole === 'supplier') {
-                          setSupplierForm({ ...supplierForm, password: e.target.value });
-                        } else {
-                          setContractorForm({ ...contractorForm, password: e.target.value });
-                        }
-                      }}
-                      className="w-full text-xs px-3 py-2 border border-slate-300 rounded-md focus:outline-hidden focus:border-slate-950 font-mono"
-                    />
-                  </div>
-
-                  <div className="pt-2">
-                    <button
-                      type="submit"
-                      disabled={isSubmitting}
-                      className={`w-full py-3 rounded-md font-bold text-xs text-white transition-all shadow-xs cursor-pointer flex items-center justify-center gap-1.5 ${
-                        modalRole === 'buyer'
-                          ? 'bg-blue-600 hover:bg-blue-700'
-                          : modalRole === 'supplier'
-                          ? 'bg-amber-600 hover:bg-amber-700'
-                          : 'bg-slate-950 hover:bg-slate-900'
-                      }`}
-                    >
-                      <span>
-                        {isSubmitting
-                          ? 'Processing...'
-                          : modalRole === 'buyer'
-                          ? 'Join SOKO as Enterprise Buyer →'
-                          : modalRole === 'supplier'
-                          ? 'Create Verified Supplier Profile →'
-                          : 'Register Contractor (100% Free Access) →'}
-                      </span>
-                    </button>
-                  </div>
                 </>
               )}
-            </>
-          )}
-        </form>
+            </form>
           </div>
         </div>
       )}

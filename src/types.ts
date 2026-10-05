@@ -125,12 +125,35 @@ export interface InfographicTipItem {
   impactBadge: string;
 }
 
+export interface InfographicStakeholderTension {
+  id: string;
+  role: string;
+  quote: string;
+  department: string;
+  tension: string;
+  resolution: string;
+  side: 'left' | 'right';
+  badgeColor?: string;
+}
+
+export interface InfographicCompetencyPillar {
+  title: string;
+  subtitle: string;
+  iconName: string;
+  description: string;
+}
+
 export interface PostInfographicData {
   title: string;
   subtitle: string;
   versionBadge: string;
   downloadFilename: string;
   summaryMetric: string;
+  imageUrl?: string;
+  authorPlaque?: string;
+  motto?: string;
+  tensions?: InfographicStakeholderTension[];
+  pillars?: InfographicCompetencyPillar[];
   tips: InfographicTipItem[];
 }
 
@@ -446,6 +469,7 @@ export interface OpportunityItem {
   issuingMemberName?: string;
   // Market Deals & Sponsored Campaigns
   opportunityType?: 'market_deal' | 'buyer_campaign';
+  campaignCategory?: string;
   dealCategory?: 'machinery' | 'bulk_steel' | 'surplus_material' | 'special_price';
   dealDiscount?: string;
   originalPrice?: string;

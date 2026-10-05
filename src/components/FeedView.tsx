@@ -154,141 +154,141 @@ export const FeedView: React.FC<FeedViewProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: User Profile & Sourcing Shortcuts */}
         <aside className="lg:col-span-3 space-y-4">
-          {/* User Mini Profile Card */}
-          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
-            {/* User Mini Profile Card Banner with 3 Chooseable Options */}
-            <div
-              className={`h-20 relative overflow-hidden transition-all duration-300 ${
-                profileBannerOption === 'blueprint'
-                  ? 'bg-gradient-to-r from-blue-900 via-indigo-950 to-slate-900 border-b border-blue-500/20'
-                  : profileBannerOption === 'executive'
-                  ? 'bg-gradient-to-r from-slate-950 via-zinc-900 to-amber-950 border-b border-amber-500/30'
-                  : 'bg-gradient-to-r from-emerald-950 via-teal-950 to-cyan-950 border-b border-emerald-500/20'
-              }`}
-            >
-              {/* Option 1: Blueprint Technical Grid Pattern */}
-              {profileBannerOption === 'blueprint' && (
-                <div
-                  className="absolute inset-0 opacity-25 pointer-events-none"
-                  style={{
-                    backgroundImage: `linear-gradient(to right, #60a5fa 1px, transparent 1px), linear-gradient(to bottom, #60a5fa 1px, transparent 1px)`,
-                    backgroundSize: '12px 12px',
-                  }}
-                />
-              )}
-
-              {/* Option 2: Executive Gold Shimmer Gradient */}
-              {profileBannerOption === 'executive' && (
-                <div
-                  className="absolute inset-0 opacity-30 pointer-events-none bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-amber-400 via-yellow-600/30 to-transparent"
-                />
-              )}
-
-              {/* Option 3: Emerald Dot Matrix Pattern */}
-              {profileBannerOption === 'emerald' && (
-                <div
-                  className="absolute inset-0 opacity-20 pointer-events-none"
-                  style={{
-                    backgroundImage: `radial-gradient(#34d399 1px, transparent 1px)`,
-                    backgroundSize: '10px 10px',
-                  }}
-                />
-              )}
-
-              {/* 3 Options Picker */}
-              <div className="absolute top-2 left-2 flex items-center bg-black/60 backdrop-blur-md p-0.5 rounded-full border border-white/20 z-10 shadow-xs">
-                <button
-                  type="button"
-                  onClick={() => handleSelectBannerOption('blueprint')}
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
-                    profileBannerOption === 'blueprint'
-                      ? 'bg-blue-600 text-white shadow-xs'
-                      : 'text-slate-300 hover:text-white'
-                  }`}
-                  title="Option 1: Blueprint Engineering Grid"
-                >
-                  <span>1</span>
-                  <span className="hidden sm:inline">Blueprint</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleSelectBannerOption('executive')}
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
-                    profileBannerOption === 'executive'
-                      ? 'bg-amber-600 text-white shadow-xs'
-                      : 'text-slate-300 hover:text-white'
-                  }`}
-                  title="Option 2: Executive Onyx & Gold"
-                >
-                  <span>2</span>
-                  <span className="hidden sm:inline">Executive</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleSelectBannerOption('emerald')}
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
-                    profileBannerOption === 'emerald'
-                      ? 'bg-emerald-600 text-white shadow-xs'
-                      : 'text-slate-300 hover:text-white'
-                  }`}
-                  title="Option 3: Industrial Emerald"
-                >
-                  <span>3</span>
-                  <span className="hidden sm:inline">Emerald</span>
-                </button>
-              </div>
-
-              {/* Banner Badge based on option */}
-              <div className="absolute top-2 right-2 z-10">
+            {/* User Mini Profile Card */}
+            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
+              {/* User Mini Profile Card Banner with 3 Chooseable Options */}
+              <div
+                className={`h-20 relative overflow-hidden transition-all duration-300 ${
+                  profileBannerOption === 'blueprint'
+                    ? 'bg-gradient-to-r from-blue-900 via-indigo-950 to-slate-900 border-b border-blue-500/20'
+                    : profileBannerOption === 'executive'
+                    ? 'bg-gradient-to-r from-slate-950 via-zinc-900 to-amber-950 border-b border-amber-500/30'
+                    : 'bg-gradient-to-r from-emerald-950 via-teal-950 to-cyan-950 border-b border-emerald-500/20'
+                }`}
+              >
+                {/* Option 1: Blueprint Technical Grid Pattern */}
                 {profileBannerOption === 'blueprint' && (
-                  <span className="px-2 py-0.5 bg-blue-500/20 backdrop-blur-xs text-blue-200 border border-blue-400/30 text-[10px] font-semibold rounded shadow-xs flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-                    ProcureID
-                  </span>
+                  <div
+                    className="absolute inset-0 opacity-25 pointer-events-none"
+                    style={{
+                      backgroundImage: `linear-gradient(to right, #60a5fa 1px, transparent 1px), linear-gradient(to bottom, #60a5fa 1px, transparent 1px)`,
+                      backgroundSize: '12px 12px',
+                    }}
+                  />
                 )}
-                {profileBannerOption === 'executive' && (
-                  <span className="px-2 py-0.5 bg-amber-500/20 backdrop-blur-xs text-amber-200 border border-amber-400/40 text-[10px] font-semibold rounded shadow-xs flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                    Executive
-                  </span>
-                )}
-                {profileBannerOption === 'emerald' && (
-                  <span className="px-2 py-0.5 bg-emerald-500/20 backdrop-blur-xs text-emerald-200 border border-emerald-400/30 text-[10px] font-semibold rounded shadow-xs flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    Verified
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className="px-4 pb-4 pt-0 relative">
-              <div className="-mt-9 mb-2 flex items-end justify-between">
-                <img
-                  src={currentUser.avatarUrl}
-                  alt={currentUser.name}
-                  className="w-16 h-16 rounded-full border-4 border-white object-cover shadow-xs"
-                />
-                {getRoleBadge(currentUser.role)}
-              </div>
-              <h3 className="font-bold text-slate-900 text-base flex items-center gap-1">
-                {currentUser.name}
-                {currentUser.verified && <CheckCircle2 className="w-4 h-4 text-blue-600 inline" />}
-              </h3>
-              <p className="text-xs text-slate-600 mt-0.5 line-clamp-2">{currentUser.title}</p>
-              <p className="text-xs font-semibold text-slate-700 mt-1">{currentUser.company}</p>
 
-              <div className="mt-4 pt-3 border-t border-slate-100 space-y-1.5">
-                <button
-                  id="view-my-card-btn"
-                  onClick={() => onNavigateToTab('card')}
-                  className="w-full py-2 bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-200 rounded-lg text-xs font-semibold text-slate-700 hover:text-blue-700 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-                  My Digital Business Card
-                </button>
+                {/* Option 2: Executive Gold Shimmer Gradient */}
+                {profileBannerOption === 'executive' && (
+                  <div
+                    className="absolute inset-0 opacity-30 pointer-events-none bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-amber-400 via-yellow-600/30 to-transparent"
+                  />
+                )}
+
+                {/* Option 3: Emerald Dot Matrix Pattern */}
+                {profileBannerOption === 'emerald' && (
+                  <div
+                    className="absolute inset-0 opacity-20 pointer-events-none"
+                    style={{
+                      backgroundImage: `radial-gradient(#34d399 1px, transparent 1px)`,
+                      backgroundSize: '10px 10px',
+                    }}
+                  />
+                )}
+
+                {/* 3 Options Picker */}
+                <div className="absolute top-2 left-2 flex items-center bg-black/60 backdrop-blur-md p-0.5 rounded-full border border-white/20 z-10 shadow-xs">
+                  <button
+                    type="button"
+                    onClick={() => handleSelectBannerOption('blueprint')}
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                      profileBannerOption === 'blueprint'
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'text-slate-300 hover:text-white'
+                    }`}
+                    title="Option 1: Blueprint Engineering Grid"
+                  >
+                    <span>1</span>
+                    <span className="hidden sm:inline">Blueprint</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectBannerOption('executive')}
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                      profileBannerOption === 'executive'
+                        ? 'bg-amber-600 text-white shadow-xs'
+                        : 'text-slate-300 hover:text-white'
+                    }`}
+                    title="Option 2: Executive Onyx & Gold"
+                  >
+                    <span>2</span>
+                    <span className="hidden sm:inline">Executive</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectBannerOption('emerald')}
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                      profileBannerOption === 'emerald'
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'text-slate-300 hover:text-white'
+                    }`}
+                    title="Option 3: Industrial Emerald"
+                  >
+                    <span>3</span>
+                    <span className="hidden sm:inline">Emerald</span>
+                  </button>
+                </div>
+
+                {/* Banner Badge based on option */}
+                <div className="absolute top-2 right-2 z-10">
+                  {profileBannerOption === 'blueprint' && (
+                    <span className="px-2 py-0.5 bg-blue-500/20 backdrop-blur-xs text-blue-200 border border-blue-400/30 text-[10px] font-semibold rounded shadow-xs flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                      ProcureID
+                    </span>
+                  )}
+                  {profileBannerOption === 'executive' && (
+                    <span className="px-2 py-0.5 bg-amber-500/20 backdrop-blur-xs text-amber-200 border border-amber-400/40 text-[10px] font-semibold rounded shadow-xs flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                      Executive
+                    </span>
+                  )}
+                  {profileBannerOption === 'emerald' && (
+                    <span className="px-2 py-0.5 bg-emerald-500/20 backdrop-blur-xs text-emerald-200 border border-emerald-400/30 text-[10px] font-semibold rounded shadow-xs flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      Verified
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="px-4 pb-4 pt-0 relative">
+                <div className="-mt-9 mb-2 flex items-end justify-between">
+                  <img
+                    src={currentUser.avatarUrl}
+                    alt={currentUser.name}
+                    className="w-16 h-16 rounded-full border-4 border-white object-cover shadow-xs"
+                  />
+                  {getRoleBadge(currentUser.role)}
+                </div>
+                <h3 className="font-bold text-slate-900 text-base flex items-center gap-1">
+                  {currentUser.name}
+                  {currentUser.verified && <CheckCircle2 className="w-4 h-4 text-blue-600 inline" />}
+                </h3>
+                <p className="text-xs text-slate-600 mt-0.5 line-clamp-2">{currentUser.title}</p>
+                <p className="text-xs font-semibold text-slate-700 mt-1">{currentUser.company}</p>
+
+                <div className="mt-4 pt-3 border-t border-slate-100 space-y-1.5">
+                  <button
+                    id="view-my-card-btn"
+                    onClick={() => onNavigateToTab('card')}
+                    className="w-full py-2 bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-200 rounded-lg text-xs font-semibold text-slate-700 hover:text-blue-700 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                    My Digital Business Card
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        </aside>
+          </aside>
 
         {/* Center Column: soko.ae Wire & Editorial Stream */}
         <main className="lg:col-span-6 space-y-4">
@@ -351,8 +351,9 @@ export const FeedView: React.FC<FeedViewProps> = ({
             ))}
           </div>
 
-          {/* Post Items */}
-          <div className="space-y-4">
+          {/* Cards Feed View */}
+
+            <div className="space-y-4">
             {filteredPosts.map((post) => {
               const isCommentOpen = activeCommentPostId === post.id;
               const isSaved = savedPosts[post.id];
@@ -611,9 +612,10 @@ export const FeedView: React.FC<FeedViewProps> = ({
               );
             })}
           </div>
-        </main>
+      </main>
 
-        {/* Right Column: Commodity Indices, Recommended Suppliers, Bidding Deadlines */}
+      {/* Right Column: Commodity Indices, Recommended Suppliers, Bidding Deadlines */}
+
         <aside className="lg:col-span-3 space-y-4">
           {/* Commodity & Material Market Watch */}
           <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">

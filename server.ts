@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import { authRouter } from './src/server/auth.ts';
 import { adminRouter } from './src/server/admin.ts';
+import { sokoAiRouter } from './src/server/sokoAi.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,6 +19,7 @@ async function startServer() {
   // API Routes
   app.use('/api/auth', authRouter);
   app.use('/api/admin', adminRouter);
+  app.use('/api/soko-ai', sokoAiRouter);
 
   // Health check endpoint
   app.get('/api/health', (req, res) => {

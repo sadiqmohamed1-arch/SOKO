@@ -52,26 +52,199 @@ export const INITIAL_CURRENT_USER: UserProfile = {
 export const INITIAL_POSTS: FeedPost[] = [
   {
     id: 'post_1',
-    authorId: 'soko_editorial',
-    authorName: 'soko.ae',
-    authorRole: 'official',
-    authorCompany: 'soko.ae Procurement Intelligence',
-    authorAvatar: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=80',
+    authorId: 'mohamed_sadiq',
+    authorName: 'Mohamed Sadiq',
+    authorRole: 'buyer',
+    authorCompany: 'Strategic Procurement & Supply Chain Excellence',
+    authorAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
     verified: true,
-    timestamp: '1h ago',
+    timestamp: 'Just now',
     type: 'procurement',
-    title: '📊 INFOGRAPHIC: 7 Golden Rules of Strategic Industrial Procurement [Tactical Cheat Sheet]',
-    content: 'In heavy industrial procurement, the lowest quote is rarely the cheapest outcome. When sourcing high-consequence components—such as structural steel, valves, or power transformers—over 60% of procurement directors report post-award cost creep.\n\nTo help EPC leaders and sourcing directors insulate their projects, the soko.ae Procurement Intelligence desk has synthesized the "7 Golden Rules of Strategic Procurement". Click below to explore each milestone formula, download the high-res cheat sheet, or copy the audit checklist.',
-    categoryTag: 'Procurement Strategy',
-    readTime: '4 min read',
-    keyTakeaway: 'Awarding contracts solely on lowest FOB unit price causes an average 18.4% project budget blowout. Always enforce landed 3-year TCO modeling, milestone escrow gating, and 70/30 dual sourcing.',
-    tags: ['#ProcurementStrategy', '#TCO', '#SupplyChain', '#CostOptimization', '#Infographic'],
+    title: '📊 INFOGRAPHIC: Procurement Manager — Everyone Wants Something Different! [10 Stakeholder Tensions & 7 Core Pillars]',
+    content: `One Person. Many Expectations! The Daily Reality of Modern Strategic Procurement.
+
+In commercial EPC projects and heavy industrial supply chains, the Procurement Manager sits at the epicenter of organizational forces. Every department pulls in a different direction with urgent, competing demands:
+
+• Management: "We need lower costs!" — Demanding double-digit budget reductions to hit quarterly targets.
+• Finance & Audit: "Approved budget please!" — Locking down purchase commitments and tightening cash outflows.
+• Business Partners: "Can you negotiate better terms?" — Extending payment cycles to Net 60/90 while requiring consignment stock.
+• Internal Teams & Operations: "We need more stock availability!" — Insisting on heavy buffer inventory to prevent downtime.
+• Market & Industry: "Keep an eye on market trends!" — Tracking volatile Platts steel, LME copper, and container freight indices.
+• Tier-1 Suppliers: "We need faster delivery!" — Demanding frozen engineering specifications with zero change-orders.
+• Quality & Compliance: "We need quality & compliance!" — Enforcing strict ASTM/ISO metallurgy audits and zero-defect tolerances.
+• Logistics & Yard: "We need on-time delivery!" — Battling port demurrage risks and staging area congestion.
+• Vendors & Subcontractors: "We need faster payments!" — Requiring accelerated 15-day liquidity to meet site payroll.
+• Executive Leadership: "Drive strategic value!" — Expecting procurement to be a differentiator in EBITDA and ESG governance.
+
+Caught in the middle, true procurement excellence is not about saying "yes" to one side and "no" to another. It is the art of mastering the 7 core pillars:
+1. Negotiation Skills
+2. Supply Chain Management
+3. Vendor Management
+4. Cost Optimization
+5. Process Improvement
+6. Strategic Sourcing
+7. Stakeholder Management
+
+Motto: Right Product. Right Quality. Right Time. Right Cost. Always! Explore the interactive infographic below, inspect the stakeholder conflict solutions, and download the tactical cheatsheet.`,
+    categoryTag: 'Procurement Infographics',
+    readTime: '3 min read',
+    keyTakeaway: 'Right Product. Right Quality. Right Time. Right Cost. Always! The elite Procurement Manager thrives at the intersection of conflicting pressures by applying the 7 Core Pillars to transform competing demands into collaborative enterprise value.',
+    tags: ['#ProcurementInfographics', '#ProcurementManager', '#StakeholderManagement', '#StrategicSourcing', '#SupplyChain', '#Negotiation', '#MohamedSadiq'],
     infographic: {
-      title: '7 GOLDEN RULES OF STRATEGIC PROCUREMENT',
-      subtitle: 'A Field-Tested Tactical Cheat Sheet for EPC Project Directors, Buyers & Sourcing Leaders to De-Risk Capital Projects & Prevent 20%+ Budget Blowouts.',
-      versionBadge: 'Tactical Playbook 2026',
-      downloadFilename: 'soko-procurement-7-golden-rules-infographic.pdf',
-      summaryMetric: 'Averts ~18.4% Cost Creep',
+      title: 'PROCUREMENT MANAGER: Everyone Wants Something Different!',
+      subtitle: 'One Person. Many Expectations! How Strategic Procurement Leaders Balance 10 Competing Stakeholder Forces Through 7 Core Competency Pillars.',
+      versionBadge: 'Executive Infographic 2026',
+      downloadFilename: 'soko-procurement-manager-infographic.svg',
+      summaryMetric: '10 Stakeholder Tensions • 7 Core Pillars',
+      imageUrl: '/Gemini_Generated_Image_8en7w68en7w68en7.jpg',
+      authorPlaque: 'Mohamed Sadiq',
+      motto: 'Right Product. Right Quality. Right Time. Right Cost. Always!',
+      tensions: [
+        {
+          id: 't_mgmt',
+          role: 'Management',
+          quote: 'We need lower costs!',
+          department: 'Executive Management',
+          tension: 'Demands double-digit cost reduction to protect quarterly EBITDA margins, often ignoring long-term operational risk.',
+          resolution: 'Pivot from FOB unit price to Total Cost of Ownership (TCO). Consolidate category spend, establish index-linked risk sharing, and negotiate volume rebates.',
+          side: 'left',
+          badgeColor: 'red',
+        },
+        {
+          id: 't_fin',
+          role: 'Finance & Audit',
+          quote: 'Approved budget please!',
+          department: 'Finance & Internal Audit',
+          tension: 'Strict capital controls, fiscal scrutiny, and reluctance to release milestone commitments without exhaustive paperwork.',
+          resolution: 'Implement 3-stage milestone escrow gating (20% MTC QA -> 30% Verified BoL -> 50% Jobsite Acceptance) with transparent rolling cash forecasts.',
+          side: 'left',
+          badgeColor: 'amber',
+        },
+        {
+          id: 't_bp',
+          role: 'Business Partners',
+          quote: 'Can you negotiate better terms?',
+          department: 'Commercial & Contracts',
+          tension: 'Pressure to push supplier payment terms to Net 60/90 while avoiding price escalation or vendor friction.',
+          resolution: 'Deploy Supply Chain Financing (SCF) and dynamic early-payment discounts (e.g. 2/10 Net 60), ensuring vendor liquidity while protecting buyer working capital.',
+          side: 'left',
+          badgeColor: 'orange',
+        },
+        {
+          id: 't_ops',
+          role: 'Internal Teams & Ops',
+          quote: 'We need more stock availability!',
+          department: 'Site Engineering & Maintenance',
+          tension: 'Demands high safety stock buffers to avoid downtime, inflating inventory carrying costs and warehouse congestion.',
+          resolution: 'Establish Vendor-Managed Inventory (VMI) and pre-negotiated consignment agreements with 48-hour localized buffer guarantees.',
+          side: 'left',
+          badgeColor: 'blue',
+        },
+        {
+          id: 't_mkt',
+          role: 'Market & Industry',
+          quote: 'Keep an eye on market trends!',
+          department: 'Procurement Intelligence',
+          tension: 'Constant volatility in geopolitical shipping lanes, tariffs, and raw material index spikes (LME Copper, Platts Steel).',
+          resolution: 'Adopt Platts/LME index-linked pricing collars (±3% mutual risk corridor) and enforce the 70/30 dual-sourcing rule.',
+          side: 'left',
+          badgeColor: 'purple',
+        },
+        {
+          id: 't_sup',
+          role: 'Tier-1 Suppliers',
+          quote: 'We need faster delivery!',
+          department: 'Primary Manufacturing Partners',
+          tension: 'Struggles with production capacity and pushes for expedited purchase orders with frozen technical specifications.',
+          resolution: 'Implement Early Supplier Involvement (ESI) in engineering design, share rolling 12-month demand forecasts, and provide rapid submittal reviews.',
+          side: 'right',
+          badgeColor: 'emerald',
+        },
+        {
+          id: 't_qa',
+          role: 'Quality & Compliance',
+          quote: 'We need quality & compliance!',
+          department: 'QA/QC & Standards Bureau',
+          tension: 'Strict zero-defect mandate requiring certified mill test reports, ultrasonic NDT, and ISO/ASTM compliance before site entry.',
+          resolution: 'Conduct pre-shipment digital MTC audits at export origin and mandate Factory Acceptance Testing (FAT) 45 days prior to jobsite mobilization.',
+          side: 'right',
+          badgeColor: 'cyan',
+        },
+        {
+          id: 't_log',
+          role: 'Logistics & Yard',
+          quote: 'We need on-time delivery!',
+          department: 'Freight & Port Handling',
+          tension: 'Demurrage penalties, port bottlenecks, and container discharge delays threatening project critical path.',
+          resolution: 'Optimize Incoterms (DDP vs CIF), establish pre-cleared bonded customs lanes, and use regional distribution staging hubs.',
+          side: 'right',
+          badgeColor: 'indigo',
+        },
+        {
+          id: 't_ven',
+          role: 'Vendors / Subcontractors',
+          quote: 'We need faster payments!',
+          department: 'Sub-tier Trade Partners',
+          tension: 'Cash-flow strain on subcontractors and specialized fabricators waiting on lengthy multi-tiered approval chains.',
+          resolution: 'Automate 3-way invoice matching and establish accelerated 15-day settlement tracks for certified local ICV vendors.',
+          side: 'right',
+          badgeColor: 'rose',
+        },
+        {
+          id: 't_lead',
+          role: 'Executive Leadership',
+          quote: 'Drive strategic value!',
+          department: 'C-Suite & Board of Directors',
+          tension: 'Expects procurement to evolve beyond purchasing into a strategic driver of corporate ESG, ICV scorecards, and margin resilience.',
+          resolution: 'Align procurement category strategies with enterprise goals, report quarterly value-creation scorecards, and lead sustainability initiatives.',
+          side: 'right',
+          badgeColor: 'slate',
+        },
+      ],
+      pillars: [
+        {
+          title: 'Negotiation Skills',
+          subtitle: 'Commercial Leverage & Value Creation',
+          iconName: 'handshake',
+          description: 'Mastering principled win-win bargaining, BATNA preparation, contract clauses, and long-term supplier relationship preservation.',
+        },
+        {
+          title: 'Supply Chain Management',
+          subtitle: 'End-to-End Resilience & Flow',
+          iconName: 'cogs',
+          description: 'Architecting resilient supply networks, dual-sourcing contingency paths, and optimizing total landed lead times.',
+        },
+        {
+          title: 'Vendor Management',
+          subtitle: 'Performance, Scorecards & Trust',
+          iconName: 'clipboard',
+          description: 'Continuous supplier audits, KPI tracking (OTD, defect rates), relationship governance, and vendor capability building.',
+        },
+        {
+          title: 'Cost Optimization',
+          subtitle: 'TCO & Strategic Value Engineering',
+          iconName: 'dollar',
+          description: 'Total Cost of Ownership (TCO) modeling, zero-based category spend analysis, and clean-sheet cost breakdown.',
+        },
+        {
+          title: 'Process Improvement',
+          subtitle: 'Lean & Frictionless Operations',
+          iconName: 'refresh',
+          description: 'Streamlining requisition-to-pay (P2P), removing approval bottlenecks, and digitizing automated milestone tracking.',
+        },
+        {
+          title: 'Strategic Sourcing',
+          subtitle: 'Market Intelligence & Tender Architecture',
+          iconName: 'target',
+          description: 'Cross-functional RFP structuring, global supplier discovery, index hedging, and multi-attribute bid evaluation.',
+        },
+        {
+          title: 'Stakeholder Management',
+          subtitle: 'Alignment, Communication & Diplomacy',
+          iconName: 'users',
+          description: 'Bridging conflicting internal priorities, active listening, executive reporting, and driving organizational consensus.',
+        },
+      ],
       tips: [
         {
           number: 1,
@@ -145,7 +318,7 @@ export const INITIAL_POSTS: FeedPost[] = [
         },
       ],
     },
-    likes: 142,
+    likes: 184,
     userLiked: false,
     comments: [
       {
@@ -154,8 +327,8 @@ export const INITIAL_POSTS: FeedPost[] = [
         company: 'Vance Infrastructure Group',
         role: 'buyer',
         avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-        text: 'Spot on from soko.ae. We had an EPC job where a 5% cheaper foreign rebar quote ended up costing 22% more in demurrage and testing re-runs.',
-        time: '40m ago',
+        text: 'This illustration captures our daily life 100%. Managing the pull between Finance and Operations is where strategic procurement is won or lost.',
+        time: '35m ago',
       },
       {
         id: 'c_2',
@@ -163,11 +336,20 @@ export const INITIAL_POSTS: FeedPost[] = [
         company: 'Apex Industrial Castings & Alloys',
         role: 'supplier',
         avatar: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150&auto=format&fit=crop&q=80',
-        text: 'Transparency on Material Test Reports and pre-shipment certifications saves both sides weeks of back-and-forth.',
-        time: '25m ago',
+        text: 'As a Tier-1 supplier, the 70/30 allocation and early forecast visibility makes all the difference for on-time delivery.',
+        time: '20m ago',
+      },
+      {
+        id: 'c_3',
+        author: 'Sarah Jenkins',
+        company: 'Apex Industrial Mechanical GC',
+        role: 'contractor',
+        avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
+        text: 'Right Product, Right Quality, Right Time, Right Cost. Always. Brilliant breakdown by Mohamed Sadiq!',
+        time: '12m ago',
       },
     ],
-    shares: 38,
+    shares: 64,
   },
   {
     id: 'post_2',

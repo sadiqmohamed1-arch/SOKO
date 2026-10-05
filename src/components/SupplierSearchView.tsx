@@ -225,8 +225,8 @@ export const SupplierSearchView: React.FC<SupplierSearchViewProps> = ({
   const [contactModalSupplier, setContactModalSupplier] = useState<SupplierItem | null>(null);
   const [copiedPhone, setCopiedPhone] = useState(false);
 
-  // Supplier list view mode (Table List vs Grid Cards)
-  const [supplierViewMode, setSupplierViewMode] = useState<'table' | 'grid'>('table');
+  // Supplier list view mode (Grid Cards vs Table List) - defaults to grid (cards) across all logins
+  const [supplierViewMode, setSupplierViewMode] = useState<'table' | 'grid'>('grid');
 
   // Supplier selection and Range selection state
   const [selectedSupplierIds, setSelectedSupplierIds] = useState<Set<string>>(new Set());
@@ -243,6 +243,7 @@ export const SupplierSearchView: React.FC<SupplierSearchViewProps> = ({
   const [isReportExpanded, setIsReportExpanded] = useState(true);
   const [chartViewMode, setChartViewMode] = useState<'ranked' | 'share' | 'table'>('ranked');
   const [exportNotification, setExportNotification] = useState<string | null>(null);
+  const isBuyerOrSupplier = currentUser?.role === 'buyer' || currentUser?.role === 'supplier';
 
   // Extract unique supplier categories dynamically from data plus defaults
   const categories = useMemo(() => {
@@ -728,10 +729,12 @@ export const SupplierSearchView: React.FC<SupplierSearchViewProps> = ({
             Verified B2B Supplier Directory
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-            Supplier Directory & Market Demand
+            Supplier Directory {isBuyerOrSupplier ? '' : '& Market Demand'}
           </h1>
           <p className="text-slate-300 text-xs sm:text-sm mt-2 leading-relaxed">
-            Find verified industrial suppliers, review live buyer traffic analytics, and inspect which product categories attract the highest procurement visits.
+            {isBuyerOrSupplier
+              ? 'Find verified industrial suppliers, inspect audited trade licenses and ISO certifications, and review technical fabrication capabilities.'
+              : 'Find verified industrial suppliers, review live buyer traffic analytics, and inspect which product categories attract the highest procurement visits.'}
           </p>
         </div>
 
@@ -778,8 +781,9 @@ export const SupplierSearchView: React.FC<SupplierSearchViewProps> = ({
       {/* ========================================================================= */}
       {/* SECTION 1: DATE RANGE SELECTOR & MONTHLY VISITS COUNT BOX & CATEGORY REPORT */}
       {/* ========================================================================= */}
-      <div className="space-y-4">
-        {/* Metric Overview & Controls Header Bar */}
+      {!isBuyerOrSupplier && (
+        <div className="space-y-4">
+          {/* Metric Overview & Controls Header Bar */}
         <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs transition-all hover:border-slate-300">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5 pb-5 border-b border-slate-100">
             {/* Monthly Visits Box */}
@@ -1260,6 +1264,7 @@ export const SupplierSearchView: React.FC<SupplierSearchViewProps> = ({
           </div>
         )}
       </div>
+      )}
 
       {/* ========================================================================= */}
       {/* FILTER BAR & ACTIVE CHIPS */}
@@ -1353,17 +1358,39 @@ export const SupplierSearchView: React.FC<SupplierSearchViewProps> = ({
       {/* ========================================================================= */}
       <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs space-y-3">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-          {/* Left: Table View Badge & Range Selection */}
+          {/* Left: View Mode Switcher (Cards vs Table) & Range Selection */}
           <div className="flex flex-wrap items-center gap-2.5">
-            <div className="flex items-center gap-2 bg-blue-50 border border-blue-200/80 px-3 py-1.5 rounded-xl">
-              <Table className="w-4 h-4 text-blue-700" />
-              <span className="text-xs font-black text-blue-950 uppercase tracking-wider">
-                Supplier List Table
-              </span>
-              <span className="text-[10px] font-bold bg-blue-600 text-white px-2 py-0.2 rounded-full">
-                {filteredSuppliers.length} Verified
-              </span>
+            {/* View Mode Toggle */}
+            <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+              <button
+                type="button"
+                onClick={() => setSupplierViewMode('grid')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  supplierViewMode === 'grid'
+                    ? 'bg-white text-blue-700 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                <span>Cards View</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSupplierViewMode('table')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  supplierViewMode === 'table'
+                    ? 'bg-white text-blue-700 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Table className="w-3.5 h-3.5" />
+                <span>Table View</span>
+              </button>
             </div>
+
+            <span className="text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 px-2 py-1 rounded-lg hidden sm:inline">
+              {filteredSuppliers.length} Verified
+            </span>
 
             <div className="h-5 w-px bg-slate-200 hidden sm:block" />
 
@@ -1535,66 +1562,38 @@ export const SupplierSearchView: React.FC<SupplierSearchViewProps> = ({
       </div>
 
       {/* ========================================================================= */}
-      {/* SUPPLIERS DATA DISPLAY: ENTERPRISE TABULAR LIST VIEW */}
+      {/* SUPPLIERS DATA DISPLAY: CARDS GRID (DEFAULT ACROSS ALL LOGINS) OR TABLE */}
       {/* ========================================================================= */}
-      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[10px]">
-                <th className="w-12 px-3 py-3.5 text-center">
-                  <input
-                    type="checkbox"
-                    checked={
-                      selectedSupplierIds.size === filteredSuppliers.length &&
-                      filteredSuppliers.length > 0
-                    }
-                    onChange={toggleSelectAll}
-                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                    title="Select all suppliers"
-                  />
-                </th>
-                <th className="w-14 px-3 py-3.5 text-center"># Rank</th>
-                <th className="px-4 py-3.5 min-w-[220px]">Supplier Company</th>
-                <th className="px-4 py-3.5 min-w-[180px]">Category & Capabilities</th>
-                <th className="px-4 py-3.5 text-right min-w-[120px]">
-                  Views ({dateRange === 'this_month' ? 'Sep MTD' : 'Window'})
-                </th>
-                <th className="px-4 py-3.5 text-center min-w-[90px]">Rating</th>
-                <th className="px-4 py-3.5 text-center min-w-[80px]">OTD %</th>
-                <th className="px-4 py-3.5 text-center min-w-[90px]">Contracts</th>
-                <th className="px-4 py-3.5 min-w-[140px]">Certifications</th>
-                <th className="px-4 py-3.5 text-center min-w-[180px]">Direct Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredSuppliers.map((supplier, idx) => {
-                const supplierViews = getSupplierVisits(supplier);
-                const isTopInCategory =
-                  supplier.company === topCategory.topSupplier ||
-                  supplier.id === 'sup_01' ||
-                  supplierViews > 10000;
-                const isSelected = selectedSupplierIds.has(supplier.id);
+      {supplierViewMode === 'grid' ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {filteredSuppliers.map((supplier, idx) => {
+            const supplierViews = getSupplierVisits(supplier);
+            const isTopInCategory =
+              supplier.company === topCategory.topSupplier ||
+              supplier.id === 'sup_01' ||
+              supplierViews > 10000;
+            const isSelected = selectedSupplierIds.has(supplier.id);
 
-                return (
-                  <tr
-                    key={supplier.id}
-                    className={`hover:bg-blue-50/40 transition-colors ${
-                      isSelected ? 'bg-blue-50/60' : idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/30'
-                    }`}
-                  >
-                    {/* Checkbox */}
-                    <td className="px-3 py-3 text-center">
+            return (
+              <div
+                key={supplier.id}
+                className={`bg-white rounded-2xl border transition-all flex flex-col justify-between overflow-hidden shadow-xs hover:shadow-md ${
+                  isSelected
+                    ? 'border-blue-500 ring-2 ring-blue-500/20 bg-blue-50/10'
+                    : 'border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                <div className="p-5 space-y-4">
+                  {/* Top Bar: Checkbox, Rank, Verification & Views */}
+                  <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                    <div className="flex items-center gap-2">
                       <input
                         type="checkbox"
                         checked={isSelected}
                         onChange={() => toggleSupplierSelection(supplier.id)}
-                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer w-4 h-4"
+                        title="Select for export"
                       />
-                    </td>
-
-                    {/* Rank */}
-                    <td className="px-3 py-3 text-center">
                       <span
                         className={`w-6 h-6 rounded-full text-xs font-black inline-flex items-center justify-center ${
                           idx === 0
@@ -1608,174 +1607,409 @@ export const SupplierSearchView: React.FC<SupplierSearchViewProps> = ({
                       >
                         #{idx + 1}
                       </span>
-                    </td>
+                    </div>
 
-                    {/* Company Info */}
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <CompanyLogo
-                          company={supplier.company}
-                          logoUrl={supplier.logo || supplier.avatar}
-                          size="w-10 h-10"
-                        />
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="font-extrabold text-slate-900 text-xs sm:text-sm hover:text-blue-600 transition-colors">
-                              {supplier.company}
-                            </span>
-                            {supplier.verified && (
-                              <span title="SOKO Audited & Verified Corporate Seller">
-                                <CheckCircle2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-500">
-                            <span className="flex items-center gap-0.5">
-                              <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
-                              {supplier.location}
-                            </span>
-                            <span>•</span>
-                            <span className="font-semibold text-slate-600 bg-slate-100 px-1.5 py-0.2 rounded text-[10px]">
-                              {supplier.tier}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </td>
+                    <div className="flex items-center gap-1.5">
+                      {isTopInCategory && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                          <Flame className="w-3 h-3 fill-amber-500 text-amber-500" />
+                          Trending
+                        </span>
+                      )}
+                      <span className="text-[11px] font-mono text-slate-500 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200">
+                        {supplierViews.toLocaleString()} views
+                      </span>
+                    </div>
+                  </div>
 
-                    {/* Category & Capabilities */}
-                    <td className="px-4 py-3">
-                      <div className="font-bold text-slate-800 text-xs">{supplier.category}</div>
-                      <div className="flex items-center gap-1 mt-1 flex-wrap">
-                        {supplier.capabilities.slice(0, 2).map((cap) => (
-                          <span
-                            key={cap}
-                            className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded"
-                          >
-                            {cap}
-                          </span>
-                        ))}
-                        {supplier.capabilities.length > 2 && (
-                          <span className="text-[10px] text-slate-400">
-                            +{supplier.capabilities.length - 2}
+                  {/* Company Header */}
+                  <div className="flex items-start gap-3.5">
+                    <CompanyLogo
+                      company={supplier.company}
+                      logoUrl={supplier.logo || supplier.avatar}
+                      size="w-12 h-12"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <h3 className="font-extrabold text-slate-900 text-base leading-snug hover:text-blue-600 transition-colors truncate">
+                          {supplier.company}
+                        </h3>
+                        {supplier.verified && (
+                          <span title="SOKO Audited & Verified Corporate Seller">
+                            <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0" />
                           </span>
                         )}
                       </div>
-                    </td>
 
-                    {/* Views in Period */}
-                    <td className="px-4 py-3 text-right">
-                      <div className="font-black text-slate-900 text-xs sm:text-sm">
-                        {supplierViews.toLocaleString()}
+                      <div className="flex items-center gap-2 mt-1 text-xs text-slate-500">
+                        <span className="flex items-center gap-1 truncate">
+                          <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          {supplier.location}
+                        </span>
+                        <span>•</span>
+                        <span className="font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded text-[10px] shrink-0">
+                          {supplier.tier}
+                        </span>
                       </div>
-                      <div className="flex items-center justify-end gap-1 mt-0.5">
-                        {isTopInCategory ? (
-                          <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200">
-                            <Flame className="w-2.5 h-2.5 fill-amber-500 text-amber-500" />
-                            Trending
-                          </span>
-                        ) : (
-                          <span className="text-[10px] text-slate-400">views</span>
-                        )}
-                      </div>
-                    </td>
+                    </div>
+                  </div>
 
-                    {/* Rating */}
-                    <td className="px-4 py-3 text-center">
-                      <div className="inline-flex items-center gap-1 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full text-xs font-bold text-amber-800">
+                  {/* Core Metrics Band: Rating, OTD %, Contracts */}
+                  <div className="grid grid-cols-3 gap-2 bg-slate-50/80 p-2.5 rounded-xl border border-slate-100 text-center">
+                    <div>
+                      <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">
+                        Rating
+                      </span>
+                      <div className="flex items-center justify-center gap-1 mt-0.5">
                         <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
-                        <span>{supplier.rating}</span>
+                        <span className="text-xs font-black text-slate-900">{supplier.rating}</span>
+                        <span className="text-[10px] text-slate-400">({supplier.reviewCount})</span>
                       </div>
-                      <div className="text-[10px] text-slate-400 mt-0.5">
-                        ({supplier.reviewCount})
-                      </div>
-                    </td>
+                    </div>
 
-                    {/* OTD % */}
-                    <td className="px-4 py-3 text-center">
-                      <div className="font-bold text-emerald-700 text-xs">
+                    <div className="border-x border-slate-200">
+                      <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">
+                        OTD Rate
+                      </span>
+                      <div className="text-xs font-black text-emerald-700 mt-0.5">
                         {supplier.otdRate}%
                       </div>
-                      <div className="w-12 bg-slate-200 rounded-full h-1.5 mx-auto mt-1 overflow-hidden">
-                        <div
-                          className="bg-emerald-500 h-full rounded-full"
-                          style={{ width: `${supplier.otdRate}%` }}
-                        />
-                      </div>
-                    </td>
+                    </div>
 
-                    {/* Completed Contracts */}
-                    <td className="px-4 py-3 text-center">
-                      <div className="font-black text-slate-900 text-xs">
+                    <div>
+                      <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">
+                        Contracts
+                      </span>
+                      <div className="text-xs font-black text-slate-900 mt-0.5">
                         {supplier.completedContracts}
                       </div>
-                      <div className="text-[10px] text-slate-400">contracts</div>
-                    </td>
+                    </div>
+                  </div>
 
-                    {/* Certifications */}
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1">
-                        {supplier.isoCertifications.map((cert) => (
-                          <span
-                            key={cert}
-                            className="text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded"
-                          >
-                            {cert}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-
-                    {/* Actions */}
-                    <td className="px-4 py-3 text-center">
-                      <div className="flex items-center justify-center gap-1.5">
-                        <a
-                          href={`tel:${(supplier.phone || '+971 4 881 2290').replace(/\s+/g, '')}`}
-                          className="w-7 h-7 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 flex items-center justify-center transition-colors"
-                          title={`Call: ${supplier.phone || '+971 4 881 2290'}`}
+                  {/* Category & Capabilities */}
+                  <div className="space-y-1.5">
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+                      {supplier.category}
+                    </span>
+                    <div className="flex flex-wrap gap-1">
+                      {supplier.capabilities.slice(0, 3).map((cap) => (
+                        <span
+                          key={cap}
+                          className="text-[11px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md border border-slate-200 font-medium"
                         >
-                          <Phone className="w-3.5 h-3.5" />
-                        </a>
+                          {cap}
+                        </span>
+                      ))}
+                      {supplier.capabilities.length > 3 && (
+                        <span className="text-[11px] text-slate-400 px-1 py-0.5 font-medium">
+                          +{supplier.capabilities.length - 3} more
+                        </span>
+                      )}
+                    </div>
+                  </div>
 
-                        <a
-                          href={`https://wa.me/${(supplier.phone || '971508812290').replace(/\D/g, '')}?text=${encodeURIComponent(
-                            `Hello ${supplier.company}, I am contacting you via SOKO Directory.`
-                          )}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="w-7 h-7 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 flex items-center justify-center transition-colors"
-                          title="Chat on WhatsApp"
+                  {/* ISO Certifications */}
+                  {supplier.isoCertifications.length > 0 && (
+                    <div className="flex flex-wrap gap-1 pt-1">
+                      {supplier.isoCertifications.map((cert) => (
+                        <span
+                          key={cert}
+                          className="text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-md"
                         >
-                          <WhatsAppIcon className="w-3.5 h-3.5 text-emerald-600" />
-                        </a>
+                          {cert}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
 
-                        <button
-                          type="button"
-                          onClick={() => setContactModalSupplier(supplier)}
-                          className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
-                          title="All Contact Channels (Mobile, WhatsApp, SOKO Chat)"
-                        >
-                          <PhoneCall className="w-3 h-3" />
-                          <span>Contact</span>
-                        </button>
+                {/* Card Footer: Direct Actions */}
+                <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <a
+                      href={`tel:${(supplier.phone || '+971 4 881 2290').replace(/\s+/g, '')}`}
+                      className="w-8 h-8 rounded-xl bg-white hover:bg-blue-50 border border-slate-200 text-blue-700 flex items-center justify-center transition-colors shadow-2xs"
+                      title={`Call: ${supplier.phone || '+971 4 881 2290'}`}
+                    >
+                      <Phone className="w-3.5 h-3.5" />
+                    </a>
 
-                        <button
-                          type="button"
-                          onClick={() => onViewSupplierCard(supplier)}
-                          className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center transition-colors cursor-pointer"
-                          title="View Digital Card"
-                        >
-                          <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                    <a
+                      href={`https://wa.me/${(supplier.phone || '971508812290').replace(/\D/g, '')}?text=${encodeURIComponent(
+                        `Hello ${supplier.company}, I am contacting you via SOKO Directory.`
+                      )}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-8 h-8 rounded-xl bg-white hover:bg-emerald-50 border border-slate-200 text-emerald-700 flex items-center justify-center transition-colors shadow-2xs"
+                      title="Chat on WhatsApp"
+                    >
+                      <WhatsAppIcon className="w-3.5 h-3.5 text-emerald-600" />
+                    </a>
+
+                    <button
+                      type="button"
+                      onClick={() => onViewSupplierCard(supplier)}
+                      className="w-8 h-8 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 flex items-center justify-center transition-colors cursor-pointer shadow-2xs"
+                      title="View Digital Business Card"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setContactModalSupplier(supplier)}
+                    className="flex-1 max-w-[130px] py-1.5 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <PhoneCall className="w-3 h-3" />
+                    <span>Contact</span>
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
-      </div>
+      ) : (
+        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[10px]">
+                  <th className="w-12 px-3 py-3.5 text-center">
+                    <input
+                      type="checkbox"
+                      checked={
+                        selectedSupplierIds.size === filteredSuppliers.length &&
+                        filteredSuppliers.length > 0
+                      }
+                      onChange={toggleSelectAll}
+                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      title="Select all suppliers"
+                    />
+                  </th>
+                  <th className="w-14 px-3 py-3.5 text-center"># Rank</th>
+                  <th className="px-4 py-3.5 min-w-[220px]">Supplier Company</th>
+                  <th className="px-4 py-3.5 min-w-[180px]">Category & Capabilities</th>
+                  <th className="px-4 py-3.5 text-right min-w-[120px]">
+                    Views ({dateRange === 'this_month' ? 'Sep MTD' : 'Window'})
+                  </th>
+                  <th className="px-4 py-3.5 text-center min-w-[90px]">Rating</th>
+                  <th className="px-4 py-3.5 text-center min-w-[80px]">OTD %</th>
+                  <th className="px-4 py-3.5 text-center min-w-[90px]">Contracts</th>
+                  <th className="px-4 py-3.5 min-w-[140px]">Certifications</th>
+                  <th className="px-4 py-3.5 text-center min-w-[180px]">Direct Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredSuppliers.map((supplier, idx) => {
+                  const supplierViews = getSupplierVisits(supplier);
+                  const isTopInCategory =
+                    supplier.company === topCategory.topSupplier ||
+                    supplier.id === 'sup_01' ||
+                    supplierViews > 10000;
+                  const isSelected = selectedSupplierIds.has(supplier.id);
+
+                  return (
+                    <tr
+                      key={supplier.id}
+                      className={`hover:bg-blue-50/40 transition-colors ${
+                        isSelected ? 'bg-blue-50/60' : idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/30'
+                      }`}
+                    >
+                      {/* Checkbox */}
+                      <td className="px-3 py-3 text-center">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSupplierSelection(supplier.id)}
+                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        />
+                      </td>
+
+                      {/* Rank */}
+                      <td className="px-3 py-3 text-center">
+                        <span
+                          className={`w-6 h-6 rounded-full text-xs font-black inline-flex items-center justify-center ${
+                            idx === 0
+                              ? 'bg-amber-400 text-slate-900 shadow-xs'
+                              : idx === 1
+                              ? 'bg-slate-200 text-slate-800'
+                              : idx === 2
+                              ? 'bg-amber-800/20 text-amber-900'
+                              : 'bg-slate-100 text-slate-600'
+                          }`}
+                        >
+                          #{idx + 1}
+                        </span>
+                      </td>
+
+                      {/* Company Info */}
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <CompanyLogo
+                            company={supplier.company}
+                            logoUrl={supplier.logo || supplier.avatar}
+                            size="w-10 h-10"
+                          />
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-extrabold text-slate-900 text-xs sm:text-sm hover:text-blue-600 transition-colors">
+                                {supplier.company}
+                              </span>
+                              {supplier.verified && (
+                                <span title="SOKO Audited & Verified Corporate Seller">
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-500">
+                              <span className="flex items-center gap-0.5">
+                                <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+                                {supplier.location}
+                              </span>
+                              <span>•</span>
+                              <span className="font-semibold text-slate-600 bg-slate-100 px-1.5 py-0.2 rounded text-[10px]">
+                                {supplier.tier}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Category & Capabilities */}
+                      <td className="px-4 py-3">
+                        <div className="font-bold text-slate-800 text-xs">{supplier.category}</div>
+                        <div className="flex items-center gap-1 mt-1 flex-wrap">
+                          {supplier.capabilities.slice(0, 2).map((cap) => (
+                            <span
+                              key={cap}
+                              className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded"
+                            >
+                              {cap}
+                            </span>
+                          ))}
+                          {supplier.capabilities.length > 2 && (
+                            <span className="text-[10px] text-slate-400">
+                              +{supplier.capabilities.length - 2}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Views in Period */}
+                      <td className="px-4 py-3 text-right">
+                        <div className="font-black text-slate-900 text-xs sm:text-sm">
+                          {supplierViews.toLocaleString()}
+                        </div>
+                        <div className="flex items-center justify-end gap-1 mt-0.5">
+                          {isTopInCategory ? (
+                            <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200">
+                              <Flame className="w-2.5 h-2.5 fill-amber-500 text-amber-500" />
+                              Trending
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-slate-400">views</span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Rating */}
+                      <td className="px-4 py-3 text-center">
+                        <div className="inline-flex items-center gap-1 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full text-xs font-bold text-amber-800">
+                          <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
+                          <span>{supplier.rating}</span>
+                        </div>
+                        <div className="text-[10px] text-slate-400 mt-0.5">
+                          ({supplier.reviewCount})
+                        </div>
+                      </td>
+
+                      {/* OTD % */}
+                      <td className="px-4 py-3 text-center">
+                        <div className="font-bold text-emerald-700 text-xs">
+                          {supplier.otdRate}%
+                        </div>
+                        <div className="w-12 bg-slate-200 rounded-full h-1.5 mx-auto mt-1 overflow-hidden">
+                          <div
+                            className="bg-emerald-500 h-full rounded-full"
+                            style={{ width: `${supplier.otdRate}%` }}
+                          />
+                        </div>
+                      </td>
+
+                      {/* Completed Contracts */}
+                      <td className="px-4 py-3 text-center">
+                        <div className="font-black text-slate-900 text-xs">
+                          {supplier.completedContracts}
+                        </div>
+                        <div className="text-[10px] text-slate-400">contracts</div>
+                      </td>
+
+                      {/* Certifications */}
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-1">
+                          {supplier.isoCertifications.map((cert) => (
+                            <span
+                              key={cert}
+                              className="text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded"
+                            >
+                              {cert}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+
+                      {/* Actions */}
+                      <td className="px-4 py-3 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <a
+                            href={`tel:${(supplier.phone || '+971 4 881 2290').replace(/\s+/g, '')}`}
+                            className="w-7 h-7 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 flex items-center justify-center transition-colors"
+                            title={`Call: ${supplier.phone || '+971 4 881 2290'}`}
+                          >
+                            <Phone className="w-3.5 h-3.5" />
+                          </a>
+
+                          <a
+                            href={`https://wa.me/${(supplier.phone || '971508812290').replace(/\D/g, '')}?text=${encodeURIComponent(
+                              `Hello ${supplier.company}, I am contacting you via SOKO Directory.`
+                            )}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-7 h-7 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 flex items-center justify-center transition-colors"
+                            title="Chat on WhatsApp"
+                          >
+                            <WhatsAppIcon className="w-3.5 h-3.5 text-emerald-600" />
+                          </a>
+
+                          <button
+                            type="button"
+                            onClick={() => setContactModalSupplier(supplier)}
+                            className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-colors shadow-2xs cursor-pointer flex items-center gap-1"
+                            title="All Contact Channels (Mobile, WhatsApp, SOKO Chat)"
+                          >
+                            <PhoneCall className="w-3 h-3" />
+                            <span>Contact</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => onViewSupplierCard(supplier)}
+                            className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center transition-colors cursor-pointer"
+                            title="View Digital Card"
+                          >
+                            <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {filteredSuppliers.length === 0 && (
         <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center space-y-3">

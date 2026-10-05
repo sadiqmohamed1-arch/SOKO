@@ -25,6 +25,14 @@ import {
   Share2,
   Printer,
   ChevronRight,
+  Table,
+  LayoutGrid,
+  List,
+  FileSpreadsheet,
+  ChevronDown,
+  ChevronUp,
+  Eye,
+  Download,
 } from 'lucide-react';
 import { OfficeKioskVisit, UserProfile, CommunityContact } from '../types';
 
@@ -52,6 +60,100 @@ export const OfficeKioskView: React.FC<OfficeKioskViewProps> = ({
   const [tempRating, setTempRating] = useState(5);
   const [tempActionItem, setTempActionItem] = useState('');
   const [generatedBadge, setGeneratedBadge] = useState<OfficeKioskVisit | null>(null);
+
+  // VMS View Mode: Table List (default) vs Cards Feed
+  const [vmsViewMode, setVmsViewMode] = useState<'table' | 'cards'>('table');
+  const [expandedVisitId, setExpandedVisitId] = useState<string | null>(null);
+  const [selectedVisitIds, setSelectedVisitIds] = useState<Set<string>>(new Set());
+  const [exportToast, setExportToast] = useState<string | null>(null);
+  const isBuyerOrSupplier = currentUser?.role === 'buyer' || currentUser?.role === 'supplier';
+
+  const handleToggleSelectVisit = (visitId: string) => {
+    setSelectedVisitIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(visitId)) {
+        next.delete(visitId);
+      } else {
+        next.add(visitId);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAllVisits = () => {
+    if (selectedVisitIds.size === filteredVisits.length) {
+      setSelectedVisitIds(new Set());
+    } else {
+      setSelectedVisitIds(new Set(filteredVisits.map((v) => v.id)));
+    }
+  };
+
+  const handleExportCSV = () => {
+    const targetVisits =
+      selectedVisitIds.size > 0
+        ? filteredVisits.filter((v) => selectedVisitIds.has(v.id))
+        : filteredVisits;
+
+    const csvRows = [
+      ['SOKO.ae - Visitor Management System (VMS) Reception Register'],
+      [`Export Date: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}`],
+      [`Branch: ${selectedOffice}`],
+      [`Total Selected Records: ${targetVisits.length}`],
+      [],
+      [
+        'Badge #',
+        'Visitor Status',
+        'Supplier Company',
+        'Representative Name',
+        'Phone',
+        'Email',
+        'Host Executive',
+        'Department',
+        'Office Location',
+        'Purpose of Visit',
+        'Check-In Time',
+        'Check-Out Time',
+        'NDA Status',
+        'Vendor Score',
+        'Discussion Agenda',
+        'Meeting Minutes',
+      ],
+      ...targetVisits.map((v) => [
+        `"${v.badgeNumber}"`,
+        `"${v.visitorStatus}"`,
+        `"${v.supplierCompany}"`,
+        `"${v.supplierName}"`,
+        `"${v.supplierPhone}"`,
+        `"${v.supplierEmail}"`,
+        `"${v.buyerHostName}"`,
+        `"${v.buyerDepartment}"`,
+        `"${v.officeLocation}"`,
+        `"${v.purposeOfVisit}"`,
+        `"${v.checkInTime}"`,
+        `"${v.checkOutTime || 'Active In-Office'}"`,
+        `"${v.ndaSigned ? 'Signed' : 'Pending'}"`,
+        v.vendorScore || 'Unrated',
+        `"${(v.agendaDiscussion || '').replace(/"/g, '""')}"`,
+        `"${(v.meetingNotes || '').replace(/"/g, '""')}"`,
+      ]),
+    ];
+
+    const csvContent =
+      'data:text/csv;charset=utf-8,' + csvRows.map((e) => e.join(',')).join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute(
+      'download',
+      `soko_vms_visitor_register_${new Date().toISOString().slice(0, 10)}.csv`
+    );
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    setExportToast(`Downloaded ${targetVisits.length} visitor records as CSV`);
+    setTimeout(() => setExportToast(null), 3500);
+  };
 
   // Kiosk Check-In Form State
   const [kioskForm, setKioskForm] = useState({
@@ -203,36 +305,40 @@ export const OfficeKioskView: React.FC<OfficeKioskViewProps> = ({
       </div>
 
       {/* Live Reception Status Dashboard */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className={`grid gap-4 ${isBuyerOrSupplier ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-2 md:grid-cols-4'}`}>
         {/* Waiting in Lobby */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs relative overflow-hidden">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500">Waiting in Lobby</span>
-            <div className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
+        {!isBuyerOrSupplier && (
+          <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs relative overflow-hidden">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-500">Waiting in Lobby</span>
+              <div className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
+            </div>
+            <div className="mt-2 flex items-baseline gap-2">
+              <span className="text-2xl sm:text-3xl font-extrabold text-slate-900">{checkedInCount}</span>
+              <span className="text-[11px] text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded-md">
+                Check-ins
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-1">Suppliers awaiting meeting</p>
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl sm:text-3xl font-extrabold text-slate-900">{checkedInCount}</span>
-            <span className="text-[11px] text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded-md">
-              Check-ins
-            </span>
-          </div>
-          <p className="text-[11px] text-slate-400 mt-1">Suppliers awaiting meeting</p>
-        </div>
+        )}
 
         {/* In Meeting */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs relative overflow-hidden">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500">In Active Meeting</span>
-            <div className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-pulse" />
+        {!isBuyerOrSupplier && (
+          <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs relative overflow-hidden">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-500">In Active Meeting</span>
+              <div className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-pulse" />
+            </div>
+            <div className="mt-2 flex items-baseline gap-2">
+              <span className="text-2xl sm:text-3xl font-extrabold text-slate-900">{inMeetingCount}</span>
+              <span className="text-[11px] text-blue-700 font-bold bg-blue-50 px-2 py-0.5 rounded-md">
+                Live Rooms
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-1">Discussions in progress</p>
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl sm:text-3xl font-extrabold text-slate-900">{inMeetingCount}</span>
-            <span className="text-[11px] text-blue-700 font-bold bg-blue-50 px-2 py-0.5 rounded-md">
-              Live Rooms
-            </span>
-          </div>
-          <p className="text-[11px] text-slate-400 mt-1">Discussions in progress</p>
-        </div>
+        )}
 
         {/* Completed Today */}
         <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs relative overflow-hidden">
@@ -267,7 +373,8 @@ export const OfficeKioskView: React.FC<OfficeKioskViewProps> = ({
 
       {/* Filter and Search Controls */}
       <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-xs space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+        {/* Row 1: Status Pills, Branch Selector, and View Mode / Export Actions */}
+        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 border-b border-slate-100 pb-3.5">
           {/* Status Pills */}
           <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
             {[
@@ -290,43 +397,129 @@ export const OfficeKioskView: React.FC<OfficeKioskViewProps> = ({
             ))}
           </div>
 
-          {/* Office Branch Selector */}
-          <div className="flex items-center gap-2 text-xs">
-            <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-            <select
-              value={selectedOffice}
-              onChange={(e) => setSelectedOffice(e.target.value)}
-              className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-800 font-semibold focus:outline-hidden"
-            >
-              {officeLocations.map((loc) => (
-                <option key={loc} value={loc}>
-                  {loc}
-                </option>
-              ))}
-            </select>
+          {/* Right Controls: Branch Selector, View Switcher & Export */}
+          <div className="flex items-center gap-2 flex-wrap justify-between xl:justify-end">
+            {/* View Mode Toggle: Table Register vs Cards */}
+            <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+              <button
+                type="button"
+                onClick={() => setVmsViewMode('table')}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  vmsViewMode === 'table'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Table Register List View"
+              >
+                <Table className="w-3.5 h-3.5 text-blue-400" />
+                <span>Table Register</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setVmsViewMode('cards')}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  vmsViewMode === 'cards'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Card Detail View"
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                <span>Cards</span>
+              </button>
+            </div>
+
+            {/* Office Branch Selector */}
+            <div className="flex items-center gap-1.5 text-xs">
+              <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <select
+                value={selectedOffice}
+                onChange={(e) => setSelectedOffice(e.target.value)}
+                className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-800 font-semibold focus:outline-hidden"
+              >
+                {officeLocations.map((loc) => (
+                  <option key={loc} value={loc}>
+                    {loc}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Export CSV & Print */}
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={handleExportCSV}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold transition-colors cursor-pointer shadow-2xs"
+                title="Export VMS register to CSV"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                <span className="hidden sm:inline">Export CSV</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition-colors cursor-pointer"
+                title="Print Reception Register"
+              >
+                <Printer className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Search Bar */}
-        <div className="relative">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            placeholder="Search visiting company, representative name, badge #, or discussion topics..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:border-blue-500"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs cursor-pointer"
-            >
-              Clear
-            </button>
-          )}
+        {/* Row 2: Search Bar & Record Count Indicators */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Search visiting company, representative name, badge #, host executive, or discussion agenda..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:border-blue-500"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-xs text-slate-500 font-semibold">
+              Showing <strong className="text-slate-900 font-extrabold">{filteredVisits.length}</strong>{' '}
+              {filteredVisits.length === 1 ? 'visit' : 'visits'}
+            </span>
+            {selectedVisitIds.size > 0 && (
+              <span className="text-xs text-blue-700 font-bold bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-md">
+                {selectedVisitIds.size} selected
+              </span>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* Export Toast if CSV generated */}
+      {exportToast && (
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs px-4 py-2.5 rounded-xl flex items-center justify-between font-bold shadow-xs animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <Check className="w-4 h-4 text-emerald-600" />
+            <span>{exportToast}</span>
+          </div>
+          <button
+            onClick={() => setExportToast(null)}
+            className="text-emerald-700 hover:text-emerald-900 cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Visitor Log Records List */}
       {filteredVisits.length === 0 ? (
@@ -349,6 +542,454 @@ export const OfficeKioskView: React.FC<OfficeKioskViewProps> = ({
           >
             Launch Reception Kiosk Check-in
           </button>
+        </div>
+      ) : vmsViewMode === 'table' ? (
+        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-slate-900 text-white font-bold uppercase tracking-wider text-[10px]">
+                  <th className="w-10 px-3.5 py-3.5 text-center">
+                    <input
+                      type="checkbox"
+                      checked={
+                        selectedVisitIds.size === filteredVisits.length &&
+                        filteredVisits.length > 0
+                      }
+                      onChange={handleSelectAllVisits}
+                      className="rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      title="Select all records"
+                    />
+                  </th>
+                  <th className="px-3.5 py-3.5 w-40">Badge & Status</th>
+                  <th className="px-3.5 py-3.5 min-w-[240px]">Visiting Supplier & Rep</th>
+                  <th className="px-3.5 py-3.5 min-w-[200px]">Purpose & Agenda</th>
+                  <th className="px-3.5 py-3.5 min-w-[200px]">Host Executive & Office</th>
+                  <th className="px-3.5 py-3.5 w-36">Check-in / Time</th>
+                  <th className="px-3.5 py-3.5 w-28 text-center">Score & NDA</th>
+                  <th className="px-3.5 py-3.5 w-36 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredVisits.map((visit) => {
+                  const isExpanded = expandedVisitId === visit.id;
+                  const isSelected = selectedVisitIds.has(visit.id);
+                  const isEditing = editingNotesVisitId === visit.id;
+
+                  return (
+                    <React.Fragment key={visit.id}>
+                      <tr
+                        className={`transition-colors cursor-pointer ${
+                          isSelected
+                            ? 'bg-blue-50/70'
+                            : isExpanded
+                            ? 'bg-slate-50'
+                            : 'hover:bg-slate-50/80 bg-white'
+                        }`}
+                        onClick={() => setExpandedVisitId(isExpanded ? null : visit.id)}
+                      >
+                        <td
+                          className="px-3.5 py-3 text-center"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleToggleSelectVisit(visit.id)}
+                            className="rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                          />
+                        </td>
+
+                        {/* Badge & Status */}
+                        <td className="px-3.5 py-3">
+                          <div className="space-y-1">
+                            <span className="font-mono text-xs font-bold bg-slate-900 text-white px-2 py-0.5 rounded inline-block">
+                              {visit.badgeNumber}
+                            </span>
+                            <div>
+                              <span
+                                className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider inline-block ${
+                                  visit.visitorStatus === 'checked-in'
+                                    ? 'bg-amber-100 text-amber-800 border border-amber-300 animate-pulse'
+                                    : visit.visitorStatus === 'in-meeting'
+                                    ? 'bg-blue-100 text-blue-800 border border-blue-300'
+                                    : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                }`}
+                              >
+                                {visit.visitorStatus === 'checked-in'
+                                  ? '• In Lobby'
+                                  : visit.visitorStatus === 'in-meeting'
+                                  ? '• In Meeting'
+                                  : '✓ Completed'}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Visiting Supplier & Representative */}
+                        <td className="px-3.5 py-3">
+                          <div className="flex items-start gap-2.5">
+                            <img
+                              src={visit.supplierAvatar}
+                              alt={visit.supplierName}
+                              className="w-9 h-9 rounded-xl object-cover ring-1 ring-slate-200 shrink-0 mt-0.5"
+                            />
+                            <div className="min-w-0">
+                              <h4 className="text-xs font-bold text-slate-900 truncate">
+                                {visit.supplierName}
+                              </h4>
+                              <p className="text-xs font-bold text-blue-700 truncate">
+                                {visit.supplierCompany}
+                              </p>
+                              <div className="text-[10px] text-slate-400 mt-0.5 truncate">
+                                {visit.supplierPhone} • {visit.supplierEmail}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Purpose & Agenda */}
+                        <td className="px-3.5 py-3">
+                          <div className="space-y-1 max-w-xs">
+                            <span className="inline-block text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-md">
+                              {visit.purposeOfVisit}
+                            </span>
+                            <p className="text-xs text-slate-700 line-clamp-2 leading-relaxed">
+                              {visit.agendaDiscussion}
+                            </p>
+                          </div>
+                        </td>
+
+                        {/* Host Executive & Office */}
+                        <td className="px-3.5 py-3">
+                          <div>
+                            <span className="font-bold text-slate-900 block text-xs">
+                              {visit.buyerHostName}
+                            </span>
+                            <span className="text-[11px] text-slate-500 block truncate max-w-[190px]">
+                              {visit.buyerDepartment}
+                            </span>
+                            <div className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
+                              <Building2 className="w-3 h-3 text-slate-400 shrink-0" />
+                              <span className="truncate max-w-[180px]">{visit.officeLocation}</span>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Time In / Out */}
+                        <td className="px-3.5 py-3 whitespace-nowrap text-xs">
+                          <div className="font-semibold text-slate-800">{visit.date}</div>
+                          <div className="text-slate-500 text-[11px] flex items-center gap-1 mt-0.5">
+                            <Clock className="w-3 h-3 text-slate-400" />
+                            <span>In: {visit.checkInTime}</span>
+                          </div>
+                          {visit.checkOutTime && (
+                            <div className="text-emerald-700 text-[10px] font-semibold">
+                              Out: {visit.checkOutTime}
+                            </div>
+                          )}
+                        </td>
+
+                        {/* Rating & NDA */}
+                        <td className="px-3.5 py-3 text-center whitespace-nowrap">
+                          <div className="flex items-center justify-center gap-1 mb-1">
+                            <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                            <span className="font-bold text-slate-800 text-xs">
+                              {visit.vendorScore ? `${visit.vendorScore}.0` : '—'}
+                            </span>
+                          </div>
+                          <span
+                            className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                              visit.ndaSigned
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : 'bg-slate-100 text-slate-500'
+                            }`}
+                          >
+                            {visit.ndaSigned ? 'NDA Signed' : 'NDA Pending'}
+                          </span>
+                        </td>
+
+                        {/* Actions */}
+                        <td
+                          className="px-3.5 py-3 text-center whitespace-nowrap"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="flex items-center justify-center gap-1.5">
+                            {/* Live Flow Button */}
+                            {visit.visitorStatus === 'checked-in' && (
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateStatus(visit.id, 'in-meeting')}
+                                className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-[11px] font-bold shadow-2xs cursor-pointer flex items-center gap-1"
+                                title="Start Meeting"
+                              >
+                                <UserCheck className="w-3 h-3" />
+                                <span>Start</span>
+                              </button>
+                            )}
+
+                            {visit.visitorStatus === 'in-meeting' && (
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateStatus(visit.id, 'completed')}
+                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-[11px] font-bold shadow-2xs cursor-pointer flex items-center gap-1"
+                                title="Conclude Meeting"
+                              >
+                                <CheckCircle2 className="w-3 h-3" />
+                                <span>Checkout</span>
+                              </button>
+                            )}
+
+                            {visit.visitorStatus === 'completed' && (
+                              <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 flex items-center gap-1">
+                                <Check className="w-3 h-3 text-emerald-600" />
+                                Logged
+                              </span>
+                            )}
+
+                            {/* Message Button */}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onStartMessageWith(
+                                  visit.supplierId || 'sup_01',
+                                  visit.supplierName
+                                )
+                              }
+                              className="p-1.5 bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-600 rounded-md cursor-pointer transition-colors"
+                              title="Message Supplier on SoKo"
+                            >
+                              <MessageSquare className="w-3.5 h-3.5 text-blue-600" />
+                            </button>
+
+                            {/* Add to Rolodex */}
+                            {onAddContactToRolodex && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onAddContactToRolodex({
+                                    name: visit.supplierName,
+                                    company: visit.supplierCompany,
+                                    phone: visit.supplierPhone,
+                                    email: visit.supplierEmail,
+                                    title: 'Visiting Representative',
+                                    role: 'supplier',
+                                    tags: ['VMS', 'Office Met'],
+                                  })
+                                }
+                                className="p-1.5 bg-slate-100 hover:bg-purple-50 hover:text-purple-700 text-slate-600 rounded-md cursor-pointer transition-colors"
+                                title="Save to Rolodex"
+                              >
+                                <Bookmark className="w-3.5 h-3.5 text-purple-600" />
+                              </button>
+                            )}
+
+                            {/* Expand Row Details */}
+                            <button
+                              type="button"
+                              onClick={() => setExpandedVisitId(isExpanded ? null : visit.id)}
+                              className={`p-1.5 rounded-md cursor-pointer transition-colors ${
+                                isExpanded
+                                  ? 'bg-slate-900 text-white'
+                                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                              }`}
+                              title={isExpanded ? 'Collapse row' : 'Expand full minutes & notes'}
+                            >
+                              {isExpanded ? (
+                                <ChevronUp className="w-3.5 h-3.5" />
+                              ) : (
+                                <ChevronDown className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+
+                      {/* Expanded Detail Drawer Row */}
+                      {isExpanded && (
+                        <tr className="bg-slate-50/90 border-b-2 border-blue-200 animate-in fade-in duration-200">
+                          <td colSpan={8} className="p-4 sm:p-6">
+                            <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs space-y-5">
+                              {/* Top Bar inside Drawer */}
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                                <div className="flex items-center gap-3">
+                                  <span className="font-mono text-xs font-black bg-slate-900 text-white px-2.5 py-1 rounded-md">
+                                    {visit.badgeNumber}
+                                  </span>
+                                  <div>
+                                    <h4 className="text-sm font-bold text-slate-900">
+                                      {visit.supplierName} • {visit.supplierCompany}
+                                    </h4>
+                                    <p className="text-xs text-slate-500">
+                                      Host: {visit.buyerHostName} ({visit.buyerDepartment}) | Location: {visit.officeLocation}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setGeneratedBadge(visit)}
+                                    className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                                  >
+                                    <QrCode className="w-3.5 h-3.5 text-slate-600" />
+                                    <span>View Kiosk Badge Pass</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setExpandedVisitId(null)}
+                                    className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs font-bold cursor-pointer"
+                                  >
+                                    Close Details ▲
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Discussion Agenda */}
+                              <div>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                                  Reception Kiosk Stated Agenda:
+                                </span>
+                                <p className="text-xs text-slate-800 bg-slate-50 p-3 rounded-xl border border-slate-200 leading-relaxed font-medium">
+                                  &ldquo;{visit.agendaDiscussion}&rdquo;
+                                </p>
+                              </div>
+
+                              {/* Meeting Minutes & Buyer Vendor Evaluation */}
+                              <div className="bg-amber-50/60 border border-amber-200 rounded-xl p-4 space-y-3">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <FileText className="w-4 h-4 text-amber-800" />
+                                    <span className="text-xs font-bold text-amber-950 uppercase tracking-wider">
+                                      Buyer Meeting Minutes & Vendor Evaluation
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-1 bg-white border border-amber-200 px-2 py-0.5 rounded-md">
+                                      <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
+                                      <span className="text-xs font-bold text-slate-800">
+                                        {visit.vendorScore ? `${visit.vendorScore}.0` : 'Unrated'}
+                                      </span>
+                                    </div>
+
+                                    {!isEditing ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEditingNotesVisitId(visit.id);
+                                          setTempNotes(visit.meetingNotes || '');
+                                          setTempRating(visit.vendorScore || 5);
+                                        }}
+                                        className="text-xs text-amber-800 underline font-bold hover:text-amber-950 cursor-pointer"
+                                      >
+                                        {visit.meetingNotes ? 'Edit Minutes & Action Items' : '+ Add Minutes'}
+                                      </button>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSaveNotes(visit.id)}
+                                        className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-md text-xs font-bold cursor-pointer"
+                                      >
+                                        Save Minutes
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {isEditing ? (
+                                  <div className="space-y-3 pt-2">
+                                    <div>
+                                      <label className="block text-[11px] font-bold text-amber-900 mb-1">
+                                        Meeting Summary / Discussion Outcome:
+                                      </label>
+                                      <textarea
+                                        value={tempNotes}
+                                        onChange={(e) => setTempNotes(e.target.value)}
+                                        placeholder="Record key negotiation points, pricing agreements, sample quality, and delivery dates..."
+                                        rows={3}
+                                        className="w-full bg-white border border-amber-300 rounded-lg p-2.5 text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                                      />
+                                    </div>
+
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                      <div>
+                                        <label className="block text-[11px] font-bold text-amber-900 mb-1">
+                                          Vendor Capability & Demo Score:
+                                        </label>
+                                        <div className="flex items-center gap-1.5 bg-white p-1.5 rounded-lg border border-amber-200">
+                                          {[1, 2, 3, 4, 5].map((star) => (
+                                            <button
+                                              key={star}
+                                              type="button"
+                                              onClick={() => setTempRating(star)}
+                                              className="p-1 cursor-pointer hover:scale-110 transition-transform"
+                                            >
+                                              <Star
+                                                className={`w-5 h-5 ${
+                                                  star <= tempRating
+                                                    ? 'fill-amber-500 text-amber-500'
+                                                    : 'text-slate-300'
+                                                }`}
+                                              />
+                                            </button>
+                                          ))}
+                                          <span className="text-xs font-bold text-amber-900 ml-2">
+                                            {tempRating}.0 / 5.0
+                                          </span>
+                                        </div>
+                                      </div>
+
+                                      <div>
+                                        <label className="block text-[11px] font-bold text-amber-900 mb-1">
+                                          Add Follow-Up Action Item:
+                                        </label>
+                                        <div className="flex gap-1.5">
+                                          <input
+                                            type="text"
+                                            value={tempActionItem}
+                                            onChange={(e) => setTempActionItem(e.target.value)}
+                                            placeholder="e.g. Issue PO for 200MT steel"
+                                            className="flex-1 bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 focus:outline-hidden"
+                                          />
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="text-xs text-amber-950 font-medium leading-relaxed bg-white/70 p-3 rounded-lg border border-amber-200/60">
+                                    {visit.meetingNotes || 'No buyer minutes logged yet. Click "+ Add Minutes" to record.'}
+                                  </div>
+                                )}
+
+                                {/* Action items display */}
+                                {visit.actionItems && visit.actionItems.length > 0 && (
+                                  <div className="mt-2 pt-2 border-t border-amber-200/60 flex items-center flex-wrap gap-2">
+                                    <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider">
+                                      Action Items:
+                                    </span>
+                                    {visit.actionItems.map((item, idx) => (
+                                      <span
+                                        key={idx}
+                                        className="text-[11px] font-semibold bg-white text-slate-800 px-2 py-0.5 rounded-md border border-amber-300 flex items-center gap-1"
+                                      >
+                                        <Check className="w-3 h-3 text-emerald-600" />
+                                        {item}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       ) : (
         <div className="space-y-4">

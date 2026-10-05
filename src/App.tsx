@@ -12,6 +12,7 @@ import { AnalyticsView } from './components/AnalyticsView';
 import { AcademyView } from './components/AcademyView';
 import { TeamManagementView } from './components/TeamManagementView';
 import { SuperAdminPortal } from './components/SuperAdminPortal';
+import { SokoAiSearchView } from './components/SokoAiSearchView';
 import { LandingPage } from './components/LandingPage';
 import { AuthModal } from './components/AuthModal';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -96,11 +97,11 @@ function MainApp() {
   }, [authUser]);
 
   const [posts, setPosts] = useState<FeedPost[]>(() => {
-    const saved = localStorage.getItem('soko_feed_posts_v3');
+    const saved = localStorage.getItem('soko_feed_posts_v4_infographics');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].authorName === 'soko.ae') {
+        if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].id === 'post_1') {
           return parsed;
         }
       } catch (e) {
@@ -226,7 +227,7 @@ function MainApp() {
   }, [currentUser]);
 
   useEffect(() => {
-    localStorage.setItem('soko_feed_posts_v3', JSON.stringify(posts));
+    localStorage.setItem('soko_feed_posts_v4_infographics', JSON.stringify(posts));
   }, [posts]);
 
   useEffect(() => {
@@ -277,6 +278,16 @@ function MainApp() {
     localStorage.setItem('soko_company_team_activity_v1', JSON.stringify(teamActivityLogs));
   }, [teamActivityLogs]);
 
+  // Guard against restricted tabs for Buyer role (VMS, Opportunities, Super Admin)
+  useEffect(() => {
+    if (
+      currentUser.role === 'buyer' &&
+      (activeTab === 'kiosk' || activeTab === 'opportunities' || activeTab === 'admin')
+    ) {
+      setActiveTab('feed');
+    }
+  }, [currentUser.role, activeTab]);
+
   // Handle Persona / Role Switcher
   const handleRoleChange = (role: UserRole) => {
     if (role === 'buyer') {
@@ -289,6 +300,9 @@ function MainApp() {
         avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
         paymentTerms: 'Net 45 upon delivery inspection',
       });
+      if (activeTab === 'kiosk' || activeTab === 'opportunities' || activeTab === 'admin') {
+        setActiveTab('feed');
+      }
     } else if (role === 'supplier') {
       setCurrentUser({
         ...INITIAL_CURRENT_USER,
@@ -715,6 +729,14 @@ function MainApp() {
           />
         )}
 
+        {activeTab === 'soko-ai' && (
+          <SokoAiSearchView
+            currentUser={currentUser}
+            onNavigateToTab={(tab) => setActiveTab(tab)}
+            onStartMessageWith={handleStartMessageWith}
+          />
+        )}
+
         {activeTab === 'academy' && (
           <AcademyView
             learningItems={learningItems}
@@ -766,7 +788,7 @@ function MainApp() {
           />
         )}
 
-        {activeTab === 'kiosk' && (
+        {activeTab === 'kiosk' && currentUser.role !== 'buyer' && (
           <OfficeKioskView
             visits={officeVisits}
             onUpdateVisits={setOfficeVisits}
@@ -848,7 +870,7 @@ function MainApp() {
           <AnalyticsView analytics={analytics} currentUser={currentUser} />
         )}
 
-        {activeTab === 'admin' && (
+        {activeTab === 'admin' && currentUser.role !== 'buyer' && (
           <SuperAdminPortal
             currentUser={currentUser}
             onNavigateToTab={(tab) => setActiveTab(tab)}

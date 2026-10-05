@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   FolderKanban,
   Search,
@@ -48,10 +48,152 @@ import {
   Activity,
   CheckCircle,
   Scale,
+  Coins,
+  Paintbrush,
+  HardHat,
+  Hammer,
 } from 'lucide-react';
 import { OpportunityItem, OpportunityProposal, UserProfile, CampaignAnalytics } from '../types';
 import { CampaignAnalyticsPanel } from './CampaignAnalyticsPanel';
 import { BidComparisonModal } from './BidComparisonModal';
+import {
+  OPPORTUNITY_12_CATEGORIES,
+  CategoryBlockItem,
+  generateCategoryOpportunities,
+} from '../data/categoryOpportunities';
+
+export const CATEGORY_COLORS: Record<
+  string,
+  { bg: string; text: string; border: string; activeGradient: string; iconBg: string; ring: string }
+> = {
+  manpower: {
+    bg: 'bg-indigo-50/80',
+    text: 'text-indigo-900',
+    border: 'border-indigo-200',
+    activeGradient: 'from-indigo-950 via-slate-900 to-indigo-900',
+    iconBg: 'bg-indigo-600 text-white',
+    ring: 'ring-indigo-400',
+  },
+  scrap: {
+    bg: 'bg-amber-50/80',
+    text: 'text-amber-900',
+    border: 'border-amber-200',
+    activeGradient: 'from-amber-950 via-slate-900 to-amber-900',
+    iconBg: 'bg-amber-600 text-white',
+    ring: 'ring-amber-400',
+  },
+  rental: {
+    bg: 'bg-orange-50/80',
+    text: 'text-orange-900',
+    border: 'border-orange-200',
+    activeGradient: 'from-orange-950 via-slate-900 to-orange-900',
+    iconBg: 'bg-orange-600 text-white',
+    ring: 'ring-orange-400',
+  },
+  tile_subcon: {
+    bg: 'bg-emerald-50/80',
+    text: 'text-emerald-900',
+    border: 'border-emerald-200',
+    activeGradient: 'from-emerald-950 via-slate-900 to-emerald-900',
+    iconBg: 'bg-emerald-600 text-white',
+    ring: 'ring-emerald-400',
+  },
+  block_subcon: {
+    bg: 'bg-slate-100/90',
+    text: 'text-slate-900',
+    border: 'border-slate-300',
+    activeGradient: 'from-slate-950 via-slate-900 to-zinc-900',
+    iconBg: 'bg-slate-700 text-white',
+    ring: 'ring-slate-400',
+  },
+  mep_subcon: {
+    bg: 'bg-cyan-50/80',
+    text: 'text-cyan-900',
+    border: 'border-cyan-200',
+    activeGradient: 'from-cyan-950 via-slate-900 to-blue-950',
+    iconBg: 'bg-cyan-600 text-white',
+    ring: 'ring-cyan-400',
+  },
+  plaster_paint: {
+    bg: 'bg-rose-50/80',
+    text: 'text-rose-900',
+    border: 'border-rose-200',
+    activeGradient: 'from-rose-950 via-slate-900 to-rose-900',
+    iconBg: 'bg-rose-600 text-white',
+    ring: 'ring-rose-400',
+  },
+  waterproofing: {
+    bg: 'bg-sky-50/80',
+    text: 'text-sky-900',
+    border: 'border-sky-200',
+    activeGradient: 'from-sky-950 via-slate-900 to-blue-900',
+    iconBg: 'bg-sky-600 text-white',
+    ring: 'ring-sky-400',
+  },
+  steel_rebar: {
+    bg: 'bg-purple-50/80',
+    text: 'text-purple-900',
+    border: 'border-purple-200',
+    activeGradient: 'from-purple-950 via-slate-900 to-indigo-950',
+    iconBg: 'bg-purple-600 text-white',
+    ring: 'ring-purple-400',
+  },
+  concrete_works: {
+    bg: 'bg-stone-100/90',
+    text: 'text-stone-900',
+    border: 'border-stone-300',
+    activeGradient: 'from-stone-950 via-slate-900 to-stone-900',
+    iconBg: 'bg-stone-700 text-white',
+    ring: 'ring-stone-400',
+  },
+  fitout_joinery: {
+    bg: 'bg-teal-50/80',
+    text: 'text-teal-900',
+    border: 'border-teal-200',
+    activeGradient: 'from-teal-950 via-slate-900 to-emerald-950',
+    iconBg: 'bg-teal-600 text-white',
+    ring: 'ring-teal-400',
+  },
+  earthworks: {
+    bg: 'bg-red-50/80',
+    text: 'text-red-900',
+    border: 'border-red-200',
+    activeGradient: 'from-red-950 via-slate-900 to-amber-950',
+    iconBg: 'bg-red-600 text-white',
+    ring: 'ring-red-400',
+  },
+};
+
+export const renderCategoryIcon = (iconName: string, className = 'w-5 h-5') => {
+  switch (iconName) {
+    case 'Users':
+      return <Users className={className} />;
+    case 'Coins':
+      return <Coins className={className} />;
+    case 'Truck':
+      return <Truck className={className} />;
+    case 'Layers':
+      return <Layers className={className} />;
+    case 'Building2':
+      return <Building2 className={className} />;
+    case 'Zap':
+      return <Zap className={className} />;
+    case 'Paintbrush':
+      return <Paintbrush className={className} />;
+    case 'ShieldCheck':
+      return <ShieldCheck className={className} />;
+    case 'Hammer':
+      return <Hammer className={className} />;
+    case 'HardHat':
+      return <HardHat className={className} />;
+    case 'Compass':
+      return <Compass className={className} />;
+    case 'Activity':
+      return <Activity className={className} />;
+    default:
+      return <Tag className={className} />;
+  }
+};
 
 interface OpportunitiesViewProps {
   opportunities: OpportunityItem[];
@@ -70,6 +212,18 @@ export const OpportunitiesView: React.FC<OpportunitiesViewProps> = ({
   onOpenSubmitProposal,
   onStartMessageWith,
 }) => {
+  // 12 Category Selection State: only when a category is selected are results published!
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
+
+  const activeCategory = useMemo(() => {
+    if (!selectedCategoryId) return null;
+    return OPPORTUNITY_12_CATEGORIES.find((c) => c.id === selectedCategoryId) || null;
+  }, [selectedCategoryId]);
+
+  const totalCategoryOppsCount = useMemo(() => {
+    return OPPORTUNITY_12_CATEGORIES.reduce((acc, c) => acc + c.count, 0);
+  }, []);
+
   // Navigation tabs: Marketplace Deals (Available to Buy) vs Buyer Sourcing Campaigns (1-Click RFP Blasts) vs My Ad Insights Center vs Granular Campaign Analytics
   const [mainTab, setMainTab] = useState<'all' | 'deals' | 'campaigns' | 'insights' | 'analytics'>('all');
   const [selectedCampaignForAnalytics, setSelectedCampaignForAnalytics] = useState<string | null>(null);
@@ -224,44 +378,93 @@ export const OpportunitiesView: React.FC<OpportunitiesViewProps> = ({
     });
   };
 
-  // Filter Logic
-  const filteredOpportunities = opportunities.filter((opp) => {
-    // Tab filter
-    if (mainTab === 'deals' && opp.opportunityType !== 'market_deal') return false;
-    if (mainTab === 'campaigns' && opp.opportunityType === 'market_deal') return false;
-    if (mainTab === 'insights') {
-      // Show only campaigns posted by user's company
-      const isMyCompany = opp.issuerCompany === currentUser.company || opp.issuerName === currentUser.name;
-      if (!isMyCompany) return false;
-    }
+  // Category-specific opportunities:
+  // Combines canonical generated opportunities matching exact category counts with any matching user/prop opportunities
+  const categoryOpportunitiesList = useMemo(() => {
+    if (!selectedCategoryId || !activeCategory) return [];
 
-    // Deal Category filter (when in Deals or All)
-    if (dealCategoryFilter !== 'all' && opp.opportunityType === 'market_deal') {
-      if (opp.dealCategory !== dealCategoryFilter) return false;
-    }
+    const generated = generateCategoryOpportunities(selectedCategoryId);
 
-    // Trade category filter
-    if (selectedTradeCategory !== 'All' && opp.category !== selectedTradeCategory) return false;
+    const matchingProps = opportunities.filter((opp) => {
+      const titleLower = opp.title.toLowerCase();
+      const catLower = (opp.category || '').toLowerCase();
+      const campCatLower = (opp.campaignCategory || '').toLowerCase();
+      const nameLower = activeCategory.name.toLowerCase();
+      return (
+        catLower.includes(nameLower) ||
+        campCatLower.includes(nameLower) ||
+        titleLower.includes(nameLower) ||
+        activeCategory.tags.some((tag) =>
+          titleLower.includes(tag.toLowerCase()) || catLower.includes(tag.toLowerCase())
+        )
+      );
+    });
 
-    // Status filter
-    if (statusFilter !== 'all' && opp.status !== statusFilter) return false;
+    const propIds = new Set(matchingProps.map((m) => m.id));
+    return [...matchingProps, ...generated.filter((g) => !propIds.has(g.id))];
+  }, [selectedCategoryId, activeCategory, opportunities]);
 
-    // Search query
-    if (searchTerm.trim()) {
-      const q = searchTerm.toLowerCase();
-      const match =
-        opp.title.toLowerCase().includes(q) ||
-        opp.rfqNumber.toLowerCase().includes(q) ||
-        opp.issuerCompany.toLowerCase().includes(q) ||
-        opp.location.toLowerCase().includes(q) ||
-        opp.description.toLowerCase().includes(q);
-      if (!match) return false;
-    }
+  // Filter Logic: only populated when a category is selected!
+  const filteredOpportunities = useMemo(() => {
+    if (!selectedCategoryId) return [];
 
-    return true;
-  });
+    return categoryOpportunitiesList.filter((opp) => {
+      // Tab filter
+      if (mainTab === 'deals' && opp.opportunityType !== 'market_deal') return false;
+      if (mainTab === 'campaigns' && opp.opportunityType === 'market_deal') return false;
+      if (mainTab === 'insights') {
+        const isMyCompany = opp.issuerCompany === currentUser.company || opp.issuerName === currentUser.name;
+        if (!isMyCompany) return false;
+      }
 
-  // Calculate high-level stats
+      // Deal Category filter (when in Deals or All)
+      if (dealCategoryFilter !== 'all' && opp.opportunityType === 'market_deal') {
+        if (opp.dealCategory !== dealCategoryFilter) return false;
+      }
+
+      // Trade category filter
+      if (selectedTradeCategory !== 'All' && opp.category !== selectedTradeCategory) return false;
+
+      // Status filter
+      if (statusFilter !== 'all' && opp.status !== statusFilter) return false;
+
+      // Search query
+      if (searchTerm.trim()) {
+        const q = searchTerm.toLowerCase();
+        const match =
+          opp.title.toLowerCase().includes(q) ||
+          opp.rfqNumber.toLowerCase().includes(q) ||
+          opp.issuerCompany.toLowerCase().includes(q) ||
+          opp.location.toLowerCase().includes(q) ||
+          opp.description.toLowerCase().includes(q) ||
+          (opp.specifications && opp.specifications.some((s) => s.toLowerCase().includes(q)));
+        if (!match) return false;
+      }
+
+      return true;
+    });
+  }, [
+    selectedCategoryId,
+    categoryOpportunitiesList,
+    mainTab,
+    dealCategoryFilter,
+    selectedTradeCategory,
+    statusFilter,
+    searchTerm,
+    currentUser.company,
+    currentUser.name,
+  ]);
+
+  // Stats for current category
+  const currentCategoryDealsCount = useMemo(() => {
+    return categoryOpportunitiesList.filter((o) => o.opportunityType === 'market_deal').length;
+  }, [categoryOpportunitiesList]);
+
+  const currentCategoryCampaignsCount = useMemo(() => {
+    return categoryOpportunitiesList.filter((o) => o.opportunityType !== 'market_deal').length;
+  }, [categoryOpportunitiesList]);
+
+  // Global counts
   const marketDealsList = opportunities.filter((o) => o.opportunityType === 'market_deal');
   const buyerCampaignsList = opportunities.filter((o) => o.opportunityType !== 'market_deal');
   const myCompanyCampaigns = opportunities.filter(
@@ -293,16 +496,29 @@ export const OpportunitiesView: React.FC<OpportunitiesViewProps> = ({
       status: 'pending',
     };
 
-    const updated = opportunities.map((opp) => {
-      if (opp.id === selectedDealForOffer.id) {
-        return {
-          ...opp,
-          proposalsCount: opp.proposalsCount + 1,
-          proposals: [newOfferProposal, ...(opp.proposals || [])],
-        };
-      }
-      return opp;
-    });
+    const exists = opportunities.some((opp) => opp.id === selectedDealForOffer.id);
+    let updated: OpportunityItem[];
+    if (exists) {
+      updated = opportunities.map((opp) => {
+        if (opp.id === selectedDealForOffer.id) {
+          return {
+            ...opp,
+            proposalsCount: opp.proposalsCount + 1,
+            proposals: [newOfferProposal, ...(opp.proposals || [])],
+          };
+        }
+        return opp;
+      });
+    } else {
+      const target =
+        categoryOpportunitiesList.find((opp) => opp.id === selectedDealForOffer.id) || selectedDealForOffer;
+      const updatedTarget: OpportunityItem = {
+        ...target,
+        proposalsCount: target.proposalsCount + 1,
+        proposals: [newOfferProposal, ...(target.proposals || [])],
+      };
+      updated = [updatedTarget, ...opportunities];
+    }
 
     if (onUpdateOpportunities) {
       onUpdateOpportunities(updated);
@@ -356,24 +572,38 @@ export const OpportunitiesView: React.FC<OpportunitiesViewProps> = ({
       status: 'pending',
     };
 
-    const updated = opportunities.map((opp) => {
-      if (opp.id === pricingModalOpp.id) {
-        const existingProposals = opp.proposals || [];
-        return {
-          ...opp,
-          proposalsCount: opp.proposalsCount + 1,
-          myProposalSubmitted: true,
-          proposals: [newProposal, ...existingProposals],
-          campaignAnalytics: opp.campaignAnalytics
-            ? {
-                ...opp.campaignAnalytics,
-                respondedCount: opp.campaignAnalytics.respondedCount + 1,
-              }
-            : undefined,
-        };
-      }
-      return opp;
-    });
+    const exists = opportunities.some((opp) => opp.id === pricingModalOpp.id);
+    let updated: OpportunityItem[];
+    if (exists) {
+      updated = opportunities.map((opp) => {
+        if (opp.id === pricingModalOpp.id) {
+          const existingProposals = opp.proposals || [];
+          return {
+            ...opp,
+            proposalsCount: opp.proposalsCount + 1,
+            myProposalSubmitted: true,
+            proposals: [newProposal, ...existingProposals],
+            campaignAnalytics: opp.campaignAnalytics
+              ? {
+                  ...opp.campaignAnalytics,
+                  respondedCount: opp.campaignAnalytics.respondedCount + 1,
+                }
+              : undefined,
+          };
+        }
+        return opp;
+      });
+    } else {
+      const target = categoryOpportunitiesList.find((opp) => opp.id === pricingModalOpp.id) || pricingModalOpp;
+      const existingProposals = target.proposals || [];
+      const updatedTarget: OpportunityItem = {
+        ...target,
+        proposalsCount: target.proposalsCount + 1,
+        myProposalSubmitted: true,
+        proposals: [newProposal, ...existingProposals],
+      };
+      updated = [updatedTarget, ...opportunities];
+    }
 
     if (onUpdateOpportunities) {
       onUpdateOpportunities(updated);
@@ -390,24 +620,49 @@ export const OpportunitiesView: React.FC<OpportunitiesViewProps> = ({
     proposalId: string,
     newStatus: OpportunityProposal['status']
   ) => {
-    const updated = opportunities.map((opp) => {
-      if (opp.id !== oppId) return opp;
-      const updatedProposals = (opp.proposals || []).map((p) => {
-        if (p.id === proposalId) {
-          return { ...p, status: newStatus };
-        }
-        if (newStatus === 'awarded' && p.id !== proposalId) {
-          return { ...p, status: 'declined' as const };
-        }
-        return p;
-      });
+    const exists = opportunities.some((opp) => opp.id === oppId);
+    let updated: OpportunityItem[];
+    if (exists) {
+      updated = opportunities.map((opp) => {
+        if (opp.id !== oppId) return opp;
+        const updatedProposals = (opp.proposals || []).map((p) => {
+          if (p.id === proposalId) {
+            return { ...p, status: newStatus };
+          }
+          if (newStatus === 'awarded' && p.id !== proposalId) {
+            return { ...p, status: 'declined' as const };
+          }
+          return p;
+        });
 
-      return {
-        ...opp,
-        status: newStatus === 'awarded' ? ('awarded' as const) : opp.status,
-        proposals: updatedProposals,
-      };
-    });
+        return {
+          ...opp,
+          status: newStatus === 'awarded' ? ('awarded' as const) : opp.status,
+          proposals: updatedProposals,
+        };
+      });
+    } else {
+      const target = categoryOpportunitiesList.find((opp) => opp.id === oppId);
+      if (target) {
+        const updatedProposals = (target.proposals || []).map((p) => {
+          if (p.id === proposalId) {
+            return { ...p, status: newStatus };
+          }
+          if (newStatus === 'awarded' && p.id !== proposalId) {
+            return { ...p, status: 'declined' as const };
+          }
+          return p;
+        });
+        const updatedTarget: OpportunityItem = {
+          ...target,
+          status: newStatus === 'awarded' ? ('awarded' as const) : target.status,
+          proposals: updatedProposals,
+        };
+        updated = [updatedTarget, ...opportunities];
+      } else {
+        updated = opportunities;
+      }
+    }
 
     if (onUpdateOpportunities) {
       onUpdateOpportunities(updated);
@@ -735,185 +990,303 @@ export const OpportunitiesView: React.FC<OpportunitiesViewProps> = ({
         </div>
       </div>
 
-      {/* Main View Mode Navigation Bar (Facebook Marketplace Style) */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-xs space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
-          {/* Main Tab Switcher */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1">
-            <button
-              onClick={() => setMainTab('all')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-                mainTab === 'all'
-                  ? 'bg-slate-900 text-white shadow-xs'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              }`}
-            >
-              <Layers className="w-3.5 h-3.5" />
-              <span>All Opportunities ({opportunities.length})</span>
-            </button>
-
-            <button
-              onClick={() => setMainTab('deals')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-                mainTab === 'deals'
-                  ? 'bg-amber-600 text-white shadow-xs'
-                  : 'bg-amber-50 text-amber-900 hover:bg-amber-100 border border-amber-200'
-              }`}
-            >
-              <ShoppingBag className="w-3.5 h-3.5 text-amber-500" />
-              <span>Market Deals (Buy Now) ({marketDealsList.length})</span>
-            </button>
-
-            <button
-              onClick={() => setMainTab('campaigns')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-                mainTab === 'campaigns'
-                  ? 'bg-purple-700 text-white shadow-xs'
-                  : 'bg-purple-50 text-purple-900 hover:bg-purple-100 border border-purple-200'
-              }`}
-            >
-              <Zap className="w-3.5 h-3.5 text-purple-600" />
-              <span>Buyer Sourcing Campaigns & RFPs ({buyerCampaignsList.length})</span>
-            </button>
-
-            <button
-              onClick={() => setMainTab('insights')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-                mainTab === 'insights'
-                  ? 'bg-indigo-700 text-white shadow-xs'
-                  : 'bg-indigo-50 text-indigo-900 hover:bg-indigo-100 border border-indigo-200'
-              }`}
-            >
-              <BarChart3 className="w-3.5 h-3.5 text-indigo-600" />
-              <span>Sourcing Insights Desk</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setSelectedCampaignForAnalytics(null);
-                setMainTab('analytics');
-              }}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-                mainTab === 'analytics'
-                  ? 'bg-gradient-to-r from-purple-800 to-indigo-900 text-amber-300 shadow-md ring-2 ring-amber-400/40'
-                  : 'bg-gradient-to-r from-purple-50 to-indigo-50 text-purple-900 hover:from-purple-100 hover:to-indigo-100 border border-purple-300'
-              }`}
-            >
-              <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
-              <span>Campaign Analytics (Premium)</span>
-              <span className="px-1.5 py-0.2 rounded text-[9px] font-black uppercase bg-amber-400 text-slate-950">
-                PRO
+      {/* 12-Category Sourcing Gateway & Navigation Bar (div:nth-of-type(2)) */}
+      <div className="bg-white rounded-3xl border border-slate-200 p-5 sm:p-6 shadow-sm space-y-5">
+        {/* Header: Gateway Title & Active Category Indicator */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="px-2.5 py-0.5 rounded-lg text-[11px] font-bold bg-purple-100 text-purple-900 border border-purple-200 uppercase tracking-wide flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5 text-purple-700" />
+                Trade Category Selection
               </span>
-            </button>
+              <span className="text-xs text-slate-500 font-semibold">
+                12 Categories • {totalCategoryOppsCount} Open Opportunities
+              </span>
+            </div>
+            <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
+              Select Category to Publish Open Opportunities
+            </h2>
+            <p className="text-xs text-slate-500">
+              Click a category block below to reveal live subcontract packages, rental units, and surplus lots.
+            </p>
           </div>
 
-          {/* Status Filter */}
-          <div className="flex items-center gap-1.5 text-xs shrink-0">
-            <span className="text-slate-400 font-bold uppercase text-[10px]">Status:</span>
-            {['all', 'open', 'closing-soon', 'awarded'].map((st) => (
+          {/* Active Category badge + Clear button */}
+          {selectedCategoryId && activeCategory && (
+            <div className="flex items-center gap-2.5 bg-purple-50/90 border border-purple-200 p-1.5 pr-3 rounded-2xl shrink-0 animate-in fade-in">
+              <div className="w-7 h-7 rounded-xl bg-purple-600 text-white flex items-center justify-center shrink-0">
+                {renderCategoryIcon(activeCategory.iconName, 'w-4 h-4')}
+              </div>
+              <div className="text-left">
+                <div className="text-[10px] uppercase font-bold text-purple-600 leading-none">Selected</div>
+                <div className="text-xs font-black text-purple-950 leading-tight">
+                  {activeCategory.name} ({activeCategory.count} Open)
+                </div>
+              </div>
               <button
-                key={st}
-                onClick={() => setStatusFilter(st as any)}
-                className={`px-2.5 py-1 rounded-lg capitalize font-bold text-[11px] cursor-pointer transition-all ${
-                  statusFilter === st
-                    ? 'bg-slate-900 text-white shadow-2xs'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                onClick={() => setSelectedCategoryId(null)}
+                className="ml-2 px-2 py-1 text-[11px] font-bold text-slate-600 hover:text-slate-950 hover:bg-purple-100 rounded-lg cursor-pointer transition-colors"
+                title="Clear category to view gateway"
+              >
+                ✕ Clear
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* 12 Interactive Category Blocks */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+          {OPPORTUNITY_12_CATEGORIES.map((cat) => {
+            const isSelected = selectedCategoryId === cat.id;
+            const colors = CATEGORY_COLORS[cat.id] || CATEGORY_COLORS.manpower;
+
+            return (
+              <button
+                key={cat.id}
+                onClick={() => {
+                  if (isSelected) {
+                    setSelectedCategoryId(null);
+                  } else {
+                    setSelectedCategoryId(cat.id);
+                    setSearchTerm('');
+                    setDealCategoryFilter('all');
+                    setStatusFilter('all');
+                  }
+                }}
+                className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between group ${
+                  isSelected
+                    ? `bg-gradient-to-br ${colors.activeGradient} text-white border-purple-500 shadow-lg shadow-purple-950/20 ring-2 ${colors.ring}`
+                    : `bg-white hover:bg-slate-50/90 border-slate-200 hover:border-purple-300 shadow-2xs hover:shadow-md text-slate-900`
                 }`}
               >
-                {st === 'all' ? 'All' : st.replace('-', ' ')}
+                {/* Header in block: Icon + Count */}
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <div
+                    className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-110 ${
+                      isSelected ? 'bg-white/20 text-white shadow-xs' : colors.iconBg
+                    }`}
+                  >
+                    {renderCategoryIcon(cat.iconName, 'w-4 h-4')}
+                  </div>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[11px] font-black shrink-0 transition-colors ${
+                      isSelected
+                        ? 'bg-amber-400 text-slate-950 shadow-xs'
+                        : 'bg-purple-100 text-purple-900 border border-purple-200 group-hover:bg-purple-200'
+                    }`}
+                  >
+                    {cat.count} Open
+                  </span>
+                </div>
+
+                {/* Category Name & Tags */}
+                <div className="space-y-0.5">
+                  <h4
+                    className={`font-black text-xs sm:text-sm tracking-tight transition-colors ${
+                      isSelected ? 'text-white' : 'text-slate-900 group-hover:text-purple-700'
+                    }`}
+                  >
+                    {cat.name}
+                  </h4>
+                  <p
+                    className={`text-[10px] line-clamp-1 transition-colors ${
+                      isSelected ? 'text-purple-200' : 'text-slate-500'
+                    }`}
+                    title={cat.description}
+                  >
+                    {cat.tags.slice(0, 2).join(' • ')}
+                  </p>
+                </div>
+
+                {/* Footer in block */}
+                <div className="mt-3 pt-2 border-t border-slate-100/20 flex items-center justify-between text-[10px]">
+                  {isSelected ? (
+                    <span className="font-extrabold text-amber-300 flex items-center gap-1">
+                      <Check className="w-3 h-3" /> Published
+                    </span>
+                  ) : (
+                    <span className="font-semibold text-slate-400 group-hover:text-purple-600 flex items-center gap-0.5 transition-colors">
+                      Select <ArrowRight className="w-2.5 h-2.5" />
+                    </span>
+                  )}
+                  <span
+                    className={`text-[9px] font-mono ${isSelected ? 'text-slate-300' : 'text-slate-400'}`}
+                  >
+                    {cat.id.slice(0, 4).toUpperCase()}
+                  </span>
+                </div>
               </button>
-            ))}
-          </div>
+            );
+          })}
         </div>
 
-        {/* Subcategory Pills for Market Deals (Machinery vs Steel vs Surplus) */}
-        {(mainTab === 'deals' || mainTab === 'all') && (
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
-            <span className="text-[10px] uppercase font-bold text-slate-400 shrink-0">Market Deals:</span>
-            <button
-              onClick={() => setDealCategoryFilter('all')}
-              className={`px-2.5 py-1 rounded-lg font-semibold cursor-pointer whitespace-nowrap transition-colors ${
-                dealCategoryFilter === 'all'
-                  ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              All Deals ({marketDealsList.length})
-            </button>
-            <button
-              onClick={() => setDealCategoryFilter('machinery')}
-              className={`px-2.5 py-1 rounded-lg font-semibold cursor-pointer whitespace-nowrap transition-colors flex items-center gap-1 ${
-                dealCategoryFilter === 'machinery'
-                  ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              <Wrench className="w-3 h-3 text-amber-600" />
-              <span>Machines & Heavy Equipment ({marketDealsList.filter((d) => d.dealCategory === 'machinery').length})</span>
-            </button>
-            <button
-              onClick={() => setDealCategoryFilter('bulk_steel')}
-              className={`px-2.5 py-1 rounded-lg font-semibold cursor-pointer whitespace-nowrap transition-colors flex items-center gap-1 ${
-                dealCategoryFilter === 'bulk_steel'
-                  ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              <Layers className="w-3 h-3 text-blue-600" />
-              <span>Bulk Available Steel & Rebar ({marketDealsList.filter((d) => d.dealCategory === 'bulk_steel').length})</span>
-            </button>
-            <button
-              onClick={() => setDealCategoryFilter('surplus_material')}
-              className={`px-2.5 py-1 rounded-lg font-semibold cursor-pointer whitespace-nowrap transition-colors flex items-center gap-1 ${
-                dealCategoryFilter === 'surplus_material'
-                  ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              <BadgePercent className="w-3 h-3 text-emerald-600" />
-              <span>Surplus Materials ({marketDealsList.filter((d) => d.dealCategory === 'surplus_material').length})</span>
-            </button>
-            <button
-              onClick={() => setDealCategoryFilter('special_price')}
-              className={`px-2.5 py-1 rounded-lg font-semibold cursor-pointer whitespace-nowrap transition-colors flex items-center gap-1 ${
-                dealCategoryFilter === 'special_price'
-                  ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              <Percent className="w-3 h-3 text-purple-600" />
-              <span>Special Price Electrical / MEP ({marketDealsList.filter((d) => d.dealCategory === 'special_price').length})</span>
-            </button>
+        {/* Category Controls Bar (Displayed when category is selected) */}
+        {selectedCategoryId && activeCategory && (
+          <div className="pt-3 border-t border-slate-100 space-y-4 animate-in fade-in">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              {/* Tab Switcher */}
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
+                <button
+                  onClick={() => setMainTab('all')}
+                  className={`px-3 py-1.5 rounded-xl font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                    mainTab === 'all'
+                      ? 'bg-slate-900 text-white shadow-xs'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  <span>All in {activeCategory.name} ({categoryOpportunitiesList.length})</span>
+                </button>
+
+                <button
+                  onClick={() => setMainTab('deals')}
+                  className={`px-3 py-1.5 rounded-xl font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                    mainTab === 'deals'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'bg-amber-50 text-amber-900 hover:bg-amber-100 border border-amber-200'
+                  }`}
+                >
+                  <ShoppingBag className="w-3.5 h-3.5 text-amber-500" />
+                  <span>Market Deals ({currentCategoryDealsCount})</span>
+                </button>
+
+                <button
+                  onClick={() => setMainTab('campaigns')}
+                  className={`px-3 py-1.5 rounded-xl font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                    mainTab === 'campaigns'
+                      ? 'bg-purple-700 text-white shadow-xs'
+                      : 'bg-purple-50 text-purple-900 hover:bg-purple-100 border border-purple-200'
+                  }`}
+                >
+                  <Zap className="w-3.5 h-3.5 text-purple-600" />
+                  <span>Buyer RFPs & Campaigns ({currentCategoryCampaignsCount})</span>
+                </button>
+
+                <button
+                  onClick={() => setMainTab('insights')}
+                  className={`px-3 py-1.5 rounded-xl font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                    mainTab === 'insights'
+                      ? 'bg-indigo-700 text-white shadow-xs'
+                      : 'bg-indigo-50 text-indigo-900 hover:bg-indigo-100 border border-indigo-200'
+                  }`}
+                >
+                  <BarChart3 className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Sourcing Insights Desk</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setSelectedCampaignForAnalytics(null);
+                    setMainTab('analytics');
+                  }}
+                  className={`px-3 py-1.5 rounded-xl font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                    mainTab === 'analytics'
+                      ? 'bg-gradient-to-r from-purple-800 to-indigo-900 text-amber-300 shadow-md ring-2 ring-amber-400/40'
+                      : 'bg-gradient-to-r from-purple-50 to-indigo-50 text-purple-900 hover:from-purple-100 hover:to-indigo-100 border border-purple-300'
+                  }`}
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
+                  <span>Campaign Analytics</span>
+                  <span className="px-1.5 py-0.2 rounded text-[9px] font-black uppercase bg-amber-400 text-slate-950">
+                    PRO
+                  </span>
+                </button>
+              </div>
+
+              {/* Status Filter */}
+              <div className="flex items-center gap-1.5 text-xs shrink-0">
+                <span className="text-slate-400 font-bold uppercase text-[10px]">Status:</span>
+                {['all', 'open', 'closing-soon', 'awarded'].map((st) => (
+                  <button
+                    key={st}
+                    onClick={() => setStatusFilter(st as any)}
+                    className={`px-2.5 py-1 rounded-lg capitalize font-bold text-[11px] cursor-pointer transition-all ${
+                      statusFilter === st
+                        ? 'bg-slate-900 text-white shadow-2xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {st === 'all' ? 'All' : st.replace('-', ' ')}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Subcategory Pills for Market Deals */}
+            {(mainTab === 'deals' || mainTab === 'all') && (
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
+                <span className="text-[10px] uppercase font-bold text-slate-400 shrink-0">Filter Scope:</span>
+                <button
+                  onClick={() => setDealCategoryFilter('all')}
+                  className={`px-2.5 py-1 rounded-lg font-semibold cursor-pointer whitespace-nowrap transition-colors ${
+                    dealCategoryFilter === 'all'
+                      ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  All Packages ({categoryOpportunitiesList.length})
+                </button>
+                <button
+                  onClick={() => setDealCategoryFilter('machinery')}
+                  className={`px-2.5 py-1 rounded-lg font-semibold cursor-pointer whitespace-nowrap transition-colors flex items-center gap-1 ${
+                    dealCategoryFilter === 'machinery'
+                      ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  <Wrench className="w-3 h-3 text-amber-600" />
+                  <span>Machines & Plant</span>
+                </button>
+                <button
+                  onClick={() => setDealCategoryFilter('bulk_steel')}
+                  className={`px-2.5 py-1 rounded-lg font-semibold cursor-pointer whitespace-nowrap transition-colors flex items-center gap-1 ${
+                    dealCategoryFilter === 'bulk_steel'
+                      ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  <Layers className="w-3 h-3 text-blue-600" />
+                  <span>Bulk Materials</span>
+                </button>
+                <button
+                  onClick={() => setDealCategoryFilter('surplus_material')}
+                  className={`px-2.5 py-1 rounded-lg font-semibold cursor-pointer whitespace-nowrap transition-colors flex items-center gap-1 ${
+                    dealCategoryFilter === 'surplus_material'
+                      ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  <BadgePercent className="w-3 h-3 text-emerald-600" />
+                  <span>Surplus / Salvage Lots</span>
+                </button>
+                <button
+                  onClick={() => setDealCategoryFilter('special_price')}
+                  className={`px-2.5 py-1 rounded-lg font-semibold cursor-pointer whitespace-nowrap transition-colors flex items-center gap-1 ${
+                    dealCategoryFilter === 'special_price'
+                      ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  <Percent className="w-3 h-3 text-purple-600" />
+                  <span>Subcontract Packages</span>
+                </button>
+              </div>
+            )}
+
+            {/* Search Input for Category */}
+            <div className="relative">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder={`Search in ${activeCategory.name} (RFQ #, location, specs, scopes)...`}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 h-10 bg-slate-50 hover:bg-white border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:border-purple-500 shadow-2xs transition-all"
+              />
+            </div>
           </div>
         )}
-
-        {/* Search & Category Filter */}
-        <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-3 pt-1">
-          <div className="relative flex-1">
-            <Search className="w-5 h-5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search machinery models (Caterpillar, Liebherr), bulk steel rebar, surplus materials, RFQ #..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-12 pr-4 py-3 h-11 bg-slate-50 hover:bg-white border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-hidden focus:border-purple-500 shadow-2xs transition-all"
-            />
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            <select
-              value={selectedTradeCategory}
-              onChange={(e) => setSelectedTradeCategory(e.target.value)}
-              className="h-11 text-xs sm:text-sm bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl px-4 font-semibold text-slate-700 cursor-pointer focus:outline-hidden transition-colors"
-            >
-              {tradeCategories.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
       </div>
 
       {/* SECTION: AD INSIGHTS & CAMPAIGN ANALYTICS CENTER (Facebook Ads Manager Style) */}
@@ -1551,32 +1924,169 @@ export const OpportunitiesView: React.FC<OpportunitiesViewProps> = ({
       {/* SECTION: OPPORTUNITIES FEED (MARKET DEALS & SOURCING CAMPAIGNS) */}
       {mainTab !== 'insights' && mainTab !== 'analytics' && (
         <div className="space-y-6">
-          {filteredOpportunities.length === 0 ? (
-            <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center space-y-4 shadow-xs">
-              <div className="w-14 h-14 bg-slate-100 rounded-full flex items-center justify-center mx-auto text-slate-400">
-                <ShoppingBag className="w-7 h-7" />
-              </div>
-              <div>
-                <h3 className="text-base font-extrabold text-slate-900">No opportunities match criteria</h3>
-                <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
-                  Try clearing your search or category filters, or launch a new 1-click procurement blast.
+          {!selectedCategoryId ? (
+            <div className="bg-white rounded-3xl border border-slate-200 p-8 sm:p-12 text-center space-y-6 shadow-xs animate-in fade-in duration-300">
+              <div className="max-w-xl mx-auto space-y-3">
+                <div className="w-16 h-16 bg-gradient-to-tr from-purple-100 to-indigo-100 border border-purple-200 text-purple-700 rounded-3xl flex items-center justify-center mx-auto shadow-xs">
+                  <Layers className="w-8 h-8 text-purple-700" />
+                </div>
+                <h3 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+                  Select a Trade Category Above to Publish Opportunities
+                </h3>
+                <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+                  To view open opportunities, select any of the <strong>12 trade categories above</strong> (such as <strong>Manpower 12</strong>, <strong>Scrap 9</strong>, <strong>Rental 15</strong>, <strong>Tile Subcon 8</strong>, <strong>Block Subcon 11</strong>, or <strong>MEP Subcon 14</strong>). Only when a category is selected are its results published.
                 </p>
               </div>
-              <button
-                onClick={() => {
-                  setSearchTerm('');
-                  setSelectedTradeCategory('All');
-                  setDealCategoryFilter('all');
-                  setMainTab('all');
-                }}
-                className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 cursor-pointer"
-              >
-                Reset All Filters
-              </button>
+
+              {/* Quick selection chips for the 12 categories */}
+              <div className="pt-2 max-w-4xl mx-auto">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-3">
+                  12 Verified Trade Categories ({totalCategoryOppsCount} Open Opportunities Total)
+                </div>
+                <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-2.5">
+                  {OPPORTUNITY_12_CATEGORIES.map((cat) => {
+                    const colors = CATEGORY_COLORS[cat.id] || CATEGORY_COLORS.manpower;
+                    return (
+                      <button
+                        key={cat.id}
+                        onClick={() => setSelectedCategoryId(cat.id)}
+                        className="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-50 hover:bg-purple-50 text-slate-700 hover:text-purple-900 border border-slate-200 hover:border-purple-300 transition-all cursor-pointer flex items-center gap-2 shadow-2xs hover:shadow-xs active:scale-95 group"
+                      >
+                        <span className={`w-6 h-6 rounded-lg ${colors.iconBg} flex items-center justify-center text-white shrink-0`}>
+                          {renderCategoryIcon(cat.iconName, 'w-3.5 h-3.5')}
+                        </span>
+                        <span>{cat.name}</span>
+                        <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-purple-100 text-purple-800 group-hover:bg-purple-200">
+                          {cat.count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* B2B Trust Points */}
+              <div className="pt-6 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-3xl mx-auto text-left">
+                <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-slate-50/80 border border-slate-100">
+                  <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="text-xs font-extrabold text-slate-800">Verified UAE Contractors</h4>
+                    <p className="text-[11px] text-slate-500 mt-0.5">DCL, DEWA, and Civil Defense certified enterprise issuers.</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-slate-50/80 border border-slate-100">
+                  <Coins className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="text-xs font-extrabold text-slate-800">Escrow Milestone Protection</h4>
+                    <p className="text-[11px] text-slate-500 mt-0.5">Protected advance deposits and engineer inspection releases.</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-slate-50/80 border border-slate-100">
+                  <Zap className="w-5 h-5 text-purple-600 shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="text-xs font-extrabold text-slate-800">1-Click RFP Sourcing Blasts</h4>
+                    <p className="text-[11px] text-slate-500 mt-0.5">Instant broadcast to 2,500+ pre-screened GCC suppliers.</p>
+                  </div>
+                </div>
+              </div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-5">
-              {filteredOpportunities.map((opp) => {
+            <>
+              {/* Published Category Header Banner */}
+              {activeCategory && (
+                <div className="bg-gradient-to-r from-slate-900 via-purple-950 to-slate-900 text-white rounded-3xl p-5 sm:p-6 border border-purple-500/30 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4 animate-in fade-in">
+                  <div className="flex items-start sm:items-center gap-3.5">
+                    <div className="w-12 h-12 rounded-2xl bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-purple-600/30">
+                      {renderCategoryIcon(activeCategory.iconName, 'w-6 h-6')}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-amber-300 bg-amber-400/10 px-2 py-0.5 rounded border border-amber-400/20">
+                          Published Category
+                        </span>
+                        <span className="text-[11px] font-black px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                          {filteredOpportunities.length} of {activeCategory.count} Packages Displayed
+                        </span>
+                      </div>
+                      <h3 className="text-xl sm:text-2xl font-black text-white mt-1">
+                        {activeCategory.name} Opportunities
+                      </h3>
+                      <p className="text-xs text-purple-200 mt-1 max-w-2xl leading-relaxed">
+                        {activeCategory.description}
+                      </p>
+                      {/* Tags */}
+                      <div className="flex items-center gap-1.5 flex-wrap mt-2">
+                        {activeCategory.tags.map((tag) => (
+                          <button
+                            key={tag}
+                            onClick={() => setSearchTerm(tag === searchTerm ? '' : tag)}
+                            className={`text-[10px] font-semibold px-2 py-0.5 rounded-md border transition-colors cursor-pointer ${
+                              searchTerm === tag
+                                ? 'bg-amber-400 text-slate-950 border-amber-300 font-bold'
+                                : 'bg-white/10 text-purple-100 hover:bg-white/20 border-white/10'
+                            }`}
+                          >
+                            #{tag}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex sm:flex-col items-center sm:items-end gap-2 shrink-0">
+                    <button
+                      onClick={() => {
+                        setNewCampaign((prev) => ({
+                          ...prev,
+                          category: activeCategory.name,
+                          title: `Urgent Requirement: ${activeCategory.name} Package`,
+                        }));
+                        setShowCampaignBlastModal(true);
+                      }}
+                      className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-xs font-extrabold shadow-md cursor-pointer transition-all flex items-center gap-1.5"
+                    >
+                      <Zap className="w-3.5 h-3.5 text-amber-300" />
+                      <span>+ Post RFP in {activeCategory.name}</span>
+                    </button>
+                    <button
+                      onClick={() => setSelectedCategoryId(null)}
+                      className="px-3.5 py-1.5 bg-white/10 hover:bg-white/20 text-purple-200 hover:text-white rounded-xl text-xs font-semibold border border-white/10 cursor-pointer transition-colors"
+                    >
+                      ✕ View All Categories
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Feed List or Zero Results in this Category */}
+              {filteredOpportunities.length === 0 ? (
+                <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center space-y-4 shadow-xs">
+                  <div className="w-14 h-14 bg-slate-100 rounded-full flex items-center justify-center mx-auto text-slate-400">
+                    <ShoppingBag className="w-7 h-7" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-extrabold text-slate-900">
+                      No packages match current filters in {activeCategory?.name}
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+                      Try clearing search keywords or resetting status filters to see all {activeCategory?.count} packages.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSearchTerm('');
+                      setDealCategoryFilter('all');
+                      setStatusFilter('all');
+                      setMainTab('all');
+                    }}
+                    className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 cursor-pointer"
+                  >
+                    Reset Filter in {activeCategory?.name}
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-5">
+                  {filteredOpportunities.map((opp) => {
                 const isMarketDeal = opp.opportunityType === 'market_deal';
                 const isExpanded = expandedOppId === opp.id;
                 const hasProposals = opp.proposals && opp.proposals.length > 0;
@@ -2098,6 +2608,8 @@ export const OpportunitiesView: React.FC<OpportunitiesViewProps> = ({
                 );
               })}
             </div>
+          )}
+            </>
           )}
         </div>
       )}
