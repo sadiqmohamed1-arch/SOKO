@@ -35,6 +35,7 @@ import { CommunityContact, UserProfile, UserRole, OfficeKioskVisit } from '../ty
 import { ContractorNetworkDashboard } from './ContractorNetworkDashboard';
 import { INITIAL_COMMUNITY_CONTACTS } from '../mockData';
 import { ProductChips, SokoCardModal, ReceiveCardModal } from './BuyerSokoCard';
+import { MyNetworkTable } from './MyNetworkTable';
 
 interface ContactsViewProps {
   contacts: CommunityContact[];
@@ -232,6 +233,29 @@ const StandardContactsView: React.FC<ContactsViewProps> = ({
   });
   const connectedContacts = contacts.filter((c) => getContactStatus(c) === 'connected');
   const incomingInvitations = contacts.filter((c) => getContactStatus(c) === 'incoming');
+  const counterpartRole: UserRole | null = isBuyer ? 'supplier' : currentUser.role === 'supplier' ? 'buyer' : null;
+  const myNetworkContacts = counterpartRole ? contacts.filter((c) => c.role === counterpartRole) : connectedContacts;
+  const isTableMode = activeTab === 'connections' && counterpartRole !== null;
+
+  const handleToggleSaveContact = (contact: CommunityContact) => {
+    const saved = getContactStatus(contact) === 'connected';
+    onUpdateContacts(
+      contacts.map((c) =>
+        c.id === contact.id
+          ? saved
+            ? { ...c, connectionStatus: 'not_connected' as const, isMaintained: false }
+            : {
+                ...c,
+                connectionStatus: 'connected' as const,
+                isMaintained: true,
+                accessStatus: 'direct' as const,
+                connectedDate: 'Saved just now',
+              }
+          : c
+      )
+    );
+    showToast(saved ? `${contact.name} removed from your saved contacts.` : `${contact.name} saved to My Network.`);
+  };
 
   // Filter contacts by active tab, role, and search query
   const filteredContacts = contacts.filter((contact) => {
@@ -239,7 +263,7 @@ const StandardContactsView: React.FC<ContactsViewProps> = ({
 
     // Tab filtering
     if (activeTab === 'connections') {
-      if (status !== 'connected') return false;
+      if (counterpartRole ? contact.role !== counterpartRole : status !== 'connected') return false;
     } else if (activeTab === 'invitations') {
       if (status !== 'incoming') return false;
     } else if (activeTab === 'search') {
@@ -538,7 +562,7 @@ const StandardContactsView: React.FC<ContactsViewProps> = ({
               <UserCheck className="w-4 h-4 text-blue-600" />
               <span>My Network</span>
               <span className="bg-slate-200 text-slate-800 text-[10px] font-extrabold px-2 py-0.5 rounded-full">
-                {connectedContacts.length}
+                {myNetworkContacts.length}
               </span>
             </button>
 
@@ -561,6 +585,7 @@ const StandardContactsView: React.FC<ContactsViewProps> = ({
           </div>
 
           {/* Role Filter */}
+          {!isTableMode && (
           <div className="flex items-center gap-1.5 text-xs">
             <span className="text-slate-400 font-medium text-[11px] mr-0.5">Filter:</span>
             {['All', 'buyer', 'supplier', 'contractor'].map((role) => (
@@ -577,11 +602,27 @@ const StandardContactsView: React.FC<ContactsViewProps> = ({
               </button>
             ))}
           </div>
+          )}
         </div>
       </div>
 
       {/* Tab Context Helper Banner */}
-      {activeTab === 'connections' && (
+      {isTableMode && (
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
+          <div>
+            <h2 className="text-lg font-extrabold text-slate-900 tracking-tight">
+              {isBuyer ? 'Supplier Contacts' : 'Buyer Contacts'}
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {filteredContacts.length} {isBuyer ? 'suppliers' : 'buyers'} on SOKO ·{' '}
+              {myNetworkContacts.filter((c) => getContactStatus(c) === 'connected').length} saved to your network
+            </p>
+          </div>
+          <p className="text-[11px] text-slate-400">Business cards are shared only within SOKO.</p>
+        </div>
+      )}
+
+      {activeTab === 'connections' && !isTableMode && (
         <div className="bg-emerald-50/80 border border-emerald-200 rounded-xl p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-emerald-950">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
@@ -666,6 +707,24 @@ const StandardContactsView: React.FC<ContactsViewProps> = ({
             </button>
           )}
         </div>
+      ) : isTableMode ? (
+        <MyNetworkTable
+          contacts={filteredContacts}
+          counterpartLabel={isBuyer ? 'Supplier' : 'Buyer'}
+          primaryActionLabel={isBuyer ? 'RFQ' : 'Quote'}
+          isSaved={(c) => getContactStatus(c) === 'connected'}
+          onToggleSave={handleToggleSaveContact}
+          onShare={(c) => {
+            if (isBuyer) {
+              setSokoCardContact(c);
+              return;
+            }
+            setSharingContact(c);
+            setCopiedLink(false);
+            setCopiedVCard(false);
+          }}
+          onPrimaryAction={(c) => onStartMessageWith(c.id, c.name)}
+        />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredContacts.map((contact) => {
