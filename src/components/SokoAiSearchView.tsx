@@ -271,34 +271,21 @@ export const SokoAiSearchView: React.FC<SokoAiSearchViewProps> = ({
       {/* Top Header / Bar */}
       <header className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 pt-5 pb-3 flex items-center justify-between gap-3 border-b border-purple-100/60">
         <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-purple-900 text-white flex items-center justify-center shadow-xs">
+          <div className="w-9 h-9 rounded-xl bg-black text-white flex items-center justify-center shadow-xs">
             <Sparkles className="w-5 h-5 text-purple-300" />
           </div>
           <div>
             <div className="flex items-center gap-2">
               <span className="text-lg font-black tracking-tight text-slate-950">SOKO AI</span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-purple-100 text-purple-900 border border-purple-200">
-                Sourcing Engine
-              </span>
             </div>
             <p className="text-[11px] text-slate-500 font-medium hidden sm:block">
-              Intelligent Contractor &amp; Supplier Discovery
+              Intelligent Sourcing
             </p>
           </div>
         </div>
 
         {/* Top Right Action Pills */}
         <div className="flex items-center gap-2">
-          {/* Live Google Search Grounding Status Pill */}
-          <div
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-semibold shadow-2xs"
-            title="Search queries are enriched with real-time Google Search data & official UAE regulatory registries"
-          >
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="hidden md:inline">Google Grounding:</span>
-            <span>Active</span>
-          </div>
-
           {/* Shortlist Badge */}
           {shortlistedCount > 0 && (
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-600 text-white text-xs font-bold shadow-xs">
@@ -306,17 +293,6 @@ export const SokoAiSearchView: React.FC<SokoAiSearchViewProps> = ({
               <span>{shortlistedCount} Shortlisted</span>
             </div>
           )}
-
-          <button
-            type="button"
-            onClick={() => {
-              setSearchQuery('DM approved contractor for civil works');
-              executeSearch('DM approved contractor for civil works');
-            }}
-            className="px-3 py-1.5 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
-          >
-            Reset Query
-          </button>
         </div>
       </header>
 
@@ -350,8 +326,7 @@ export const SokoAiSearchView: React.FC<SokoAiSearchViewProps> = ({
           </h1>
 
           <p className="text-sm sm:text-base text-slate-600 max-w-2xl mx-auto leading-relaxed">
-            Get instant procurement guidance powered by specialized AI agents. Search for verified
-            Dubai Municipality (DM) approved contractors, DEWA certified power specialists, or DCL certified materials.
+            Get instant procurement guidance powered by specialized AI agents.
           </p>
         </div>
 
@@ -681,7 +656,7 @@ export const SokoAiSearchView: React.FC<SokoAiSearchViewProps> = ({
             className="w-10 h-10 rounded-full bg-slate-900 hover:bg-purple-900 text-white flex items-center justify-center shrink-0 shadow-xs cursor-pointer transition-colors"
             title="Click to auto-populate DM civil contractor inquiry"
           >
-            <Sparkles className="w-5 h-5 text-purple-300" />
+            <Sparkles className="w-5 h-5 text-purple-300 bg-black" />
           </button>
 
           {/* Prompt Input Field */}
