@@ -369,9 +369,9 @@ export const FeedView: React.FC<FeedViewProps> = ({
                     <div className="flex items-center gap-3">
                       <div className="relative">
                         <img
-                          src={post.authorAvatar}
-                          alt={post.authorName}
-                          className="w-11 h-11 rounded-full object-cover border-2 border-blue-100 shadow-2xs"
+                          src="/soko-logo.svg"
+                          alt="SOKO"
+                          className="w-11 h-11 rounded-full object-cover border-2 border-blue-100 shadow-2xs bg-black"
                         />
                         <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-blue-700 text-white flex items-center justify-center text-[9px] font-black border border-white">
                           SK
