@@ -282,7 +282,7 @@ function MainApp() {
   useEffect(() => {
     if (
       currentUser.role === 'buyer' &&
-      (activeTab === 'kiosk' || activeTab === 'opportunities' || activeTab === 'admin')
+      (activeTab === 'kiosk' || activeTab === 'admin')
     ) {
       setActiveTab('feed');
     }
@@ -300,7 +300,7 @@ function MainApp() {
         avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
         paymentTerms: 'Net 45 upon delivery inspection',
       });
-      if (activeTab === 'kiosk' || activeTab === 'opportunities' || activeTab === 'admin') {
+      if (activeTab === 'kiosk' || activeTab === 'admin') {
         setActiveTab('feed');
       }
     } else if (role === 'supplier') {
