@@ -302,7 +302,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <h2 className="font-bold text-base sm:text-lg text-white tracking-tight">
-                      soko.ae Procurement Wire
+                      Soko.ae Procurement Wire
                     </h2>
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-400/20 text-cyan-300 border border-cyan-400/30">
                       <ShieldCheck className="w-3 h-3 text-cyan-400" />
@@ -310,7 +310,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
                     </span>
                   </div>
                   <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-                    Curated procurement methodologies, maritime freight updates & industrial market intelligence published exclusively by <span className="text-white font-semibold">soko.ae</span> for all enterprise buyers, suppliers, and contractors.
+                    Curated procurement updates & industrial market intelligence published exclusively by <span className="text-white font-semibold">soko.ae</span> for all .
                   </p>
                 </div>
               </div>

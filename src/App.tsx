@@ -294,9 +294,9 @@ function MainApp() {
       setCurrentUser({
         ...INITIAL_CURRENT_USER,
         role: 'buyer',
-        name: 'Marcus Vance',
+        name: 'Mohamed Sadiq',
         title: 'Director of Strategic Sourcing & EPC Contracts',
-        company: 'Vance Infrastructure Group UAE',
+        company: 'GEC Dubai',
         avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
         paymentTerms: 'Net 45 upon delivery inspection',
       });

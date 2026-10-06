@@ -23,9 +23,9 @@ import { SOKO_50_COMMUNITY_CONTACTS } from './data/sokoNetwork50';
 
 export const INITIAL_CURRENT_USER: UserProfile = {
   id: 'usr_me_01',
-  name: 'Marcus Vance',
+  name: 'Mohamed Sadiq',
   title: 'Director of Strategic Sourcing & EPC Contracts',
-  company: 'Vance Infrastructure Group UAE',
+  company: 'GEC Dubai',
   role: 'buyer',
   avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
   bannerUrl: 'https://images.unsplash.com/photo-1504917599217-d4dc5ebe6122?w=800&auto=format&fit=crop&q=80',
