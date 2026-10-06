@@ -34,6 +34,7 @@ import {
 import { CommunityContact, UserProfile, UserRole, OfficeKioskVisit } from '../types';
 import { ContractorNetworkDashboard } from './ContractorNetworkDashboard';
 import { INITIAL_COMMUNITY_CONTACTS } from '../mockData';
+import { ProductChips, SokoCardModal, ReceiveCardModal } from './BuyerSokoCard';
 
 interface ContactsViewProps {
   contacts: CommunityContact[];
@@ -69,6 +70,9 @@ const StandardContactsView: React.FC<ContactsViewProps> = ({
   const [tempNotes, setTempNotes] = useState('');
   const [showAddContactModal, setShowAddContactModal] = useState(false);
   const [newTagInput, setNewTagInput] = useState<{ contactId: string; tag: string } | null>(null);
+  const isBuyer = currentUser.role === 'buyer';
+  const [sokoCardContact, setSokoCardContact] = useState<CommunityContact | null>(null);
+  const [showReceiveCard, setShowReceiveCard] = useState(false);
 
   // New contact form
   const [newContact, setNewContact] = useState({
@@ -199,6 +203,26 @@ const StandardContactsView: React.FC<ContactsViewProps> = ({
     });
     onUpdateContacts(updated);
     showToast('Connection request withdrawn.');
+  };
+
+  const handleReceiveCard = (member: CommunityContact, via: 'nfc' | 'app') => {
+    const updated = contacts.map((c) =>
+      c.id === member.id
+        ? {
+            ...c,
+            connectionStatus: 'connected' as const,
+            isMaintained: true,
+            accessStatus: 'direct' as const,
+            sharedVia: via,
+            connectedDate: 'Card received just now',
+            lastContacted: 'Card received just now',
+          }
+        : c
+    );
+    onUpdateContacts(updated);
+    setShowReceiveCard(false);
+    setActiveTab('connections');
+    showToast(`${member.name}'s SOKO card saved to My Network via ${via === 'nfc' ? 'NFC tap' : 'the SOKO app'}.`);
   };
 
   // Counts
@@ -403,6 +427,15 @@ const StandardContactsView: React.FC<ContactsViewProps> = ({
         </div>
 
         <div className="flex flex-col sm:flex-row items-stretch gap-3 shrink-0">
+          {isBuyer && (
+            <button
+              onClick={() => setShowReceiveCard(true)}
+              className="px-4 py-2.5 bg-white hover:bg-blue-50 text-blue-700 border border-blue-200 rounded-xl text-xs sm:text-sm font-bold shadow-xs cursor-pointer transition-colors flex items-center justify-center gap-2"
+            >
+              <Sparkles className="w-4 h-4" />
+              Receive SOKO Card
+            </button>
+          )}
           <button
             onClick={() => setShowAddContactModal(true)}
             className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs sm:text-sm font-bold shadow-xs cursor-pointer transition-colors flex items-center justify-center gap-2"
@@ -766,6 +799,8 @@ const StandardContactsView: React.FC<ContactsViewProps> = ({
                     </div>
                   )}
 
+                  {isBuyer && <ProductChips contact={contact} />}
+
                   {/* Custom Labels / Tags */}
                   <div className="mt-3 flex items-center flex-wrap gap-1.5">
                     {contact.tags.map((tag) => (
@@ -934,7 +969,16 @@ const StandardContactsView: React.FC<ContactsViewProps> = ({
                   /* 1. CONNECTED STATE: Full actions (Save in Phone, WhatsApp, Call, Share, Message) */
                   <div className="mt-4 pt-3 border-t border-slate-100 space-y-2">
                     <div className="grid grid-cols-4 gap-2">
-                      {/* Save to Phone (.vcf) */}
+                      {isBuyer ? (
+                        <button
+                          onClick={() => setSokoCardContact(contact)}
+                          className="flex flex-col items-center justify-center p-2 rounded-xl bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-800 text-[10px] font-bold transition-all cursor-pointer shadow-2xs group"
+                          title="View digital SOKO business card"
+                        >
+                          <Sparkles className="w-4 h-4 mb-0.5 text-blue-600 group-hover:scale-110 transition-transform" />
+                          <span>SOKO Card</span>
+                        </button>
+                      ) : (
                       <button
                         onClick={() => handleDownloadVCard(contact)}
                         className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 hover:bg-blue-50 hover:text-blue-700 border border-slate-200 text-slate-700 text-[10px] font-bold transition-all cursor-pointer shadow-2xs group"
@@ -943,6 +987,7 @@ const StandardContactsView: React.FC<ContactsViewProps> = ({
                         <Download className="w-4 h-4 mb-0.5 text-blue-600 group-hover:scale-110 transition-transform" />
                         <span>Save in Phone</span>
                       </button>
+                      )}
 
                       {/* Direct WhatsApp */}
                       <a
@@ -971,6 +1016,10 @@ const StandardContactsView: React.FC<ContactsViewProps> = ({
                       {/* Share Contact */}
                       <button
                         onClick={() => {
+                          if (isBuyer) {
+                            setSokoCardContact(contact);
+                            return;
+                          }
                           setSharingContact(contact);
                           setCopiedLink(false);
                           setCopiedVCard(false);
@@ -1220,6 +1269,23 @@ const StandardContactsView: React.FC<ContactsViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {sokoCardContact && (
+        <SokoCardModal
+          contact={sokoCardContact}
+          shareTargets={connectedContacts.filter((c) => c.id !== sokoCardContact.id)}
+          onShare={(t) => showToast(`${sokoCardContact.name}'s SOKO card sent to ${t.name} in the SOKO app.`)}
+          onClose={() => setSokoCardContact(null)}
+        />
+      )}
+
+      {showReceiveCard && (
+        <ReceiveCardModal
+          members={contacts.filter((c) => getContactStatus(c) !== 'connected')}
+          onReceive={handleReceiveCard}
+          onClose={() => setShowReceiveCard(false)}
+        />
       )}
 
       {/* Add New Contact to Rolodex Modal */}

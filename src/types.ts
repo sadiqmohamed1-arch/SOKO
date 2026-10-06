@@ -515,6 +515,8 @@ export interface CommunityContact {
   mutualConnections?: number;
   connectionRequestNote?: string;
   connectedDate?: string;
+  products?: string[];
+  sharedVia?: 'nfc' | 'app';
 }
 
 export interface OfficeKioskVisit {
