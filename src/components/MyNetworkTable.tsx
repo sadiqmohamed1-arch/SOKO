@@ -19,14 +19,7 @@ const hashOf = (s: string) => {
   return h;
 };
 
-const corporateInfo = (c: CommunityContact) => {
-  const h = hashOf(c.id + c.company);
-  return {
-    trn: `100${String(h % 1_000_000_000).padStart(9, '0')}003`,
-    license: `${c.location.toLowerCase().includes('abu dhabi') ? 'AD' : 'CN'}-${String(h % 900000 + 100000)}`,
-    po: `PO ${String((h % 90000) + 10000)}`,
-  };
-};
+const poNumber = (c: CommunityContact) => `PO ${String((hashOf(c.id + c.company) % 90000) + 10000)}`;
 
 const initials = (company: string) =>
   company
@@ -84,20 +77,18 @@ export const MyNetworkTable: React.FC<MyNetworkTableProps> = ({
 }) => (
   <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[1080px] text-left">
+      <table className="w-full min-w-[900px] text-left">
         <thead className="bg-slate-50 border-b border-slate-200">
           <tr className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
             <th className="px-4 py-3">{counterpartLabel} & Badge</th>
             <th className="px-4 py-3">Representative & Role</th>
             <th className="px-4 py-3">Direct Contact Channels</th>
-            <th className="px-4 py-3">Corporate & TRN</th>
             <th className="px-4 py-3">Materials & Scope Labels</th>
             <th className="px-4 py-3 text-right">Actions</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
           {contacts.map((c) => {
-            const corp = corporateInfo(c);
             const saved = isSaved(c);
             const wa = (c.whatsappNumber || c.phone).replace(/[^0-9]/g, '');
             return (
@@ -112,7 +103,7 @@ export const MyNetworkTable: React.FC<MyNetworkTableProps> = ({
                         <p className="text-sm font-bold text-slate-900 truncate" title={c.company}>{c.company}</p>
                         {c.verified && <ShieldCheck className="w-3.5 h-3.5 text-blue-600 shrink-0" />}
                       </div>
-                      <p className="text-[11px] text-slate-500 truncate">{corp.po} {c.location}</p>
+                      <p className="text-[11px] text-slate-500 truncate">{poNumber(c)} {c.location}</p>
                     </div>
                   </div>
                 </td>
@@ -136,13 +127,6 @@ export const MyNetworkTable: React.FC<MyNetworkTableProps> = ({
                       <span className="w-4 h-4 rounded-full bg-slate-900 text-white flex items-center justify-center shrink-0"><Mail className="w-2.5 h-2.5" /></span>
                       <span className="truncate">{c.email}</span>
                     </a>
-                  </div>
-                </td>
-                <td className="px-4 py-4">
-                  <div className="text-[11px] space-y-0.5 max-w-[170px]">
-                    <p className="text-slate-700"><span className="font-bold text-slate-900">TRN:</span> <span className="font-mono">{corp.trn}</span></p>
-                    <p className="text-slate-700"><span className="font-bold text-slate-900">Lic:</span> {corp.license}</p>
-                    <p className="text-slate-400 truncate" title={c.location}>{c.location}</p>
                   </div>
                 </td>
                 <td className="px-4 py-4 max-w-[300px]">
