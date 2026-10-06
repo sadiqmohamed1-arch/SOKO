@@ -1654,36 +1654,34 @@ export const SupplierSearchView: React.FC<SupplierSearchViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Core Metrics Band: Rating, OTD %, Contracts */}
-                  <div className="grid grid-cols-3 gap-2 bg-slate-50/80 p-2.5 rounded-xl border border-slate-100 text-center">
-                    <div>
-                      <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">
-                        Rating
-                      </span>
-                      <div className="flex items-center justify-center gap-1 mt-0.5">
-                        <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
-                        <span className="text-xs font-black text-slate-900">{supplier.rating}</span>
-                        <span className="text-[10px] text-slate-400">({supplier.reviewCount})</span>
-                      </div>
-                    </div>
-
-                    <div className="border-x border-slate-200">
-                      <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">
-                        OTD Rate
-                      </span>
-                      <div className="text-xs font-black text-emerald-700 mt-0.5">
-                        {supplier.otdRate}%
-                      </div>
-                    </div>
-
-                    <div>
-                      <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">
-                        Contracts
-                      </span>
-                      <div className="text-xs font-black text-slate-900 mt-0.5">
-                        {supplier.completedContracts}
-                      </div>
-                    </div>
+                  <div className="flex items-center gap-2 bg-slate-50/80 p-2.5 rounded-xl border border-slate-100">
+                    <a
+                      href={`tel:${(supplier.phone || '+971 4 881 2290').replace(/\s+/g, '')}`}
+                      className="flex-1 min-w-0 flex items-center gap-2 text-xs font-bold text-slate-900 hover:text-blue-700 transition-colors"
+                      title="Call"
+                    >
+                      <Phone className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                      <span className="truncate">{supplier.phone || '+971 4 881 2290'}</span>
+                    </a>
+                    <a
+                      href={`https://wa.me/${(supplier.phone || '971508812290').replace(/\D/g, '')}?text=${encodeURIComponent(
+                        `Hello ${supplier.company}, I am contacting you via SOKO Directory.`
+                      )}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-8 h-8 rounded-lg bg-white hover:bg-emerald-50 border border-slate-200 flex items-center justify-center transition-colors shrink-0"
+                      title="Chat on WhatsApp"
+                    >
+                      <WhatsAppIcon className="w-4 h-4 text-emerald-600" />
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => onViewSupplierCard(supplier)}
+                      className="w-8 h-8 rounded-lg bg-white hover:bg-blue-50 border border-slate-200 text-slate-700 hover:text-blue-700 flex items-center justify-center transition-colors cursor-pointer shrink-0"
+                      title="View Profile"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </button>
                   </div>
 
                   {/* Category & Capabilities */}
