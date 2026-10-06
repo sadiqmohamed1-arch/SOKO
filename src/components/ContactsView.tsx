@@ -20,16 +20,13 @@ import {
   Copy,
   Check,
   UserCheck,
-  UserPlus,
   ShieldCheck,
   Sparkles,
-  Clock,
   Lock,
   Unlock,
   Inbox,
   AlertCircle,
   MessageSquare,
-  Send,
 } from 'lucide-react';
 import { CommunityContact, UserProfile, UserRole, OfficeKioskVisit } from '../types';
 import { ContractorNetworkDashboard } from './ContractorNetworkDashboard';
@@ -54,13 +51,11 @@ const StandardContactsView: React.FC<ContactsViewProps> = ({
   visits = [],
   onUpdateVisits,
 }) => {
-  const [activeTab, setActiveTab] = useState<'search' | 'connections' | 'invitations'>('search');
+  const [activeTab, setActiveTab] = useState<'connections' | 'invitations'>('connections');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRole, setSelectedRole] = useState<string>('All');
 
   // Connection flow modals and toast
-  const [connectModalContact, setConnectModalContact] = useState<CommunityContact | null>(null);
-  const [customNote, setCustomNote] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Modals state
@@ -132,30 +127,6 @@ const StandardContactsView: React.FC<ContactsViewProps> = ({
     }, 4000);
   };
 
-  // Send connection request
-  const handleSendConnectionRequest = (contactId: string, noteText: string = '') => {
-    const targetContact = contacts.find((c) => c.id === contactId);
-    const updated = contacts.map((c) => {
-      if (c.id === contactId) {
-        return {
-          ...c,
-          connectionStatus: 'pending' as const,
-          connectionRequestNote:
-            noteText ||
-            `Hi ${c.name}, I would like to connect on SoKo.ae regarding GCC procurement and contracting opportunities.`,
-          lastContacted: 'Request sent just now',
-        };
-      }
-      return c;
-    });
-    onUpdateContacts(updated);
-    setConnectModalContact(null);
-    setCustomNote('');
-    showToast(
-      `Connection request sent to ${targetContact ? targetContact.name : 'member'}. Direct contact details will unlock once accepted.`
-    );
-  };
-
   // Accept incoming connection request
   const handleAcceptConnection = (contactId: string) => {
     const targetContact = contacts.find((c) => c.id === contactId);
@@ -191,21 +162,6 @@ const StandardContactsView: React.FC<ContactsViewProps> = ({
     showToast('Invitation declined.');
   };
 
-  // Withdraw sent request
-  const handleWithdrawRequest = (contactId: string) => {
-    const updated = contacts.map((c) => {
-      if (c.id === contactId) {
-        return {
-          ...c,
-          connectionStatus: 'not_connected' as const,
-        };
-      }
-      return c;
-    });
-    onUpdateContacts(updated);
-    showToast('Connection request withdrawn.');
-  };
-
   const handleReceiveCard = (member: CommunityContact, via: 'nfc' | 'app') => {
     const updated = contacts.map((c) =>
       c.id === member.id
@@ -227,10 +183,6 @@ const StandardContactsView: React.FC<ContactsViewProps> = ({
   };
 
   // Counts
-  const sokoNetworkContacts = contacts.filter((c) => {
-    const s = getContactStatus(c);
-    return s === 'not_connected' || s === 'pending';
-  });
   const connectedContacts = contacts.filter((c) => getContactStatus(c) === 'connected');
   const incomingInvitations = contacts.filter((c) => getContactStatus(c) === 'incoming');
   const counterpartRole: UserRole | null = isBuyer ? 'supplier' : currentUser.role === 'supplier' ? 'buyer' : null;
@@ -266,9 +218,6 @@ const StandardContactsView: React.FC<ContactsViewProps> = ({
       if (counterpartRole ? contact.role !== counterpartRole : status !== 'connected') return false;
     } else if (activeTab === 'invitations') {
       if (status !== 'incoming') return false;
-    } else if (activeTab === 'search') {
-      // In SoKo Network, show contacts waiting for connection
-      if (status === 'connected') return false;
     }
 
     // Role filter
@@ -516,8 +465,8 @@ const StandardContactsView: React.FC<ContactsViewProps> = ({
             type="text"
             placeholder={
               activeTab === 'connections'
-                ? 'Search within your connected network by name, company, or title...'
-                : 'Search 50 GCC contacts across the SoKo network to send connection requests...'
+                ? 'Search your network by name, company, or title...'
+                : 'Search invitations by name, company, or title...'
             }
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -533,24 +482,9 @@ const StandardContactsView: React.FC<ContactsViewProps> = ({
           )}
         </div>
 
-        {/* Below Search Bar: SoKo Network & My Network Switcher + Role Filters */}
+        {/* Below Search Bar: My Network / Invitations Switcher + Role Filters */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-100">
           <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl w-fit">
-            <button
-              onClick={() => setActiveTab('search')}
-              className={`px-3.5 sm:px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-                activeTab === 'search'
-                  ? 'bg-white text-blue-700 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Users className="w-4 h-4 text-blue-600" />
-              <span>SoKo Network</span>
-              <span className="bg-blue-100 text-blue-800 text-[10px] font-extrabold px-2 py-0.5 rounded-full">
-                {sokoNetworkContacts.length}
-              </span>
-            </button>
-
             <button
               onClick={() => setActiveTab('connections')}
               className={`px-3.5 sm:px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
@@ -637,38 +571,6 @@ const StandardContactsView: React.FC<ContactsViewProps> = ({
               </p>
             </div>
           </div>
-          <button
-            onClick={() => setActiveTab('search')}
-            className="text-emerald-800 hover:text-emerald-950 font-bold underline shrink-0 cursor-pointer text-xs"
-          >
-            + Connect with {sokoNetworkContacts.length} SoKo Network Contacts &rarr;
-          </button>
-        </div>
-      )}
-
-      {activeTab === 'search' && (
-        <div className="bg-gradient-to-r from-blue-50/90 to-indigo-50/70 border border-blue-200 rounded-xl p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-blue-950">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
-              <Users className="w-4 h-4" />
-            </div>
-            <div>
-              <p className="font-bold text-slate-900">
-                SoKo Network Directory — {sokoNetworkContacts.length} Verified GCC Contacts Available
-              </p>
-              <p className="text-[11px] text-slate-600 mt-0.5">
-                Showing Connect option only. Once accepted, contacts move to <strong>My Network</strong> where direct phone, work email, WhatsApp, calling, and phone vCard export unlock.
-              </p>
-            </div>
-          </div>
-          {connectedContacts.length > 0 && (
-            <button
-              onClick={() => setActiveTab('connections')}
-              className="text-blue-700 hover:text-blue-800 font-bold underline shrink-0 cursor-pointer text-xs"
-            >
-              View My Network ({connectedContacts.length}) &rarr;
-            </button>
-          )}
         </div>
       )}
 
@@ -688,22 +590,21 @@ const StandardContactsView: React.FC<ContactsViewProps> = ({
             </h3>
             <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
               {activeTab === 'connections'
-                ? "You don't have any accepted connections matching this query. Search the SoKo network to send connection requests to GCC procurement leaders."
+                ? "You don't have any connections matching this search yet. Accept invitations or receive a SOKO card to grow your network."
                 : activeTab === 'invitations'
-                ? 'You have responded to all incoming invitations. Search the directory to discover more partners.'
+                ? 'You have responded to all incoming invitations.'
                 : 'Try adjusting your search keywords, role filters, or labels.'}
             </p>
           </div>
-          {activeTab === 'connections' && (
+          {activeTab === 'connections' && (searchQuery || selectedRole !== 'All') && (
             <button
               onClick={() => {
-                setActiveTab('search');
                 setSelectedRole('All');
                 setSearchQuery('');
               }}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 cursor-pointer"
             >
-              Search All SoKo Network Members
+              Clear Search & Filters
             </button>
           )}
         </div>
@@ -730,7 +631,6 @@ const StandardContactsView: React.FC<ContactsViewProps> = ({
           {filteredContacts.map((contact) => {
             const status = getContactStatus(contact);
             const isConnected = status === 'connected';
-            const isPending = status === 'pending';
             const isIncoming = status === 'incoming';
             const cleanPhone = (contact.whatsappNumber || contact.phone).replace(/[^0-9]/g, '');
 
@@ -742,8 +642,6 @@ const StandardContactsView: React.FC<ContactsViewProps> = ({
                     ? 'border-blue-200 ring-1 ring-blue-50 hover:shadow-sm'
                     : isIncoming
                     ? 'border-blue-300 ring-2 ring-blue-100 bg-blue-50/20'
-                    : isPending
-                    ? 'border-amber-200 bg-amber-50/10'
                     : 'border-slate-200 hover:border-slate-300'
                 }`}
               >
@@ -820,16 +718,7 @@ const StandardContactsView: React.FC<ContactsViewProps> = ({
                           <Inbox className="w-3 h-3 text-amber-700" />
                           Invitation
                         </span>
-                      ) : isPending ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
-                          <Clock className="w-3 h-3 text-amber-600" />
-                          Pending
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
-                          2nd Degree
-                        </span>
-                      )}
+                      ) : null}
                     </div>
                   </div>
 
@@ -1121,119 +1010,10 @@ const StandardContactsView: React.FC<ContactsViewProps> = ({
                       </button>
                     </div>
                   </div>
-                ) : isPending ? (
-                  /* 3. PENDING SENT REQUEST STATE: Awaiting accept, withdraw, simulate accept */
-                  <div className="mt-4 pt-3 border-t border-slate-100 space-y-2">
-                    <div className="flex items-center justify-between text-xs bg-amber-50 border border-amber-200 p-2.5 rounded-xl">
-                      <span className="text-amber-800 font-semibold flex items-center gap-1.5 text-xs">
-                        <Clock className="w-3.5 h-3.5 text-amber-600 animate-spin" />
-                        Request Sent • Awaiting Acceptance
-                      </span>
-                      <button
-                        onClick={() => handleWithdrawRequest(contact.id)}
-                        className="text-[11px] text-slate-500 hover:text-rose-600 underline cursor-pointer"
-                      >
-                        Withdraw
-                      </button>
-                    </div>
-                    {/* Simulated acceptance test button */}
-                    <button
-                      onClick={() => handleAcceptConnection(contact.id)}
-                      className="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
-                      title="Accept connection and move contact to My Network"
-                    >
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>Accept Connection & Move to My Network</span>
-                    </button>
-                  </div>
-                ) : (
-                  /* 4. SOKO NETWORK CONTACT: Connect option ONLY */
-                  <div className="mt-4 pt-3 border-t border-slate-100">
-                    <button
-                      onClick={() => handleSendConnectionRequest(contact.id)}
-                      className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer"
-                    >
-                      <UserPlus className="w-4 h-4" />
-                      <span>Connect</span>
-                    </button>
-                  </div>
-                )}
+                ) : null}
               </div>
             );
           })}
-        </div>
-      )}
-
-      {/* Send Connection Request Modal (LinkedIn-style personal note) */}
-      {connectModalContact && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <UserPlus className="w-4 h-4 text-blue-600" />
-                Connect with {connectModalContact.name}
-              </h3>
-              <button
-                onClick={() => setConnectModalContact(null)}
-                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Candidate Card Summary */}
-            <div className="flex items-center gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
-              <img
-                src={connectModalContact.avatarUrl}
-                alt={connectModalContact.name}
-                className="w-12 h-12 rounded-xl object-cover ring-1 ring-slate-200"
-              />
-              <div className="min-w-0">
-                <h4 className="text-sm font-bold text-slate-900 truncate">{connectModalContact.name}</h4>
-                <p className="text-xs text-slate-600 truncate">{connectModalContact.title}</p>
-                <p className="text-xs font-semibold text-blue-600 truncate">{connectModalContact.company}</p>
-              </div>
-            </div>
-
-            <div className="p-3 bg-blue-50/80 border border-blue-200 rounded-xl text-xs text-blue-900 flex items-start gap-2">
-              <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-              <span>
-                Like LinkedIn, once <strong>{connectModalContact.name}</strong> accepts your request, their direct phone, email, WhatsApp, and phone vCard export will unlock in your network.
-              </span>
-            </div>
-
-            {/* Optional Personal Note */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Add a personalized invitation note (Recommended):
-              </label>
-              <textarea
-                rows={3}
-                value={customNote}
-                onChange={(e) => setCustomNote(e.target.value)}
-                placeholder="Write a brief introduction or context..."
-                className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-hidden focus:border-blue-500"
-              />
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setConnectModalContact(null)}
-                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSendConnectionRequest(connectModalContact.id, customNote)}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
-              >
-                <Send className="w-3.5 h-3.5" />
-                <span>Send Connection Request</span>
-              </button>
-            </div>
-          </div>
         </div>
       )}
 
