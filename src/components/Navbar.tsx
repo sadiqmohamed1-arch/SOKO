@@ -114,11 +114,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             className="flex items-center gap-2.5 group cursor-pointer text-left"
           >
             <SokoLogo size="md" className="shadow-xs" />
-            <div className="hidden sm:flex flex-col">
-              <span className="text-[8px] font-mono text-slate-500 uppercase tracking-widest mt-0.5">
-                Source & Konnect Better
-              </span>
-            </div>
+            <div className="hidden sm:flex flex-col"></div>
           </button>
 
           {onOpenLanding && (
