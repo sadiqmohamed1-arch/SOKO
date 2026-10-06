@@ -400,15 +400,6 @@ const StandardContactsView: React.FC<ContactsViewProps> = ({
         </div>
 
         <div className="flex flex-col sm:flex-row items-stretch gap-3 shrink-0">
-          {isBuyer && (
-            <button
-              onClick={() => setShowReceiveCard(true)}
-              className="px-4 py-2.5 bg-white hover:bg-blue-50 text-blue-700 border border-blue-200 rounded-xl text-xs sm:text-sm font-bold shadow-xs cursor-pointer transition-colors flex items-center justify-center gap-2"
-            >
-              <Sparkles className="w-4 h-4" />
-              Receive SOKO Card
-            </button>
-          )}
           <button
             onClick={() => setShowAddContactModal(true)}
             className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs sm:text-sm font-bold shadow-xs cursor-pointer transition-colors flex items-center justify-center gap-2"
@@ -418,43 +409,6 @@ const StandardContactsView: React.FC<ContactsViewProps> = ({
           </button>
         </div>
       </div>
-
-      {/* Pending Invitations Alert Banner (visible on Connections / Search tabs if invitations exist) */}
-      {incomingInvitations.length > 0 && activeTab !== 'invitations' && (
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-              <Inbox className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h4 className="text-xs font-bold text-slate-900">
-                  {incomingInvitations.length} Pending Connection {incomingInvitations.length === 1 ? 'Invitation' : 'Invitations'}
-                </h4>
-                <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
-              </div>
-              <p className="text-[11px] text-slate-600 mt-0.5">
-                {incomingInvitations[0].name} ({incomingInvitations[0].company}) sent you a connection request.
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={() => handleAcceptConnection(incomingInvitations[0].id)}
-              className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
-            >
-              <Check className="w-3.5 h-3.5" />
-              <span>Accept</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('invitations')}
-              className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
-            >
-              View All ({incomingInvitations.length})
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Search & SoKo Network Controls */}
       <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-xs space-y-4">
