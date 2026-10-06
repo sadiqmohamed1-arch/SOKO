@@ -612,7 +612,6 @@ const StandardContactsView: React.FC<ContactsViewProps> = ({
         <MyNetworkTable
           contacts={filteredContacts}
           counterpartLabel={isBuyer ? 'Supplier' : 'Buyer'}
-          primaryActionLabel={isBuyer ? 'RFQ' : 'Quote'}
           isSaved={(c) => getContactStatus(c) === 'connected'}
           onToggleSave={handleToggleSaveContact}
           onShare={(c) => {
@@ -624,7 +623,6 @@ const StandardContactsView: React.FC<ContactsViewProps> = ({
             setCopiedLink(false);
             setCopiedVCard(false);
           }}
-          onPrimaryAction={(c) => onStartMessageWith(c.id, c.name)}
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

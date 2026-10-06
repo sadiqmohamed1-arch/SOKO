@@ -35,11 +35,9 @@ const LOGO_STYLES = ['bg-slate-900 text-white', 'bg-blue-900 text-blue-100', 'bg
 interface MyNetworkTableProps {
   contacts: CommunityContact[];
   counterpartLabel: string;
-  primaryActionLabel: string;
   isSaved: (c: CommunityContact) => boolean;
   onToggleSave: (c: CommunityContact) => void;
   onShare: (c: CommunityContact) => void;
-  onPrimaryAction: (c: CommunityContact) => void;
 }
 
 const LabelsCell: React.FC<{ contact: CommunityContact }> = ({ contact }) => {
@@ -69,11 +67,9 @@ const LabelsCell: React.FC<{ contact: CommunityContact }> = ({ contact }) => {
 export const MyNetworkTable: React.FC<MyNetworkTableProps> = ({
   contacts,
   counterpartLabel,
-  primaryActionLabel,
   isSaved,
   onToggleSave,
   onShare,
-  onPrimaryAction,
 }) => (
   <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
     <div className="overflow-x-auto">
@@ -84,7 +80,7 @@ export const MyNetworkTable: React.FC<MyNetworkTableProps> = ({
             <th className="px-4 py-3">Representative & Role</th>
             <th className="px-4 py-3">Direct Contact Channels</th>
             <th className="px-4 py-3">Materials & Scope Labels</th>
-            <th className="px-4 py-3 text-right">Actions</th>
+            <th className="px-4 py-3 text-center">Actions</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
@@ -140,12 +136,6 @@ export const MyNetworkTable: React.FC<MyNetworkTableProps> = ({
                       title="Share SOKO card"
                     >
                       <Share2 className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => onPrimaryAction(c)}
-                      className="px-3 py-1.5 rounded-lg border border-slate-300 text-[11px] font-bold text-slate-700 hover:border-blue-400 hover:text-blue-700 bg-white transition-colors cursor-pointer"
-                    >
-                      {primaryActionLabel}
                     </button>
                     <button
                       onClick={() => onToggleSave(c)}
