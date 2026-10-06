@@ -1723,36 +1723,7 @@ export const SupplierSearchView: React.FC<SupplierSearchViewProps> = ({
 
                 {/* Card Footer: Direct Actions */}
                 <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5">
-                    <a
-                      href={`tel:${(supplier.phone || '+971 4 881 2290').replace(/\s+/g, '')}`}
-                      className="w-8 h-8 rounded-xl bg-white hover:bg-blue-50 border border-slate-200 text-blue-700 flex items-center justify-center transition-colors shadow-2xs"
-                      title={`Call: ${supplier.phone || '+971 4 881 2290'}`}
-                    >
-                      <Phone className="w-3.5 h-3.5" />
-                    </a>
-
-                    <a
-                      href={`https://wa.me/${(supplier.phone || '971508812290').replace(/\D/g, '')}?text=${encodeURIComponent(
-                        `Hello ${supplier.company}, I am contacting you via SOKO Directory.`
-                      )}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="w-8 h-8 rounded-xl bg-white hover:bg-emerald-50 border border-slate-200 text-emerald-700 flex items-center justify-center transition-colors shadow-2xs"
-                      title="Chat on WhatsApp"
-                    >
-                      <WhatsAppIcon className="w-3.5 h-3.5 text-emerald-600" />
-                    </a>
-
-                    <button
-                      type="button"
-                      onClick={() => onViewSupplierCard(supplier)}
-                      className="w-8 h-8 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 flex items-center justify-center transition-colors cursor-pointer shadow-2xs"
-                      title="View Digital Business Card"
-                    >
-                      <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-                    </button>
-                  </div>
+                  <div className="flex items-center gap-1.5"></div>
 
                   <button
                     type="button"
