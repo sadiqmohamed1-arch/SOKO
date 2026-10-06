@@ -1,4 +1,5 @@
 import express from 'express';
+import http from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -11,6 +12,7 @@ const __dirname = path.dirname(__filename);
 
 async function startServer() {
   const app = express();
+  const httpServer = http.createServer(app);
   const PORT = Number(process.env.PORT) || 3000;
   const isProd = process.env.NODE_ENV === 'production';
 
@@ -37,8 +39,7 @@ async function startServer() {
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
-        host: '0.0.0.0',
-        port: PORT,
+        hmr: { server: httpServer },
       },
       appType: 'spa',
     });
@@ -57,7 +58,7 @@ async function startServer() {
     }
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`[SOKO Server] Running on http://0.0.0.0:${PORT}`);
   });
 }
