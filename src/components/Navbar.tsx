@@ -115,10 +115,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <SokoLogo size="md" className="shadow-xs" />
             <div className="hidden sm:flex flex-col">
-              <span className="text-xl font-extrabold tracking-tight text-slate-900 flex items-center leading-none">
-                SOKO<span className="text-blue-600">.ae</span>
-              </span>
-              <span className="text-[9px] font-mono text-slate-500 uppercase tracking-widest mt-0.5">
+              <span className="text-[8px] font-mono text-slate-500 uppercase tracking-widest mt-0.5">
                 Source & Konnect Better
               </span>
             </div>

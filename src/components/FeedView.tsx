@@ -878,7 +878,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
               <span>ProcureLink Trust Standard</span>
             </div>
             <p className="text-slate-300 text-[11px] leading-relaxed">
-              All suppliers undergo automated DUNS registry verification, ISO certificate validation, and financial sanction screening.
+              All suppliers undergo registry verification, ISO certificate validation, and financial sanction screening.
             </p>
           </div>
         </aside>
