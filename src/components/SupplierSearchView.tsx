@@ -1672,7 +1672,7 @@ export const SupplierSearchView: React.FC<SupplierSearchViewProps> = ({
                       className="w-8 h-8 rounded-lg bg-white hover:bg-emerald-50 border border-slate-200 flex items-center justify-center transition-colors shrink-0"
                       title="Chat on WhatsApp"
                     >
-                      <WhatsAppIcon className="w-4 h-4 text-emerald-600" />
+                      <WhatsAppIcon className="w-8 h-8 text-emerald-600" />
                     </a>
                     <button
                       type="button"
