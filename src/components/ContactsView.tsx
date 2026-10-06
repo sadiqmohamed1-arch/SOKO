@@ -499,23 +499,6 @@ const StandardContactsView: React.FC<ContactsViewProps> = ({
                 {myNetworkContacts.length}
               </span>
             </button>
-
-            <button
-              onClick={() => setActiveTab('invitations')}
-              className={`relative px-3.5 sm:px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-                activeTab === 'invitations'
-                  ? 'bg-white text-blue-700 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Inbox className="w-4 h-4 text-slate-500" />
-              <span>Invitations</span>
-              {incomingInvitations.length > 0 && (
-                <span className="bg-blue-600 text-white text-[10px] font-extrabold px-1.5 py-0.2 rounded-full">
-                  {incomingInvitations.length}
-                </span>
-              )}
-            </button>
           </div>
 
           {/* Role Filter */}
