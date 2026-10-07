@@ -1,5 +1,5 @@
 import React from 'react';
-import { BadgeCheck, Bookmark, BookmarkCheck, MapPin, MessageSquare } from 'lucide-react';
+import { Bookmark, BookmarkCheck, MapPin, MessageSquare } from 'lucide-react';
 import {
   BuyerSupplier,
   SupplierProduct,
@@ -21,6 +21,16 @@ interface SupplierResultCardProps {
 }
 
 const MAX_PRODUCTS = 3;
+
+const formatDate = (iso: string) =>
+  new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' });
+
+const verificationFreshness = (s: BuyerSupplier) => {
+  if (s.status === 'verified') return s.lastVerified ? `Last verified ${formatDate(s.lastVerified)}` : 'SOKO Verified';
+  if (s.status === 'pending') return 'Verification in progress';
+  if (s.status === 'update-required') return 'Verification update required';
+  return 'Not yet verified by SOKO';
+};
 
 const Stat: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
   <div className="min-w-0">
@@ -54,21 +64,16 @@ export const SupplierResultCard: React.FC<SupplierResultCardProps> = ({
             <button
               type="button"
               onClick={onView}
-              className="inline-flex items-center gap-1 text-left text-base font-semibold text-slate-900 hover:text-blue-700 transition-colors leading-tight cursor-pointer"
+              className="text-left text-base font-semibold text-slate-900 hover:text-blue-700 transition-colors leading-tight cursor-pointer"
             >
               {s.name}
-              {s.status === 'verified' && <BadgeCheck className="w-4 h-4 text-emerald-600 shrink-0" aria-label="SOKO Verified" />}
             </button>
             <SupplierStatusBadge status={s.status} />
             {s.externalSourceFields && <ExternalSourceBadge />}
           </div>
-          <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500">
-            <span className="inline-flex items-center gap-0.5 whitespace-nowrap">
-              <MapPin className="w-3 h-3" />
-              {supplierLocation(s)}
-            </span>
-            <span aria-hidden className="text-slate-300">·</span>
-            <span>{supplierTypeLine(s)}</span>
+          <p className="mt-1 flex items-start gap-1 text-xs text-slate-500">
+            <MapPin className="w-3 h-3 mt-px shrink-0" />
+            <span className="min-w-0">{`${supplierLocation(s)} \u00b7 ${supplierTypeLine(s)}`}</span>
           </p>
           <p className="mt-1 text-xs font-semibold text-slate-700">{s.categories.join(' · ')}</p>
         </div>
@@ -94,7 +99,7 @@ export const SupplierResultCard: React.FC<SupplierResultCardProps> = ({
           </p>
         </div>
       ) : (
-        <dl className="mt-4 grid grid-cols-2 xl:grid-cols-4 gap-x-6 gap-y-3 rounded-lg bg-slate-50 border border-slate-100 px-4 py-3">
+        <dl className="mt-4 grid grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-3 rounded-lg bg-slate-50 border border-slate-100 px-4 py-3">
           <Stat label="Trade License">
             <span className={licenseTone}>{tradeLicenseLabel(s)}</span>
           </Stat>
@@ -109,16 +114,18 @@ export const SupplierResultCard: React.FC<SupplierResultCardProps> = ({
         </dl>
       )}
 
+      <p className="mt-1.5 text-[11px] text-slate-500">{verificationFreshness(s)}</p>
+
       {(shown.length > 0 || s.brands.length > 0) && (
-        <dl className="mt-3 space-y-1 text-sm">
+        <dl className="mt-3 grid gap-2.5 text-sm">
           {shown.length > 0 && (
-            <div className="flex flex-wrap gap-x-2">
-              <dt className="text-slate-500 shrink-0">{ordered.length ? 'Key Products:' : 'Capabilities:'}</dt>
-              <dd className="min-w-0 text-slate-800">
-                {shown.join(' · ')}
+            <div className="min-w-0">
+              <dt className="text-[11px] text-slate-500">{ordered.length ? 'Key Products' : 'Capabilities'}</dt>
+              <dd className="mt-0.5 text-slate-800">
+                {shown.join(' \u00b7 ')}
                 {remaining > 0 && (
                   <>
-                    {' · '}
+                    {' \u00b7 '}
                     <button type="button" onClick={onViewProducts} className="font-semibold text-blue-700 hover:text-blue-800 cursor-pointer">
                       +{remaining} more
                     </button>
@@ -128,9 +135,9 @@ export const SupplierResultCard: React.FC<SupplierResultCardProps> = ({
             </div>
           )}
           {s.brands.length > 0 && (
-            <div className="flex flex-wrap gap-x-2">
-              <dt className="text-slate-500 shrink-0">Brands:</dt>
-              <dd className="min-w-0 font-semibold text-slate-800">{s.brands.join(' · ')}</dd>
+            <div className="min-w-0">
+              <dt className="text-[11px] text-slate-500">Brands</dt>
+              <dd className="mt-0.5 font-semibold text-slate-800">{s.brands.join(' \u00b7 ')}</dd>
             </div>
           )}
         </dl>

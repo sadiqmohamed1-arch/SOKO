@@ -76,13 +76,17 @@ export const IntelligenceValue: React.FC<{ score: number; align?: 'left' | 'righ
   </span>
 );
 
+const NAME_SUFFIXES = new Set(['llc', 'industries', 'trading', 'contracting', 'co', 'company', 'ltd', 'fze', 'fzco', 'group']);
+
+const companyInitials = (name: string) => {
+  const words = name.split(/\s+/).filter((w) => /^[A-Za-z]/.test(w));
+  const core = words.filter((w) => !NAME_SUFFIXES.has(w.toLowerCase()));
+  const use = core.length ? core : words;
+  return (use.length > 1 ? use[0][0] + use[use.length - 1][0] : (use[0] ?? '?').slice(0, 2)).toUpperCase();
+};
+
 export const SupplierLogo: React.FC<{ supplier: BuyerSupplier; size?: 'sm' | 'md' | 'lg' }> = ({ supplier, size = 'md' }) => {
-  const initials = supplier.name
-    .split(/\s+/)
-    .filter((w) => /^[A-Za-z]/.test(w))
-    .slice(0, 2)
-    .map((w) => w[0])
-    .join('');
+  const initials = companyInitials(supplier.name);
   const dims = size === 'lg' ? 'w-20 h-20 text-2xl rounded-xl' : size === 'md' ? 'w-12 h-12 text-base rounded-lg' : 'w-9 h-9 text-xs rounded-md';
   return (
     <div className={`${dims} ${supplier.logoTone} text-white font-semibold flex items-center justify-center shrink-0`} aria-hidden>
