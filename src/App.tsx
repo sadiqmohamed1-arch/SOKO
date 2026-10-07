@@ -7,6 +7,7 @@ import { Package, Settings } from 'lucide-react';
 import { FeedView } from './components/FeedView';
 import { MessagingView } from './components/MessagingView';
 import { SupplierSearchView } from './components/SupplierSearchView';
+import { BuyerSuppliersView } from './components/BuyerSuppliersView';
 import { BusinessCardView } from './components/BusinessCardView';
 import { OpportunitiesView } from './components/OpportunitiesView';
 import { ContactsView } from './components/ContactsView';
@@ -803,7 +804,11 @@ function MainApp() {
           />
         )}
 
-        {activeTab === 'suppliers' && (
+        {activeTab === 'suppliers' && currentUser.role === 'buyer' && (
+          <BuyerSuppliersView onNavigateToTab={(tab) => setActiveTab(tab)} onStartMessageWith={handleStartMessageWith} />
+        )}
+
+        {activeTab === 'suppliers' && currentUser.role !== 'buyer' && (
           <SupplierSearchView
             suppliers={suppliers}
             currentUser={currentUser}
