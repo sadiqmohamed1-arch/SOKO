@@ -78,8 +78,18 @@ export interface SupplierDocumentGroup {
   access: DocumentAccess;
 }
 
+export type SupplierPlan = 'free' | 'pro';
+
+export interface ExternalLink {
+  label: string;
+  url: string;
+}
+
 export interface BuyerSupplier {
   id: string;
+  sokoId?: string;
+  plan?: SupplierPlan;
+  externalCatalogues?: ExternalLink[];
   name: string;
   logoTone: string;
   status: SupplierStatus;
@@ -159,6 +169,12 @@ const UAE = { countryCode: 'AE', country: 'United Arab Emirates' };
 export const BUYER_SUPPLIERS: BuyerSupplier[] = [
   {
     id: 'sup_abc_waterproofing',
+    sokoId: 'SK-10317',
+    plan: 'free',
+    externalCatalogues: [
+      { label: 'Product Catalogue', url: 'https://abcwaterproofing.ae/catalogue' },
+      { label: 'Sika Waterproofing Range', url: 'https://abcwaterproofing.ae/brands/sika' },
+    ],
     name: 'ABC Waterproofing LLC',
     logoTone: 'bg-blue-900',
     status: 'verified',
@@ -250,6 +266,8 @@ export const BUYER_SUPPLIERS: BuyerSupplier[] = [
   },
   {
     id: 'sup_emirates_steel',
+    sokoId: 'SK-10482',
+    plan: 'pro',
     name: 'Emirates Steel Industries',
     logoTone: 'bg-slate-700',
     status: 'verified',
@@ -918,6 +936,24 @@ export const supplierTypeLine = (s: BuyerSupplier) => [...s.types, ...(s.descrip
 export const supplierMarkets = (s: BuyerSupplier) => s.marketsServed ?? [s.countryCode === 'AE' ? 'UAE' : s.country, ...s.regionsServed];
 
 export const freshnessLabel = (days: number) => (days <= 1 ? 'Updated today' : `Updated ${days} days ago`);
+
+export const supplierPlan = (s: BuyerSupplier): SupplierPlan => s.plan ?? 'free';
+
+export const supplierSokoId = (s: BuyerSupplier) => {
+  if (s.sokoId) return s.sokoId;
+  const hash = [...s.id].reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) % 9000, 7);
+  return `SK-${10000 + hash}`;
+};
+
+const SHARE_PARAM = 'supplier';
+
+export const supplierShareUrl = (s: BuyerSupplier) =>
+  `${window.location.origin}${window.location.pathname}?${SHARE_PARAM}=${encodeURIComponent(supplierSokoId(s))}`;
+
+export const supplierFromShareLink = (): BuyerSupplier | undefined => {
+  const id = new URLSearchParams(window.location.search).get(SHARE_PARAM);
+  return id ? BUYER_SUPPLIERS.find((s) => supplierSokoId(s) === id) : undefined;
+};
 
 export const activeCertifications = (s: BuyerSupplier) => s.certifications.filter((c) => c.status === 'active').length;
 

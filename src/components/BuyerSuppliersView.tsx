@@ -13,15 +13,19 @@ import {
   getSearchSuggestions,
   matchSupplier,
   queryTokens,
+  supplierFromShareLink,
 } from '../data/buyerSuppliers';
 import { SupplierFiltersPanel } from './SupplierFiltersPanel';
 import { SupplierResultCard } from './SupplierResultCard';
 import { BuyerSupplierProfile, ProfileTab } from './BuyerSupplierProfile';
 import { ContactSupplierModal } from './ContactSupplierModal';
+import { CommunityContact } from '../types';
 
 interface BuyerSuppliersViewProps {
   onNavigateToTab: (tab: string) => void;
   onStartMessageWith: (supplierId: string, supplierName: string) => void;
+  networkContacts: CommunityContact[];
+  onUpdateNetworkContacts: (contacts: CommunityContact[]) => void;
 }
 
 const SAVED_KEY = 'soko_buyer_saved_suppliers_v1';
@@ -37,7 +41,7 @@ const loadSaved = (): string[] => {
 
 const lastVerifiedTime = (s: BuyerSupplier) => (s.lastVerified ? new Date(s.lastVerified).getTime() : 0);
 
-export const BuyerSuppliersView: React.FC<BuyerSuppliersViewProps> = ({ onNavigateToTab, onStartMessageWith }) => {
+export const BuyerSuppliersView: React.FC<BuyerSuppliersViewProps> = ({ onNavigateToTab, onStartMessageWith, networkContacts, onUpdateNetworkContacts }) => {
   const [input, setInput] = useState('');
   const [query, setQuery] = useState('');
   const [filters, setFilters] = useState<SupplierFilters>(EMPTY_FILTERS);
@@ -45,7 +49,10 @@ export const BuyerSuppliersView: React.FC<BuyerSuppliersViewProps> = ({ onNaviga
   const [savedOnly, setSavedOnly] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [savedIds, setSavedIds] = useState<string[]>(loadSaved);
-  const [selected, setSelected] = useState<{ id: string; query: string; tab: ProfileTab } | null>(null);
+  const [selected, setSelected] = useState<{ id: string; query: string; tab: ProfileTab } | null>(() => {
+    const shared = supplierFromShareLink();
+    return shared ? { id: shared.id, query: '', tab: 'overview' } : null;
+  });
   const [contactFor, setContactFor] = useState<BuyerSupplier | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const suggestions = useMemo(() => getSearchSuggestions(), []);
@@ -154,11 +161,12 @@ export const BuyerSuppliersView: React.FC<BuyerSuppliersViewProps> = ({ onNaviga
           matchQuery={selected!.query}
           initialTab={selected!.tab}
           saved={savedIds.includes(selectedSupplier.id)}
+          networkContacts={networkContacts}
+          onUpdateNetworkContacts={onUpdateNetworkContacts}
           onBack={() => setSelected(null)}
           onToggleSave={() => toggleSave(selectedSupplier)}
           onContact={() => setContactFor(selectedSupplier)}
           onOpenSupplier={(id) => setSelected({ id, query: '', tab: 'overview' })}
-          onNavigateToTab={onNavigateToTab}
           onRequestContact={() => onStartMessageWith(selectedSupplier.id, selectedSupplier.name)}
           onNotify={setToast}
         />

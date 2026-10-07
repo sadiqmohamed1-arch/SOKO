@@ -72,7 +72,7 @@ function MainApp() {
   const [authModalMode, setAuthModalMode] = useState<'login' | 'signup'>('login');
 
   // Navigation
-  const [activeTab, setActiveTab] = useState<string>('feed');
+  const [activeTab, setActiveTab] = useState<string>(() => (new URLSearchParams(window.location.search).has('supplier') ? 'suppliers' : 'feed'));
   const [cardMode, setCardMode] = useState<'preview' | 'edit'>('preview');
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>('personal');
   const [globalSearch, setGlobalSearch] = useState<string>('');
@@ -805,7 +805,12 @@ function MainApp() {
         )}
 
         {activeTab === 'suppliers' && currentUser.role === 'buyer' && (
-          <BuyerSuppliersView onNavigateToTab={(tab) => setActiveTab(tab)} onStartMessageWith={handleStartMessageWith} />
+          <BuyerSuppliersView
+            onNavigateToTab={(tab) => setActiveTab(tab)}
+            onStartMessageWith={handleStartMessageWith}
+            networkContacts={contacts}
+            onUpdateNetworkContacts={setContacts}
+          />
         )}
 
         {activeTab === 'suppliers' && currentUser.role !== 'buyer' && (
