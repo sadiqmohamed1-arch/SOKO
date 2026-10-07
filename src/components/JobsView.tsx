@@ -608,7 +608,7 @@ export const JobsView: React.FC<JobsViewProps> = ({
                 My General Contractor Applications
               </h2>
               <p className="text-xs text-slate-600 mt-1 max-w-2xl leading-relaxed">
-                Track your active candidacies with top GCC General Contractors. Review recruiter feedback, scheduled interviews, and whether you applied with your ProcureLink Profile or via LinkedIn Easy Apply.
+                Track your active candidacies with top GCC General Contractors. Review recruiter feedback, scheduled interviews, and whether you applied with your SOKO Profile or via LinkedIn Easy Apply.
               </p>
             </div>
 

@@ -1,5 +1,16 @@
 @import "tailwindcss";
 
+@theme {
+  --color-gold-50: #fbf8ef;
+  --color-gold-100: #f5eed8;
+  --color-gold-200: #ebddb1;
+  --color-gold-300: #dfc785;
+  --color-gold-500: #c8a951;
+  --color-gold-600: #ad8f3b;
+  --color-gold-700: #8a702f;
+  --color-gold-900: #4f4019;
+}
+
 @layer base {
   body {
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;

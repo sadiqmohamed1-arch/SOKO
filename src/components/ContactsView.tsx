@@ -548,7 +548,6 @@ const StandardContactsView: React.FC<ContactsViewProps> = ({
       ) : isTableMode ? (
         <MyNetworkTable
           contacts={filteredContacts}
-          counterpartLabel={isBuyer ? 'Supplier' : 'Buyer'}
           isSaved={(c) => getContactStatus(c) === 'connected'}
           onToggleSave={handleToggleSaveContact}
           onShare={(c) => {

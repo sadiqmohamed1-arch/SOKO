@@ -11,13 +11,9 @@ import {
   CheckCircle2,
   ExternalLink,
   SlidersHorizontal,
-  FileCheck2,
-  MessageSquare,
-  FileText,
   Bookmark,
   Award,
   Users,
-  MapPin,
   Calendar,
   X,
   Phone,
@@ -32,6 +28,7 @@ import {
 } from 'lucide-react';
 import { SokoAiCompany, SOKO_AI_COMPANIES_DB } from '../data/sokoAiCompanies';
 import { UserProfile } from '../types';
+import { ContactRowCard } from './ContactRowCard';
 
 interface SokoAiSearchViewProps {
   currentUser: UserProfile;
@@ -462,177 +459,23 @@ export const SokoAiSearchView: React.FC<SokoAiSearchViewProps> = ({
               </div>
             </div>
 
-            {/* ========================================================================= */}
-            {/* GRID OF MATCHED COMPANIES (As requested: "display as grid type all companies who are approved by DM") */}
-            {/* ========================================================================= */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {filteredAndSortedResults.map((company) => {
-                const isShortlisted = shortlist[company.id];
-
-                return (
-                  <article
-                    key={company.id}
-                    id={`company-card-${company.id}`}
-                    className="rounded-2xl border border-slate-200 bg-white shadow-xs hover:shadow-lg hover:border-purple-400 transition-all flex flex-col justify-between overflow-hidden group"
-                  >
-                    {/* Top Media Banner */}
-                    <div className="relative h-28 w-full bg-slate-900 overflow-hidden">
-                      <img
-                        src={company.bannerImage}
-                        alt={company.name}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-85"
-                        referrerPolicy="no-referrer"
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/30 to-transparent" />
-
-                      {/* Approval Badge on Banner */}
-                      <div className="absolute top-2.5 left-2.5">
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500 text-white shadow-xs">
-                          <CheckCircle2 className="w-3 h-3" />
-                          {company.approvalBody}
-                        </span>
-                      </div>
-
-                      {/* Shortlist Toggle */}
-                      <button
-                        type="button"
-                        onClick={() => toggleShortlist(company.id)}
-                        className={`absolute top-2.5 right-2.5 p-1.5 rounded-full backdrop-blur-md transition-all cursor-pointer ${
-                          isShortlisted
-                            ? 'bg-purple-600 text-white shadow-xs'
-                            : 'bg-black/40 text-white hover:bg-black/60'
-                        }`}
-                        title={isShortlisted ? 'Remove from Shortlist' : 'Add to Shortlist'}
-                      >
-                        <Bookmark className={`w-3.5 h-3.5 ${isShortlisted ? 'fill-white' : ''}`} />
-                      </button>
-
-                      {/* Grade Badge */}
-                      <div className="absolute bottom-2 left-3 right-3 flex items-center justify-between text-[11px] text-white font-bold">
-                        <span className="bg-slate-950/80 px-2 py-0.5 rounded border border-white/20 truncate">
-                          {company.approvalGrade}
-                        </span>
-                        <span className="bg-amber-400/90 text-slate-950 px-2 py-0.5 rounded font-black">
-                          ICV: {company.icvScore}%
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Company Details Body */}
-                    <div className="p-4 sm:p-5 flex-1 flex flex-col justify-between space-y-4">
-                      <div>
-                        {/* Company Title & Arabic Name */}
-                        <div className="flex items-start gap-3">
-                          <img
-                            src={company.logoImage}
-                            alt={company.name}
-                            className="w-10 h-10 rounded-xl object-cover border border-slate-200 shrink-0 shadow-2xs mt-0.5"
-                            referrerPolicy="no-referrer"
-                          />
-                          <div className="min-w-0">
-                            <h3 className="font-extrabold text-slate-900 text-base leading-snug group-hover:text-purple-700 transition-colors">
-                              {company.name}
-                            </h3>
-                            {company.tradeNameAr && (
-                              <p className="text-[11px] text-slate-400 font-medium truncate" dir="rtl">
-                                {company.tradeNameAr}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Location & License Info */}
-                        <div className="flex items-center gap-3 text-[11px] text-slate-500 mt-2.5 flex-wrap">
-                          <span className="flex items-center gap-1">
-                            <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                            {company.location.split(',')[0]}
-                          </span>
-                          <span>•</span>
-                          <span className="font-mono text-purple-800 font-semibold">
-                            Lic: {company.licenseNumber}
-                          </span>
-                          <span>•</span>
-                          <span className="text-emerald-700 font-bold">
-                            {company.rating} ★ ({company.reviewCount})
-                          </span>
-                        </div>
-
-                        {/* Summary */}
-                        <p className="text-xs text-slate-600 mt-2.5 line-clamp-2 leading-relaxed">
-                          {company.summary}
-                        </p>
-
-                        {/* Key Metrics Strip */}
-                        <div className="grid grid-cols-2 gap-2 mt-3.5 pt-3 border-t border-slate-100 text-xs">
-                          <div className="p-2 rounded-lg bg-slate-50 border border-slate-100">
-                            <span className="text-[10px] text-slate-400 uppercase font-bold block">
-                              Completed Works
-                            </span>
-                            <span className="font-bold text-slate-900">
-                              {company.completedProjectsCount}+ Projects
-                            </span>
-                          </div>
-
-                          <div className="p-2 rounded-lg bg-slate-50 border border-slate-100">
-                            <span className="text-[10px] text-slate-400 uppercase font-bold block">
-                              Delivered Value
-                            </span>
-                            <span className="font-bold text-slate-900 truncate">
-                              {company.totalDeliveredValueAED}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Capabilities Pills */}
-                        <div className="flex flex-wrap gap-1.5 mt-3">
-                          {company.keyCapabilities.slice(0, 3).map((cap, i) => (
-                            <span
-                              key={i}
-                              className="px-2 py-0.5 rounded text-[10px] font-medium bg-purple-50 text-purple-900 border border-purple-100"
-                            >
-                              {cap.split('(')[0]}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Action Buttons */}
-                      <div className="pt-3 border-t border-slate-100 space-y-2">
-                        <div className="grid grid-cols-2 gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedCompanyForRfq(company)}
-                            className="px-3 py-2 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95"
-                          >
-                            <FileText className="w-3.5 h-3.5" />
-                            <span>Direct RFQ</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => setSelectedCompanyForDossier(company)}
-                            className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-purple-50 text-slate-800 hover:text-purple-900 border border-slate-200 font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
-                          >
-                            <FileCheck2 className="w-3.5 h-3.5 text-purple-600" />
-                            <span>DM Dossier</span>
-                          </button>
-                        </div>
-
-                        {onStartMessageWith && (
-                          <button
-                            type="button"
-                            onClick={() => onStartMessageWith(company.contactPerson.name, company.name)}
-                            className="w-full py-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-50 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer"
-                          >
-                            <MessageSquare className="w-3.5 h-3.5 text-slate-400" />
-                            <span>Message {company.contactPerson.name} ({company.contactPerson.title})</span>
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </article>
-                );
-              })}
+            <div className="space-y-3">
+              {filteredAndSortedResults.map((company) => (
+                <ContactRowCard
+                  key={company.id}
+                  companyName={company.name}
+                  verified={company.verifiedBadge}
+                  location={company.location}
+                  personName={company.contactPerson.name}
+                  personTitle={company.contactPerson.title}
+                  phone={company.contactPerson.phone}
+                  email={company.contactPerson.email}
+                  tags={[company.category, ...company.subcategories.slice(0, 2), ...(company.dclCertified ? ['DCL Certified'] : [])]}
+                  isSaved={Boolean(shortlist[company.id])}
+                  onToggleSave={() => toggleShortlist(company.id)}
+                  onOpenDetails={() => setSelectedCompanyForDossier(company)}
+                />
+              ))}
             </div>
           </div>
         )}

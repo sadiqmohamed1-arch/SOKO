@@ -89,7 +89,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     { id: 'suppliers', label: 'Suppliers', icon: Users },
     { id: 'contacts', label: 'My Network', icon: Contact },
     ...(!isBuyer ? [{ id: 'kiosk', label: 'VMS', icon: Tablet }] : []),
-    { id: 'opportunities', label: 'Opportunities', icon: FolderKanban },
+    { id: 'opportunities', label: 'Market Hub', icon: FolderKanban },
     { id: 'jobs', label: 'Jobs', icon: Briefcase },
     { id: 'messages', label: 'Messaging', icon: MessageSquare, badge: unreadCount },
     ...(isContractor ? [{ id: 'team', label: 'Company Team', icon: Users2 }] : []),

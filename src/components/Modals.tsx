@@ -445,7 +445,7 @@ export const EasyApplyModal: React.FC<EasyApplyModalProps> = ({
         <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between">
           <div>
             <span className="text-[10px] uppercase font-bold text-blue-600 tracking-wider">
-              ProcureLink Easy Apply
+              SOKO Easy Apply
             </span>
             <h3 className="text-base font-bold text-slate-900">{job.title}</h3>
           </div>

@@ -1,5 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Navbar } from './components/Navbar';
+import { BuyerNavbar } from './components/BuyerNavbar';
+import { ComingSoonView } from './components/ComingSoonView';
+import { BuyerHomeView } from './components/BuyerHomeView';
+import { Package, Settings } from 'lucide-react';
 import { FeedView } from './components/FeedView';
 import { MessagingView } from './components/MessagingView';
 import { SupplierSearchView } from './components/SupplierSearchView';
@@ -57,6 +61,7 @@ import {
   UserRewardProfile,
   CompanyTeamMember,
   TeamActivityLogItem,
+  Workspace,
 } from './types';
 
 function MainApp() {
@@ -67,6 +72,8 @@ function MainApp() {
 
   // Navigation
   const [activeTab, setActiveTab] = useState<string>('feed');
+  const [cardMode, setCardMode] = useState<'preview' | 'edit'>('preview');
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>('personal');
   const [globalSearch, setGlobalSearch] = useState<string>('');
 
   // Persisted or In-Memory State
@@ -490,7 +497,7 @@ function MainApp() {
         const confirmationMsg = {
           id: `msg_sys_${Date.now()}`,
           senderId: 'sys',
-          senderName: 'ProcureLink Contract Escrow',
+          senderName: 'SOKO Contract Escrow',
           senderRole: 'buyer' as UserRole,
           text: ' Binding Purchase Order PO-2026-884 generated. Net 30 terms locked, BABA Material Test Certificate requirement filed in compliance audit log.',
           timestamp: 'Just now',
@@ -540,7 +547,7 @@ function MainApp() {
           phone: sup ? sup.phone : '+1 (555) 019-2831',
           email: sup ? sup.email : 'rfq@partner.com',
         },
-        lastMessage: 'Inquiry initialized via ProcureLink directory.',
+        lastMessage: 'Inquiry initialized via SOKO directory.',
         lastMessageTime: 'Just now',
         unreadCount: 0,
         rfqSubject: 'Commercial Inquiry & Material Specification',
@@ -664,6 +671,11 @@ function MainApp() {
 
   const unreadMessagesCount = conversations.reduce((acc, c) => acc + c.unreadCount, 0);
 
+  // Corporate workspaces get appended here once the Buyer joins a Contractor/Developer company.
+  const buyerWorkspaces: Workspace[] = [
+    { id: 'personal', kind: 'personal', name: currentUser.name, roleLabel: 'Buyer' },
+  ];
+
   if (viewMode === 'landing') {
     return (
       <>
@@ -689,6 +701,33 @@ function MainApp() {
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans selection:bg-blue-600 selection:text-white">
       {/* Top Navbar */}
+      {currentUser.role === 'buyer' ? (
+        <BuyerNavbar
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          currentUser={currentUser}
+          conversations={conversations}
+          rewardPoints={rewardProfile.totalPoints}
+          workspaces={buyerWorkspaces}
+          activeWorkspaceId={activeWorkspaceId}
+          onSwitchWorkspace={setActiveWorkspaceId}
+          onOpenProfile={() => {
+            setCardMode('edit');
+            setActiveTab('card');
+          }}
+          onOpenBusinessCard={() => {
+            setCardMode('preview');
+            setActiveTab('card');
+          }}
+          onSwitchDemoRole={handleRoleChange}
+          isAuthenticated={isAuthenticated}
+          onLogout={logout}
+          onOpenAuthModal={(mode) => {
+            setAuthModalMode(mode);
+            setAuthModalOpen(true);
+          }}
+        />
+      ) : (
       <Navbar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -711,10 +750,23 @@ function MainApp() {
         searchQuery={globalSearch}
         setSearchQuery={setGlobalSearch}
       />
+      )}
 
       {/* Main App View Router */}
       <main className="flex-1 pb-12">
-        {activeTab === 'feed' && (
+        {activeTab === 'feed' && currentUser.role === 'buyer' && (
+          <BuyerHomeView
+            currentUser={currentUser}
+            onNavigateToTab={(tab) => setActiveTab(tab)}
+            onOpenBusinessCard={() => {
+              setCardMode('preview');
+              setActiveTab('card');
+            }}
+            onStartMessageWith={handleStartMessageWith}
+          />
+        )}
+
+        {activeTab === 'feed' && currentUser.role !== 'buyer' && (
           <FeedView
             posts={posts}
             currentUser={currentUser}
@@ -848,6 +900,8 @@ function MainApp() {
 
         {activeTab === 'card' && (
           <BusinessCardView
+            key={cardMode}
+            initialMode={cardMode}
             currentUser={currentUser}
             onUpdateUserProfile={(updated) =>
               setCurrentUser((prev) => ({ ...prev, ...updated }))
@@ -863,6 +917,22 @@ function MainApp() {
             activityLogs={teamActivityLogs}
             onAddActivityLog={(newLog) => setTeamActivityLogs((prev) => [newLog, ...prev])}
             onNavigateToTab={(tab) => setActiveTab(tab)}
+          />
+        )}
+
+        {activeTab === 'products' && (
+          <ComingSoonView
+            icon={Package}
+            title="Products"
+            description="Browse construction materials, equipment and products from verified suppliers in one place."
+          />
+        )}
+
+        {activeTab === 'settings' && (
+          <ComingSoonView
+            icon={Settings}
+            title="Account Settings"
+            description="Manage your login, password, notification preferences and privacy for your SOKO account."
           />
         )}
 

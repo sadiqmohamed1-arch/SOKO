@@ -2142,7 +2142,7 @@ export const INITIAL_BUYER_APPLICATIONS: BuyerJobApplication[] = [
       title: 'Senior Commercial Talent Partner',
       avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
     },
-    coverNote: 'Applied with ProcureLink Verified Buyer Profile. Highlighted 10+ years administering FIDIC Red Book subcontract agreements across UAE civil corridors.',
+    coverNote: 'Applied with SOKO Verified Buyer Profile. Highlighted 10+ years administering FIDIC Red Book subcontract agreements across UAE civil corridors.',
   },
 ];
 

@@ -25,16 +25,18 @@ import { UserProfile, UserRole } from '../types';
 interface BusinessCardViewProps {
   currentUser: UserProfile;
   onUpdateUserProfile: (updated: Partial<UserProfile>) => void;
+  initialMode?: 'preview' | 'edit';
 }
 
 export const BusinessCardView: React.FC<BusinessCardViewProps> = ({
   currentUser,
   onUpdateUserProfile,
+  initialMode = 'preview',
 }) => {
   const isBuyer = currentUser.role === 'buyer';
   const [isFlipped, setIsFlipped] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
-  const [activeTab, setActiveTab] = useState<'preview' | 'edit'>('preview');
+  const [activeTab, setActiveTab] = useState<'preview' | 'edit'>(initialMode);
 
   // Form states for live editing
   const [formData, setFormData] = useState({
@@ -65,7 +67,7 @@ export const BusinessCardView: React.FC<BusinessCardViewProps> = ({
 
   const handleCopyLink = () => {
     navigator.clipboard?.writeText?.(
-      `${window.location.origin}/vcard/${currentUser.dunsNumber || 'procurelink-card'}`
+      `${window.location.origin}/vcard/${currentUser.dunsNumber || 'soko-card'}`
     );
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2000);
@@ -97,7 +99,7 @@ export const BusinessCardView: React.FC<BusinessCardViewProps> = ({
       `EMAIL;TYPE=WORK,INTERNET:${currentUser.email}`,
       `URL:${currentUser.website}`,
       `ADR;TYPE=WORK:;;${currentUser.location};;;;`,
-      `NOTE:ProcureLink Verified ${currentUser.role.toUpperCase()} | DUNS: ${currentUser.dunsNumber} | Capabilities: ${currentUser.capabilities.join('; ')}`,
+      `NOTE:SOKO Verified ${currentUser.role.toUpperCase()} | DUNS: ${currentUser.dunsNumber} | Capabilities: ${currentUser.capabilities.join('; ')}`,
       'END:VCARD',
     ].join('\r\n');
 
@@ -105,7 +107,7 @@ export const BusinessCardView: React.FC<BusinessCardViewProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `${currentUser.name.replace(/\s+/g, '_')}_ProcureLink.vcf`);
+    link.setAttribute('download', `${currentUser.name.replace(/\s+/g, '_')}_SOKO.vcf`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -155,7 +157,7 @@ export const BusinessCardView: React.FC<BusinessCardViewProps> = ({
             Digital Identity & Credential Sharing
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-            ProcureLink Digital Business Card
+            SOKO Digital Business Card
           </h1>
           <p className="text-xs sm:text-sm text-slate-600 mt-1">
             Instant B2B credential badge for trade fairs, RFP presentations, and supplier prequalification. Includes verified DUNS and downloadable .vCard.
@@ -256,11 +258,11 @@ export const BusinessCardView: React.FC<BusinessCardViewProps> = ({
                   <div className="flex items-center justify-between relative z-10">
                     <div className="flex items-center gap-2">
                       <div className="w-8 h-8 rounded-md bg-blue-600 flex items-center justify-center font-bold text-white text-sm shadow-xs">
-                        PL
+                        SK
                       </div>
                       <div>
                         <span className="font-extrabold text-sm tracking-tight text-white block">
-                          ProcureLink<span className="text-blue-400">ID</span>
+                          SOKO
                         </span>
                         <span className="text-[9px] uppercase tracking-widest text-slate-400 font-bold block -mt-1">
                           Verified B2B Enterprise
@@ -405,7 +407,7 @@ export const BusinessCardView: React.FC<BusinessCardViewProps> = ({
                   {/* Card Back Bottom */}
                   <div className="pt-2 border-t border-white/15 flex items-center justify-between text-[10px] text-slate-400">
                     <span>Tax ID: {currentUser.taxId}</span>
-                    <span>ProcureLink Verified Profile</span>
+                    <span>SOKO Verified Profile</span>
                   </div>
                 </div>
               </div>

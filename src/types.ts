@@ -90,6 +90,14 @@ export interface UserProfile {
   subscriptionPlan?: string;
 }
 
+export interface Workspace {
+  id: string;
+  kind: 'personal' | 'corporate';
+  name: string;
+  roleLabel: string;
+  logoUrl?: string;
+}
+
 export interface CommentItem {
   id: string;
   author: string;
