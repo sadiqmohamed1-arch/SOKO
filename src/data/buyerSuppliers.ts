@@ -935,3 +935,26 @@ export function similarSuppliers(target: BuyerSupplier, limit = 3) {
     .slice(0, limit)
     .map((e) => e.supplier);
 }
+
+export type SearchSuggestionSource = 'prototype' | 'popular-category' | 'user-interest' | 'recent-search' | 'market-activity';
+
+export interface SearchSuggestion {
+  query: string;
+  source: SearchSuggestionSource;
+}
+
+const PROTOTYPE_SUGGESTIONS: SearchSuggestion[] = [
+  'Waterproofing supplier',
+  'Ready mix concrete',
+  'Sika',
+  'Steel reinforcement',
+  'Fire-rated doors',
+  'MEP contractor',
+  'Precast concrete',
+  'Aluminium façade',
+].map((query) => ({ query, source: 'prototype' }));
+
+// Static for the prototype; later merge popular categories, buyer interests, recent searches and market activity here.
+export function getSearchSuggestions(limit = 8): SearchSuggestion[] {
+  return PROTOTYPE_SUGGESTIONS.slice(0, limit);
+}

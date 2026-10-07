@@ -22,28 +22,25 @@ const COLLAPSED_COUNT = 6;
 const Section: React.FC<{ title: React.ReactNode; children: React.ReactNode; defaultOpen?: boolean; count?: number }> = ({
   title,
   children,
-  defaultOpen = true,
+  defaultOpen = false,
   count = 0,
 }) => {
   const [open, setOpen] = useState(defaultOpen || count > 0);
   return (
-    <div className="py-3 border-b border-slate-100 last:border-b-0">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px] font-semibold tracking-wider uppercase text-slate-500 flex items-center gap-1 min-w-0">
+    <div className="border-b border-slate-100 last:border-b-0">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="w-full flex items-center justify-between gap-2 py-2.5 text-left cursor-pointer group"
+      >
+        <span className="text-[11px] font-semibold tracking-wider uppercase text-slate-600 group-hover:text-slate-900 flex items-center gap-1 min-w-0">
           {title}
           {count > 0 && <span className="ml-1 px-1.5 rounded-full bg-blue-50 text-blue-700 normal-case tracking-normal">{count}</span>}
         </span>
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          aria-expanded={open}
-          aria-label={open ? 'Collapse section' : 'Expand section'}
-          className="p-1 -m-1 rounded text-slate-400 hover:text-slate-700 cursor-pointer"
-        >
-          <ChevronDown className={`w-4 h-4 transition-transform ${open ? '' : '-rotate-90'}`} />
-        </button>
-      </div>
-      {open && <div className="mt-2 space-y-1">{children}</div>}
+        <ChevronDown className={`w-4 h-4 shrink-0 text-slate-400 group-hover:text-slate-700 transition-transform ${open ? '' : '-rotate-90'}`} />
+      </button>
+      {open && <div className="pb-3 space-y-1">{children}</div>}
     </div>
   );
 };
@@ -84,7 +81,7 @@ export const SupplierFiltersPanel: React.FC<SupplierFiltersPanelProps> = ({ filt
   const subcategories = subcategoriesFor(f.categories);
   return (
     <div>
-      <Section title="Category" count={f.categories.length}>
+      <Section title="Category" count={f.categories.length} defaultOpen>
         <CheckList
           options={asOptions(FILTER_FACETS.categories)}
           selected={f.categories}
@@ -95,7 +92,7 @@ export const SupplierFiltersPanel: React.FC<SupplierFiltersPanelProps> = ({ filt
           }}
         />
       </Section>
-      <Section title="Subcategory" count={f.subcategories.length} defaultOpen={false}>
+      <Section title="Subcategory" count={f.subcategories.length}>
         {subcategories.length === 0 && <p className="text-xs text-slate-400">No subcategories available</p>}
         <CheckList options={asOptions(subcategories)} selected={f.subcategories} onToggle={(v) => onChange({ ...f, subcategories: toggle(f.subcategories, v) })} />
       </Section>
@@ -120,21 +117,21 @@ export const SupplierFiltersPanel: React.FC<SupplierFiltersPanelProps> = ({ filt
           onToggle={(v) => onChange({ ...f, statuses: toggle(f.statuses, v as SupplierFilters['statuses'][number]) })}
         />
       </Section>
-      <Section title="Brands / Products" count={f.brands.length} defaultOpen={false}>
-        <CheckList options={asOptions(FILTER_FACETS.brands)} selected={f.brands} onToggle={(v) => onChange({ ...f, brands: toggle(f.brands, v) })} />
-      </Section>
-      <Section title="Certifications" count={f.certifications.length} defaultOpen={false}>
-        <CheckList
-          options={asOptions(FILTER_FACETS.certifications)}
-          selected={f.certifications}
-          onToggle={(v) => onChange({ ...f, certifications: toggle(f.certifications, v) })}
-        />
-      </Section>
-      <Section title="Supplier Type" count={f.types.length} defaultOpen={false}>
+      <Section title="Supplier Type" count={f.types.length}>
         <CheckList
           options={asOptions(SUPPLIER_TYPES)}
           selected={f.types}
           onToggle={(v) => onChange({ ...f, types: toggle(f.types, v as SupplierFilters['types'][number]) })}
+        />
+      </Section>
+      <Section title="Brands / Products" count={f.brands.length}>
+        <CheckList options={asOptions(FILTER_FACETS.brands)} selected={f.brands} onToggle={(v) => onChange({ ...f, brands: toggle(f.brands, v) })} />
+      </Section>
+      <Section title="Certifications" count={f.certifications.length}>
+        <CheckList
+          options={asOptions(FILTER_FACETS.certifications)}
+          selected={f.certifications}
+          onToggle={(v) => onChange({ ...f, certifications: toggle(f.certifications, v) })}
         />
       </Section>
       <Section

@@ -10,6 +10,7 @@ import {
   SupplierFilters,
   SupplierSort,
   applyFilters,
+  getSearchSuggestions,
   matchSupplier,
   queryTokens,
 } from '../data/buyerSuppliers';
@@ -24,17 +25,6 @@ interface BuyerSuppliersViewProps {
 }
 
 const SAVED_KEY = 'soko_buyer_saved_suppliers_v1';
-
-const EXAMPLE_SEARCHES = [
-  'Waterproofing supplier',
-  'Ready mix concrete',
-  'Sika',
-  'Steel reinforcement',
-  'Fire-rated doors',
-  'MEP contractor',
-  'Precast concrete',
-  'Aluminium façade',
-];
 
 const loadSaved = (): string[] => {
   try {
@@ -58,6 +48,7 @@ export const BuyerSuppliersView: React.FC<BuyerSuppliersViewProps> = ({ onNaviga
   const [selected, setSelected] = useState<{ id: string; query: string; tab: ProfileTab } | null>(null);
   const [contactFor, setContactFor] = useState<BuyerSupplier | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const suggestions = useMemo(() => getSearchSuggestions(), []);
 
   useEffect(() => {
     localStorage.setItem(SAVED_KEY, JSON.stringify(savedIds));
@@ -109,6 +100,9 @@ export const BuyerSuppliersView: React.FC<BuyerSuppliersViewProps> = ({ onNaviga
       : []),
     ...(savedOnly ? [{ key: 'saved', label: 'My Saved Suppliers', remove: () => setSavedOnly(false) }] : []),
   ];
+  const filterCount = chips.length - (savedOnly ? 1 : 0);
+
+  const clearFilters = () => setFilters(EMPTY_FILTERS);
 
   const clearAll = () => {
     setFilters(EMPTY_FILTERS);
@@ -210,7 +204,7 @@ export const BuyerSuppliersView: React.FC<BuyerSuppliersViewProps> = ({ onNaviga
         </form>
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
           <span className="text-xs text-slate-400 mr-1">Try:</span>
-          {EXAMPLE_SEARCHES.map((q) => (
+          {suggestions.map(({ query: q }) => (
             <button
               key={q}
               type="button"
@@ -224,12 +218,14 @@ export const BuyerSuppliersView: React.FC<BuyerSuppliersViewProps> = ({ onNaviga
       </header>
 
       <div className="flex w-full items-start gap-6">
-        <aside className="hidden lg:block w-[264px] shrink-0 bg-white rounded-xl border border-slate-200 px-4 sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto overflow-x-hidden">
-          <div className="flex items-center justify-between pt-4">
-            <h2 className="text-sm font-semibold text-slate-900">Filters</h2>
-            {chips.length > 0 && (
-              <button type="button" onClick={clearAll} className="text-xs font-semibold text-blue-700 hover:text-blue-800 cursor-pointer">
-                Clear all
+        <aside className="hidden lg:block w-[260px] xl:w-[272px] shrink-0 bg-white rounded-xl border border-slate-200 px-4 sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto overflow-x-hidden">
+          <div className="flex items-center justify-between pt-3.5 pb-1.5 border-b border-slate-100">
+            <h2 className="text-sm font-semibold text-slate-900">
+              Filters{filterCount > 0 && <span className="text-blue-700"> ({filterCount})</span>}
+            </h2>
+            {filterCount > 0 && (
+              <button type="button" onClick={clearFilters} className="text-xs font-semibold text-blue-700 hover:text-blue-800 cursor-pointer">
+                Clear All
               </button>
             )}
           </div>
@@ -251,7 +247,7 @@ export const BuyerSuppliersView: React.FC<BuyerSuppliersViewProps> = ({ onNaviga
                 className="lg:hidden inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-700 cursor-pointer"
               >
                 <SlidersHorizontal className="w-4 h-4" />
-                Filters{chips.length ? ` (${chips.length})` : ''}
+                Filters{filterCount ? ` (${filterCount})` : ''}
               </button>
               <button
                 type="button"
@@ -296,7 +292,7 @@ export const BuyerSuppliersView: React.FC<BuyerSuppliersViewProps> = ({ onNaviga
                 </span>
               ))}
               <button type="button" onClick={clearAll} className="text-xs font-semibold text-slate-500 hover:text-slate-800 ml-1 cursor-pointer">
-                Clear all
+                Clear All
               </button>
             </div>
           )}
@@ -333,7 +329,7 @@ export const BuyerSuppliersView: React.FC<BuyerSuppliersViewProps> = ({ onNaviga
           <button type="button" aria-label="Close filters" onClick={() => setDrawerOpen(false)} className="absolute inset-0 bg-slate-900/40 cursor-default" />
           <div className="absolute inset-y-0 right-0 w-full max-w-sm bg-white flex flex-col shadow-xl">
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
-              <h2 className="text-base font-semibold text-slate-900">Filters</h2>
+              <h2 className="text-base font-semibold text-slate-900">Filters{filterCount > 0 && ` (${filterCount})`}</h2>
               <button type="button" onClick={() => setDrawerOpen(false)} aria-label="Close" className="p-1 rounded-md text-slate-500 hover:bg-slate-100 cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
@@ -342,8 +338,8 @@ export const BuyerSuppliersView: React.FC<BuyerSuppliersViewProps> = ({ onNaviga
               <SupplierFiltersPanel filters={filters} onChange={setFilters} />
             </div>
             <div className="px-4 py-3 border-t border-slate-100 flex gap-2">
-              <button type="button" onClick={clearAll} className="flex-1 py-2.5 rounded-lg border border-slate-200 text-sm font-semibold text-slate-700 cursor-pointer">
-                Clear all
+              <button type="button" onClick={clearFilters} className="flex-1 py-2.5 rounded-lg border border-slate-200 text-sm font-semibold text-slate-700 cursor-pointer">
+                Clear All
               </button>
               <button type="button" onClick={() => setDrawerOpen(false)} className="flex-1 py-2.5 rounded-lg bg-blue-700 text-white text-sm font-semibold cursor-pointer">
                 Show {results.length} suppliers

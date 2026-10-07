@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bookmark, BookmarkCheck, MapPin, MessageSquare } from 'lucide-react';
+import { BadgeCheck, Bookmark, BookmarkCheck, MapPin, MessageSquare } from 'lucide-react';
 import {
   BuyerSupplier,
   SupplierProduct,
@@ -54,9 +54,10 @@ export const SupplierResultCard: React.FC<SupplierResultCardProps> = ({
             <button
               type="button"
               onClick={onView}
-              className="text-left text-base font-semibold text-slate-900 hover:text-blue-700 transition-colors leading-tight cursor-pointer"
+              className="inline-flex items-center gap-1 text-left text-base font-semibold text-slate-900 hover:text-blue-700 transition-colors leading-tight cursor-pointer"
             >
               {s.name}
+              {s.status === 'verified' && <BadgeCheck className="w-4 h-4 text-emerald-600 shrink-0" aria-label="SOKO Verified" />}
             </button>
             <SupplierStatusBadge status={s.status} />
             {s.externalSourceFields && <ExternalSourceBadge />}
