@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import {
   FILTER_FACETS,
   INTELLIGENCE_THRESHOLDS,
@@ -9,7 +10,7 @@ import {
   SupplierFilters,
   subcategoriesFor,
 } from '../data/buyerSuppliers';
-import { InfoTooltip, INTELLIGENCE_EXPLAINER } from './SupplierTrust';
+import { INTELLIGENCE_EXPLAINER } from './SupplierTrust';
 
 interface SupplierFiltersPanelProps {
   filters: SupplierFilters;
@@ -18,12 +19,34 @@ interface SupplierFiltersPanelProps {
 
 const COLLAPSED_COUNT = 6;
 
-const Section: React.FC<{ title: React.ReactNode; children: React.ReactNode }> = ({ title, children }) => (
-  <fieldset className="py-4 border-b border-slate-100 last:border-b-0">
-    <legend className="text-[11px] font-semibold tracking-wider uppercase text-slate-500 mb-2 flex items-center gap-1">{title}</legend>
-    <div className="space-y-1">{children}</div>
-  </fieldset>
-);
+const Section: React.FC<{ title: React.ReactNode; children: React.ReactNode; defaultOpen?: boolean; count?: number }> = ({
+  title,
+  children,
+  defaultOpen = true,
+  count = 0,
+}) => {
+  const [open, setOpen] = useState(defaultOpen || count > 0);
+  return (
+    <div className="py-3 border-b border-slate-100 last:border-b-0">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] font-semibold tracking-wider uppercase text-slate-500 flex items-center gap-1 min-w-0">
+          {title}
+          {count > 0 && <span className="ml-1 px-1.5 rounded-full bg-blue-50 text-blue-700 normal-case tracking-normal">{count}</span>}
+        </span>
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          aria-label={open ? 'Collapse section' : 'Expand section'}
+          className="p-1 -m-1 rounded text-slate-400 hover:text-slate-700 cursor-pointer"
+        >
+          <ChevronDown className={`w-4 h-4 transition-transform ${open ? '' : '-rotate-90'}`} />
+        </button>
+      </div>
+      {open && <div className="mt-2 space-y-1">{children}</div>}
+    </div>
+  );
+};
 
 const CheckList: React.FC<{
   options: { value: string; label: string }[];
@@ -35,14 +58,14 @@ const CheckList: React.FC<{
   return (
     <>
       {visible.map((o) => (
-        <label key={o.value} className="flex items-center gap-2 py-0.5 text-sm text-slate-700 cursor-pointer hover:text-slate-900">
+        <label key={o.value} className="flex items-start gap-2 py-0.5 text-sm text-slate-700 cursor-pointer hover:text-slate-900 break-words">
           <input
             type="checkbox"
             checked={selected.includes(o.value)}
             onChange={() => onToggle(o.value)}
-            className="w-4 h-4 rounded border-slate-300 text-blue-700 focus:ring-blue-500/30"
+            className="mt-0.5 w-4 h-4 shrink-0 rounded border-slate-300 text-blue-700 focus:ring-blue-500/30"
           />
-          {o.label}
+          <span className="min-w-0">{o.label}</span>
         </label>
       ))}
       {options.length > COLLAPSED_COUNT && (
@@ -61,7 +84,7 @@ export const SupplierFiltersPanel: React.FC<SupplierFiltersPanelProps> = ({ filt
   const subcategories = subcategoriesFor(f.categories);
   return (
     <div>
-      <Section title="Category">
+      <Section title="Category" count={f.categories.length}>
         <CheckList
           options={asOptions(FILTER_FACETS.categories)}
           selected={f.categories}
@@ -72,10 +95,11 @@ export const SupplierFiltersPanel: React.FC<SupplierFiltersPanelProps> = ({ filt
           }}
         />
       </Section>
-      <Section title="Subcategory">
+      <Section title="Subcategory" count={f.subcategories.length} defaultOpen={false}>
+        {subcategories.length === 0 && <p className="text-xs text-slate-400">No subcategories available</p>}
         <CheckList options={asOptions(subcategories)} selected={f.subcategories} onToggle={(v) => onChange({ ...f, subcategories: toggle(f.subcategories, v) })} />
       </Section>
-      <Section title="Location">
+      <Section title="Location" count={f.locationId !== 'all' ? 1 : 0}>
         {LOCATION_OPTIONS.map((o) => (
           <label key={o.id} className={`flex items-center gap-2 py-0.5 text-sm text-slate-700 cursor-pointer ${o.regions || o.excludeRegions ? 'pl-4' : ''}`}>
             <input
@@ -89,24 +113,24 @@ export const SupplierFiltersPanel: React.FC<SupplierFiltersPanelProps> = ({ filt
           </label>
         ))}
       </Section>
-      <Section title="Verification Status">
+      <Section title="Verification Status" count={f.statuses.length}>
         <CheckList
           options={STATUS_ORDER.map((s) => ({ value: s, label: STATUS_META[s].label }))}
           selected={f.statuses}
           onToggle={(v) => onChange({ ...f, statuses: toggle(f.statuses, v as SupplierFilters['statuses'][number]) })}
         />
       </Section>
-      <Section title="Products / Brands">
+      <Section title="Brands / Products" count={f.brands.length} defaultOpen={false}>
         <CheckList options={asOptions(FILTER_FACETS.brands)} selected={f.brands} onToggle={(v) => onChange({ ...f, brands: toggle(f.brands, v) })} />
       </Section>
-      <Section title="Certifications">
+      <Section title="Certifications" count={f.certifications.length} defaultOpen={false}>
         <CheckList
           options={asOptions(FILTER_FACETS.certifications)}
           selected={f.certifications}
           onToggle={(v) => onChange({ ...f, certifications: toggle(f.certifications, v) })}
         />
       </Section>
-      <Section title="Supplier Type">
+      <Section title="Supplier Type" count={f.types.length} defaultOpen={false}>
         <CheckList
           options={asOptions(SUPPLIER_TYPES)}
           selected={f.types}
@@ -114,11 +138,8 @@ export const SupplierFiltersPanel: React.FC<SupplierFiltersPanelProps> = ({ filt
         />
       </Section>
       <Section
-        title={
-          <>
-            SOKO Intelligence <InfoTooltip text={INTELLIGENCE_EXPLAINER} label="About SOKO Intelligence" align="left" />
-          </>
-        }
+        count={f.minIntelligence ? 1 : 0}
+        title="SOKO Intelligence"
       >
         {INTELLIGENCE_THRESHOLDS.map((t) => (
           <label key={t} className="flex items-center gap-2 py-0.5 text-sm text-slate-700 cursor-pointer">
@@ -132,6 +153,7 @@ export const SupplierFiltersPanel: React.FC<SupplierFiltersPanelProps> = ({ filt
             {t === 0 ? 'Any' : `${t}+`}
           </label>
         ))}
+        <p className="pt-2 text-[11px] leading-snug text-slate-500 [&_span]:text-slate-700 [&_span]:font-semibold">{INTELLIGENCE_EXPLAINER}</p>
       </Section>
     </div>
   );

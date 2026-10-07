@@ -175,7 +175,7 @@ export const BuyerSuppliersView: React.FC<BuyerSuppliersViewProps> = ({ onNaviga
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+    <div className="w-full max-w-[1440px] mx-auto px-4 sm:px-6 py-6">
       <header className="mb-6 bg-white rounded-xl border border-slate-200 px-5 py-5 sm:px-6 sm:py-6">
         <p className="text-[11px] font-semibold tracking-wider text-slate-500">SUPPLIERS</p>
         <h1 className="text-xl sm:text-2xl font-semibold text-slate-900 leading-tight mt-1">Discover Construction Suppliers</h1>
@@ -223,8 +223,8 @@ export const BuyerSuppliersView: React.FC<BuyerSuppliersViewProps> = ({ onNaviga
         </div>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:items-start">
-        <aside className="hidden lg:block lg:col-span-3 bg-white rounded-xl border border-slate-200 px-4 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto">
+      <div className="flex w-full items-start gap-6">
+        <aside className="hidden lg:block w-[264px] shrink-0 bg-white rounded-xl border border-slate-200 px-4 sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto overflow-x-hidden">
           <div className="flex items-center justify-between pt-4">
             <h2 className="text-sm font-semibold text-slate-900">Filters</h2>
             {chips.length > 0 && (
@@ -236,15 +236,15 @@ export const BuyerSuppliersView: React.FC<BuyerSuppliersViewProps> = ({ onNaviga
           <SupplierFiltersPanel filters={filters} onChange={setFilters} />
         </aside>
 
-        <section className="lg:col-span-9 min-w-0" aria-label="Supplier results">
-          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-3">
-            <div>
+        <section className="flex-1 min-w-0 w-full" aria-label="Supplier results">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+            <div className="min-w-0 flex items-baseline flex-wrap gap-x-3 gap-y-0.5">
               <h2 className="text-lg font-semibold text-slate-900 leading-tight">{title}</h2>
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-slate-500 whitespace-nowrap">
                 {results.length} {results.length === 1 ? 'supplier' : 'suppliers'} found
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
               <button
                 type="button"
                 onClick={() => setDrawerOpen(true)}
@@ -264,7 +264,7 @@ export const BuyerSuppliersView: React.FC<BuyerSuppliersViewProps> = ({ onNaviga
                 <Bookmark className="w-4 h-4" />
                 <span className="hidden sm:inline">Saved</span> ({savedIds.length})
               </button>
-              <label className="flex items-center gap-2 text-sm text-slate-500">
+              <label className="flex items-center gap-2 text-sm text-slate-500 whitespace-nowrap">
                 <span className="hidden sm:inline">Sort:</span>
                 <select
                   value={sort}
@@ -281,6 +281,10 @@ export const BuyerSuppliersView: React.FC<BuyerSuppliersViewProps> = ({ onNaviga
             </div>
           </div>
 
+          <p className="mt-1.5 mb-4 text-xs text-slate-400">
+            Results are ordered by relevance and available SOKO information. No paid placements are included in these results.
+          </p>
+
           {chips.length > 0 && (
             <div className="mb-4 flex flex-wrap items-center gap-1.5">
               {chips.map((c) => (
@@ -296,10 +300,6 @@ export const BuyerSuppliersView: React.FC<BuyerSuppliersViewProps> = ({ onNaviga
               </button>
             </div>
           )}
-
-          <p className="mb-4 text-[11px] text-slate-400">
-            Results are ordered by relevance and available SOKO information. No paid placements are included in these results.
-          </p>
 
           {results.length === 0 ? (
             <div className="bg-white rounded-xl border border-slate-200 px-6 py-12 text-center">
