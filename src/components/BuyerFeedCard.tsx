@@ -25,6 +25,7 @@ interface FeedCardProps {
   onToggleSave: (id: string) => void;
   onNavigate: (tab: string) => void;
   onContact: (supplierId: string, supplierName: string) => void;
+  onNotRelevant?: (id: string) => void;
 }
 
 const PRODUCT_INTELLIGENCE_INFO =
@@ -135,10 +136,17 @@ const CardShell: React.FC<{
   footer: React.ReactNode;
   className?: string;
   dark?: boolean;
-}> = ({ children, footer, className = 'bg-white border-slate-200', dark = false }) => (
-  <article className={`rounded-xl border p-4 sm:p-5 shadow-xs transition-shadow hover:shadow-md ${className}`}>
+  compact?: boolean;
+}> = ({ children, footer, className = 'bg-white border-slate-200', dark = false, compact = false }) => (
+  <article
+    className={`rounded-xl border shadow-xs transition-shadow hover:shadow-md ${compact ? 'p-4' : 'p-4 sm:p-5'} ${className}`}
+  >
     {children}
-    <p className={`mt-3 pt-3 border-t text-[11px] ${dark ? 'border-white/10 text-slate-400' : 'border-slate-100 text-slate-400'}`}>
+    <p
+      className={`${compact ? 'mt-2.5 pt-2.5' : 'mt-3 pt-3'} border-t text-[11px] ${
+        dark ? 'border-white/10 text-slate-400' : 'border-slate-100 text-slate-400'
+      }`}
+    >
       {footer}
     </p>
   </article>
@@ -151,7 +159,7 @@ const organicFooter = (postedAt: string, reasons: string[]) => (
   </>
 );
 
-export const BuyerFeedCard: React.FC<FeedCardProps> = ({ item, reasons, isSaved, onToggleSave, onNavigate, onContact }) => {
+export const BuyerFeedCard: React.FC<FeedCardProps> = ({ item, reasons, isSaved, onToggleSave, onNavigate, onContact, onNotRelevant }) => {
   const [expanded, setExpanded] = useState(false);
   const save = () => onToggleSave(item.id);
 
@@ -230,8 +238,9 @@ export const BuyerFeedCard: React.FC<FeedCardProps> = ({ item, reasons, isSaved,
         <CardShell
           footer={
             <>
-              Sponsored by {item.sponsor.name} · Reviewed and approved by SOKO · Paid placement never affects verification
-              or intelligence scores
+              Sponsored by {item.sponsor.name} · Why you're seeing this:{' '}
+              {reasons[0] ?? `Relevant to your ${item.category} interests`} · Reviewed and approved by SOKO · Paid placement
+              never affects verification or intelligence scores
             </>
           }
         >
@@ -240,6 +249,15 @@ export const BuyerFeedCard: React.FC<FeedCardProps> = ({ item, reasons, isSaved,
               <span className="px-1.5 py-0.5 rounded border border-slate-300 text-slate-600">Sponsored</span>
               {SPONSORED_FORMAT_LABELS[item.format]}
             </span>
+            {onNotRelevant && (
+              <button
+                type="button"
+                onClick={() => onNotRelevant(item.id)}
+                className="text-[11px] text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                Not relevant to me
+              </button>
+            )}
           </div>
           <p className="mt-3 text-base font-semibold text-slate-900 leading-tight">{item.product.name}</p>
           <p className="text-xs text-slate-500 mt-0.5">{item.product.type}</p>
@@ -321,6 +339,7 @@ export const BuyerFeedCard: React.FC<FeedCardProps> = ({ item, reasons, isSaved,
         <CardShell
           footer={organicFooter(item.postedAt, reasons)}
           dark={isProprietary}
+          compact
           className={
             isProprietary
               ? 'bg-slate-900 border-gold-500/40 text-white relative overflow-hidden'
@@ -329,16 +348,16 @@ export const BuyerFeedCard: React.FC<FeedCardProps> = ({ item, reasons, isSaved,
         >
           {isProprietary && <div className="absolute inset-x-0 top-0 h-1 bg-gold-500" />}
           <KindLabel icon={icon} label={item.label} tone={isProprietary ? 'text-gold-300' : 'text-gold-700'} />
-          <p className={`mt-2 text-base font-semibold leading-tight ${isProprietary ? 'text-white' : 'text-slate-900'}`}>
+          <p className={`mt-1.5 text-base font-semibold leading-tight ${isProprietary ? 'text-white' : 'text-slate-900'}`}>
             {item.headline}
           </p>
-          <p className={`mt-1.5 text-sm leading-relaxed ${isProprietary ? 'text-slate-300' : 'text-slate-600'}`}>{item.body}</p>
+          <p className={`mt-1 text-sm leading-relaxed ${isProprietary ? 'text-slate-300' : 'text-slate-600'}`}>{item.body}</p>
 
           {item.stats && (
-            <dl className="mt-3 grid grid-cols-3 gap-2">
+            <dl className="mt-2.5 grid grid-cols-3 gap-2">
               {item.stats.map((s) => (
-                <div key={s.label} className={`rounded-lg p-2.5 ${isProprietary ? 'bg-white/5' : 'bg-slate-50'}`}>
-                  <dd className={`text-lg font-semibold leading-tight ${isProprietary ? 'text-gold-300' : 'text-slate-900'}`}>{s.value}</dd>
+                <div key={s.label} className={`rounded-lg px-2.5 py-1.5 ${isProprietary ? 'bg-white/5' : 'bg-slate-50'}`}>
+                  <dd className={`text-base font-semibold leading-tight ${isProprietary ? 'text-gold-300' : 'text-slate-900'}`}>{s.value}</dd>
                   <dt className={`text-[11px] ${isProprietary ? 'text-slate-400' : 'text-slate-500'}`}>{s.label}</dt>
                 </div>
               ))}
@@ -346,16 +365,18 @@ export const BuyerFeedCard: React.FC<FeedCardProps> = ({ item, reasons, isSaved,
           )}
 
           {item.breakdown && (
-            <div className="mt-3">
-              <p className={`text-[11px] mb-2 ${isProprietary ? 'text-slate-400' : 'text-slate-500'}`}>Top activity</p>
-              <ul className="space-y-1.5">
+            <div className="mt-2.5">
+              <p className={`text-[11px] mb-1 ${isProprietary ? 'text-slate-400' : 'text-slate-500'}`}>Top activity</p>
+              <ul className="grid grid-cols-3 gap-x-3">
                 {item.breakdown.map((b) => (
-                  <li key={b.label} className="flex items-center gap-3 text-xs">
-                    <span className={`w-24 shrink-0 ${isProprietary ? 'text-slate-300' : 'text-slate-600'}`}>{b.label}</span>
-                    <span className={`flex-1 h-1.5 rounded-full overflow-hidden ${isProprietary ? 'bg-white/10' : 'bg-slate-100'}`}>
+                  <li key={b.label} className="text-xs min-w-0">
+                    <span className="flex items-baseline justify-between gap-1">
+                      <span className={`truncate ${isProprietary ? 'text-slate-300' : 'text-slate-600'}`}>{b.label}</span>
+                      <span className={`font-semibold ${isProprietary ? 'text-white' : 'text-slate-900'}`}>{b.value}</span>
+                    </span>
+                    <span className={`mt-1 block h-1 rounded-full overflow-hidden ${isProprietary ? 'bg-white/10' : 'bg-slate-100'}`}>
                       <span className="block h-full rounded-full bg-gold-500" style={{ width: `${(b.value / max) * 100}%` }} />
                     </span>
-                    <span className={`w-6 text-right font-semibold ${isProprietary ? 'text-white' : 'text-slate-900'}`}>{b.value}</span>
                   </li>
                 ))}
               </ul>
@@ -365,7 +386,7 @@ export const BuyerFeedCard: React.FC<FeedCardProps> = ({ item, reasons, isSaved,
           <button
             type="button"
             onClick={() => onNavigate(item.ctaTab)}
-            className={`mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+            className={`mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
               isProprietary ? 'bg-gold-500 text-slate-900 hover:bg-gold-300' : 'bg-blue-700 text-white hover:bg-blue-800'
             }`}
           >

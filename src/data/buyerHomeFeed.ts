@@ -169,6 +169,15 @@ export function scoreFeedItem(item: BuyerFeedItem, profile: BuyerInterestProfile
   const supplierId = supplierIdOf(item);
   const productId = productIdOf(item);
 
+  if (item.kind === 'sponsored') {
+    const match = item.targetCategories.find(
+      (c) => profile.followedCategories.includes(c) || profile.professionalInterests.includes(c)
+    );
+    return { score: 0, reasons: match ? [`Relevant to your ${match} interests`] : [] };
+  }
+
+  if (item.kind === 'market-hub' && item.urgency === 'High') score += 10;
+
   if (profile.followedCategories.includes(item.category)) add(30, `You follow ${item.category}`);
   else if (profile.professionalInterests.includes(item.category)) add(25, `Relevant to your ${item.category} interests`);
 
@@ -223,8 +232,18 @@ export function composeForYouFeed<T extends { item: BuyerFeedItem; score: number
 
   const organic: T[] = [];
   let remaining = byScore.length - byScore.filter((e) => e.item.kind === 'sponsored').length;
+  const lead = byScore.find((e) => e.item.kind !== 'sponsored');
+  let startIdx = 0;
+  if (lead && lead.item.kind !== 'sponsored') {
+    const leadSlot = lead.item.slot;
+    buckets.set(leadSlot, (buckets.get(leadSlot) ?? []).filter((e) => e !== lead));
+    organic.push(lead);
+    remaining--;
+    startIdx = (FOR_YOU_SEQUENCE.indexOf(leadSlot) + 1) % FOR_YOU_SEQUENCE.length;
+  }
+  const rotation = [...FOR_YOU_SEQUENCE.slice(startIdx), ...FOR_YOU_SEQUENCE.slice(0, startIdx)];
   while (remaining > 0) {
-    for (const slot of FOR_YOU_SEQUENCE) {
+    for (const slot of rotation) {
       const next = buckets.get(slot)?.shift();
       if (next) {
         organic.push(next);

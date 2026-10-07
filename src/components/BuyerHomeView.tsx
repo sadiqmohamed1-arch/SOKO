@@ -26,7 +26,7 @@ const TABS: { id: BuyerFeedTab; label: string }[] = [
   { id: 'products', label: 'Products' },
   { id: 'suppliers', label: 'Suppliers' },
   { id: 'insights', label: 'SOKO Insights' },
-  { id: 'industry', label: 'Industry News' },
+  { id: 'industry', label: 'Industry' },
 ];
 
 const SAVED_KEY = 'soko_buyer_home_saved_v1';
@@ -227,7 +227,7 @@ export const BuyerHomeView: React.FC<BuyerHomeViewProps> = ({
               <BuyerFeedCard
                 key={item.id}
                 item={item}
-                reasons={activeTab === 'for-you' ? reasons : []}
+                reasons={activeTab === 'for-you' || item.kind === 'sponsored' ? reasons : []}
                 isSaved={savedIds.includes(item.id)}
                 onToggleSave={toggleSave}
                 onNavigate={onNavigateToTab}
