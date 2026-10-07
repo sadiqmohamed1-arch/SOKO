@@ -11,11 +11,12 @@ import {
   Newspaper,
   ArrowRight,
   FolderKanban,
-  Users,
   Package,
   Info,
+  Sparkles,
+  Activity,
 } from 'lucide-react';
-import { BuyerFeedItem, FeedSupplierRef } from '../data/buyerHomeFeed';
+import { BuyerFeedItem, FeedProductRef, FeedSupplierRef, SPONSORED_FORMAT_LABELS } from '../data/buyerHomeFeed';
 
 interface FeedCardProps {
   item: BuyerFeedItem;
@@ -25,6 +26,9 @@ interface FeedCardProps {
   onNavigate: (tab: string) => void;
   onContact: (supplierId: string, supplierName: string) => void;
 }
+
+const PRODUCT_INTELLIGENCE_INFO =
+  'Based on documentation completeness, supplier verification, product information and SOKO network activity.';
 
 const KindLabel: React.FC<{ icon: React.ElementType; label: string; tone: string }> = ({ icon: Icon, label, tone }) => (
   <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold tracking-wider uppercase ${tone}`}>
@@ -61,6 +65,31 @@ const Field: React.FC<{ label: React.ReactNode; value: React.ReactNode }> = ({ l
   </div>
 );
 
+const IntelligenceScoreField: React.FC<{ score: number }> = ({ score }) => (
+  <Field
+    label={
+      <span className="inline-flex items-center gap-1">
+        Product Intelligence
+        <span className="relative group/info inline-flex">
+          <Info className="w-3 h-3 text-slate-400 hover:text-slate-600 cursor-help" tabIndex={0} aria-label={PRODUCT_INTELLIGENCE_INFO} />
+          <span
+            role="tooltip"
+            className="pointer-events-none absolute bottom-full right-0 mb-1.5 w-56 rounded-md bg-slate-900 px-2.5 py-1.5 text-[11px] leading-snug text-white shadow-lg opacity-0 group-hover/info:opacity-100 group-focus-within/info:opacity-100 transition-opacity z-20"
+          >
+            {PRODUCT_INTELLIGENCE_INFO}
+          </span>
+        </span>
+      </span>
+    }
+    value={
+      <span>
+        {score}
+        <span className="text-slate-400 font-normal"> / 100</span>
+      </span>
+    }
+  />
+);
+
 const ActionButton: React.FC<{ onClick: () => void; children: React.ReactNode; variant?: 'primary' | 'ghost' }> = ({
   onClick,
   children,
@@ -93,22 +122,33 @@ const SaveButton: React.FC<{ saved: boolean; onClick: () => void }> = ({ saved, 
   </button>
 );
 
-const CardShell: React.FC<{ children: React.ReactNode; reasons: string[]; postedAt: string; className?: string; dark?: boolean }> = ({
-  children,
-  reasons,
-  postedAt,
-  className = 'bg-white border-slate-200',
-  dark = false,
-}) => (
+const ProductFacts: React.FC<{ product: FeedProductRef }> = ({ product }) => (
+  <dl className="mt-2 grid grid-cols-3 gap-3">
+    <Field label="Documentation" value={product.technicalDocs ? 'TDS Available' : 'Pending'} />
+    <Field label="Certification" value={product.certification ? 'Available' : 'Pending'} />
+    {product.intelligenceScore !== undefined && <IntelligenceScoreField score={product.intelligenceScore} />}
+  </dl>
+);
+
+const CardShell: React.FC<{
+  children: React.ReactNode;
+  footer: React.ReactNode;
+  className?: string;
+  dark?: boolean;
+}> = ({ children, footer, className = 'bg-white border-slate-200', dark = false }) => (
   <article className={`rounded-xl border p-4 sm:p-5 shadow-xs transition-shadow hover:shadow-md ${className}`}>
     {children}
-    {(reasons.length > 0 || postedAt) && (
-      <p className={`mt-3 pt-3 border-t text-[11px] ${dark ? 'border-white/10 text-slate-400' : 'border-slate-100 text-slate-400'}`}>
-        {postedAt}
-        {reasons.length > 0 && <span> · Why you're seeing this: {reasons.join(', ')}</span>}
-      </p>
-    )}
+    <p className={`mt-3 pt-3 border-t text-[11px] ${dark ? 'border-white/10 text-slate-400' : 'border-slate-100 text-slate-400'}`}>
+      {footer}
+    </p>
   </article>
+);
+
+const organicFooter = (postedAt: string, reasons: string[]) => (
+  <>
+    {postedAt} · Curated by SOKO
+    {reasons.length > 0 && <span> · Why you're seeing this: {reasons[0]}</span>}
+  </>
 );
 
 export const BuyerFeedCard: React.FC<FeedCardProps> = ({ item, reasons, isSaved, onToggleSave, onNavigate, onContact }) => {
@@ -116,14 +156,16 @@ export const BuyerFeedCard: React.FC<FeedCardProps> = ({ item, reasons, isSaved,
   const save = () => onToggleSave(item.id);
 
   switch (item.kind) {
-    case 'supplier-update':
+    case 'supplier-activity':
       return (
-        <CardShell reasons={reasons} postedAt={item.postedAt}>
-          <div className="flex items-start justify-between gap-3">
+        <CardShell footer={organicFooter(item.postedAt, reasons)}>
+          <KindLabel icon={Sparkles} label="New on SOKO" tone="text-blue-700" />
+          <div className="mt-3">
             <SupplierLine supplier={item.supplier} onClick={() => onNavigate('suppliers')} />
-            <KindLabel icon={Users} label={item.updateLabel} tone="text-blue-700" />
           </div>
-          <p className="mt-3 text-sm text-slate-700 leading-relaxed">{item.summary}</p>
+          <p className="mt-2 text-sm text-slate-700 leading-relaxed">
+            <span className="font-semibold text-slate-900">{item.supplier.name}</span> {item.summary}
+          </p>
           <div className="mt-3 p-3 rounded-lg bg-slate-50 border border-slate-200">
             <p className="text-sm font-semibold text-slate-900">{item.product.name}</p>
             <p className="text-xs text-slate-500">{item.product.type}</p>
@@ -151,8 +193,8 @@ export const BuyerFeedCard: React.FC<FeedCardProps> = ({ item, reasons, isSaved,
 
     case 'product':
       return (
-        <CardShell reasons={reasons} postedAt={item.postedAt}>
-          <KindLabel icon={Package} label="New product on SOKO" tone="text-blue-700" />
+        <CardShell footer={organicFooter(item.postedAt, reasons)}>
+          <KindLabel icon={Package} label="Product Discovery" tone="text-blue-700" />
           <div className="mt-3 flex flex-col sm:flex-row gap-4">
             {item.product.imageUrl && (
               <img
@@ -172,38 +214,7 @@ export const BuyerFeedCard: React.FC<FeedCardProps> = ({ item, reasons, isSaved,
                 Supplier: <span className="font-semibold">{item.supplier.name}</span>
                 {item.supplier.verified && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />}
               </button>
-              <dl className="mt-2 grid grid-cols-3 gap-3">
-                <Field label="Documentation" value={item.product.technicalDocs ? 'TDS Available' : 'Pending'} />
-                <Field label="Certification" value={item.product.certification ? 'Available' : 'Pending'} />
-                {item.product.intelligenceScore !== undefined && (
-                  <Field
-                    label={
-                      <span className="inline-flex items-center gap-1">
-                        Product Intelligence
-                        <span className="relative group/info inline-flex">
-                          <Info
-                            className="w-3 h-3 text-slate-400 hover:text-slate-600 cursor-help"
-                            tabIndex={0}
-                            aria-label="Based on documentation completeness, supplier verification, product information and SOKO network activity."
-                          />
-                          <span
-                            role="tooltip"
-                            className="pointer-events-none absolute bottom-full right-0 mb-1.5 w-56 rounded-md bg-slate-900 px-2.5 py-1.5 text-[11px] leading-snug text-white shadow-lg opacity-0 group-hover/info:opacity-100 group-focus-within/info:opacity-100 transition-opacity z-20"
-                          >
-                            Based on documentation completeness, supplier verification, product information and SOKO network activity.
-                          </span>
-                        </span>
-                      </span>
-                    }
-                    value={
-                      <span>
-                        {item.product.intelligenceScore}
-                        <span className="text-slate-400 font-normal"> / 100</span>
-                      </span>
-                    }
-                  />
-                )}
-              </dl>
+              <ProductFacts product={item.product} />
             </div>
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
@@ -214,13 +225,47 @@ export const BuyerFeedCard: React.FC<FeedCardProps> = ({ item, reasons, isSaved,
         </CardShell>
       );
 
+    case 'sponsored':
+      return (
+        <CardShell
+          footer={
+            <>
+              Sponsored by {item.sponsor.name} · Reviewed and approved by SOKO · Paid placement never affects verification
+              or intelligence scores
+            </>
+          }
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold tracking-wider uppercase text-slate-500">
+              <span className="px-1.5 py-0.5 rounded border border-slate-300 text-slate-600">Sponsored</span>
+              {SPONSORED_FORMAT_LABELS[item.format]}
+            </span>
+          </div>
+          <p className="mt-3 text-base font-semibold text-slate-900 leading-tight">{item.product.name}</p>
+          <p className="text-xs text-slate-500 mt-0.5">{item.product.type}</p>
+          <button
+            type="button"
+            onClick={() => onNavigate('suppliers')}
+            className="mt-2 text-xs text-slate-600 hover:text-blue-700 inline-flex items-center gap-1 cursor-pointer"
+          >
+            <span className="font-semibold">{item.sponsor.name}</span>
+            {item.sponsor.verified && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />}
+          </button>
+          <ProductFacts product={item.product} />
+          <div className="mt-3 flex flex-wrap gap-2">
+            <ActionButton variant="primary" onClick={() => onNavigate('products')}>View Product</ActionButton>
+            <ActionButton onClick={() => onNavigate('suppliers')}>View Supplier</ActionButton>
+          </div>
+        </CardShell>
+      );
+
     case 'market-hub': {
       const urgencyTone =
         item.urgency === 'High' ? 'text-red-700 bg-red-50' : item.urgency === 'Medium' ? 'text-amber-800 bg-amber-50' : 'text-slate-700 bg-slate-100';
       return (
-        <CardShell reasons={reasons} postedAt={item.postedAt}>
+        <CardShell footer={organicFooter(item.postedAt, reasons)}>
           <div className="flex items-center justify-between gap-2">
-            <KindLabel icon={FolderKanban} label="Market Hub" tone="text-slate-700" />
+            <KindLabel icon={FolderKanban} label="Market Hub Requirement" tone="text-slate-700" />
             <span className={`px-2 py-0.5 rounded-md text-[11px] font-semibold ${urgencyTone}`}>{item.urgency} urgency</span>
           </div>
           <p className="mt-2 text-base font-semibold text-slate-900 leading-tight">{item.title}</p>
@@ -247,10 +292,10 @@ export const BuyerFeedCard: React.FC<FeedCardProps> = ({ item, reasons, isSaved,
 
     case 'verification':
       return (
-        <CardShell reasons={reasons} postedAt={item.postedAt}>
-          <div className="flex items-start justify-between gap-3">
+        <CardShell footer={organicFooter(item.postedAt, reasons)}>
+          <KindLabel icon={ShieldCheck} label="Supplier Intelligence" tone="text-emerald-700" />
+          <div className="mt-3">
             <SupplierLine supplier={item.supplier} onClick={() => onNavigate('suppliers')} />
-            <KindLabel icon={ShieldCheck} label="Supplier Update" tone="text-emerald-700" />
           </div>
           <p className="mt-3 text-sm text-slate-700">Supplier profile verification updated.</p>
           <dl className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 rounded-lg bg-slate-50 border border-slate-200">
@@ -269,36 +314,60 @@ export const BuyerFeedCard: React.FC<FeedCardProps> = ({ item, reasons, isSaved,
       );
 
     case 'insight': {
-      const max = Math.max(...item.breakdown.map((b) => b.value));
+      const isProprietary = item.label === 'SOKO Insight';
+      const icon = item.label === 'Market Signal' ? Activity : item.label === 'New on SOKO' ? Sparkles : Lightbulb;
+      const max = item.breakdown ? Math.max(...item.breakdown.map((b) => b.value)) : 1;
       return (
         <CardShell
-          reasons={reasons}
-          postedAt={item.postedAt}
-          dark
-          className="bg-slate-900 border-gold-500/40 text-white relative overflow-hidden"
+          footer={organicFooter(item.postedAt, reasons)}
+          dark={isProprietary}
+          className={
+            isProprietary
+              ? 'bg-slate-900 border-gold-500/40 text-white relative overflow-hidden'
+              : 'bg-white border-slate-200 relative overflow-hidden'
+          }
         >
-          <div className="absolute inset-x-0 top-0 h-1 bg-gold-500" />
-          <KindLabel icon={Lightbulb} label="SOKO Insight" tone="text-gold-300" />
-          <p className="mt-2 text-base font-semibold text-white leading-tight">{item.headline}</p>
-          <p className="mt-1.5 text-sm text-slate-300 leading-relaxed">{item.body}</p>
-          <div className="mt-3">
-            <p className="text-[11px] text-slate-400 mb-2">Top activity</p>
-            <ul className="space-y-1.5">
-              {item.breakdown.map((b) => (
-                <li key={b.label} className="flex items-center gap-3 text-xs">
-                  <span className="w-20 text-slate-300 shrink-0">{b.label}</span>
-                  <span className="flex-1 h-1.5 rounded-full bg-white/10 overflow-hidden">
-                    <span className="block h-full rounded-full bg-gold-500" style={{ width: `${(b.value / max) * 100}%` }} />
-                  </span>
-                  <span className="w-6 text-right font-semibold text-white">{b.value}</span>
-                </li>
+          {isProprietary && <div className="absolute inset-x-0 top-0 h-1 bg-gold-500" />}
+          <KindLabel icon={icon} label={item.label} tone={isProprietary ? 'text-gold-300' : 'text-gold-700'} />
+          <p className={`mt-2 text-base font-semibold leading-tight ${isProprietary ? 'text-white' : 'text-slate-900'}`}>
+            {item.headline}
+          </p>
+          <p className={`mt-1.5 text-sm leading-relaxed ${isProprietary ? 'text-slate-300' : 'text-slate-600'}`}>{item.body}</p>
+
+          {item.stats && (
+            <dl className="mt-3 grid grid-cols-3 gap-2">
+              {item.stats.map((s) => (
+                <div key={s.label} className={`rounded-lg p-2.5 ${isProprietary ? 'bg-white/5' : 'bg-slate-50'}`}>
+                  <dd className={`text-lg font-semibold leading-tight ${isProprietary ? 'text-gold-300' : 'text-slate-900'}`}>{s.value}</dd>
+                  <dt className={`text-[11px] ${isProprietary ? 'text-slate-400' : 'text-slate-500'}`}>{s.label}</dt>
+                </div>
               ))}
-            </ul>
-          </div>
+            </dl>
+          )}
+
+          {item.breakdown && (
+            <div className="mt-3">
+              <p className={`text-[11px] mb-2 ${isProprietary ? 'text-slate-400' : 'text-slate-500'}`}>Top activity</p>
+              <ul className="space-y-1.5">
+                {item.breakdown.map((b) => (
+                  <li key={b.label} className="flex items-center gap-3 text-xs">
+                    <span className={`w-24 shrink-0 ${isProprietary ? 'text-slate-300' : 'text-slate-600'}`}>{b.label}</span>
+                    <span className={`flex-1 h-1.5 rounded-full overflow-hidden ${isProprietary ? 'bg-white/10' : 'bg-slate-100'}`}>
+                      <span className="block h-full rounded-full bg-gold-500" style={{ width: `${(b.value / max) * 100}%` }} />
+                    </span>
+                    <span className={`w-6 text-right font-semibold ${isProprietary ? 'text-white' : 'text-slate-900'}`}>{b.value}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <button
             type="button"
             onClick={() => onNavigate(item.ctaTab)}
-            className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gold-500 text-slate-900 hover:bg-gold-300 transition-colors cursor-pointer"
+            className={`mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+              isProprietary ? 'bg-gold-500 text-slate-900 hover:bg-gold-300' : 'bg-blue-700 text-white hover:bg-blue-800'
+            }`}
           >
             {item.ctaLabel}
             <ArrowRight className="w-3.5 h-3.5" />
@@ -307,25 +376,23 @@ export const BuyerFeedCard: React.FC<FeedCardProps> = ({ item, reasons, isSaved,
       );
     }
 
-    case 'industry':
+    case 'editorial':
       return (
-        <CardShell reasons={reasons} postedAt={item.postedAt}>
-          <KindLabel icon={Newspaper} label="Industry Intelligence" tone="text-slate-600" />
+        <CardShell footer={organicFooter(item.postedAt, reasons)}>
+          <KindLabel icon={Newspaper} label={`SOKO Editorial · ${item.label}`} tone="text-slate-600" />
           <p className="mt-2 text-base font-semibold text-slate-900 leading-tight">{item.headline}</p>
           <p className="mt-1.5 text-sm text-slate-600 leading-relaxed">{item.summary}</p>
           {expanded && <p className="mt-2 text-sm text-slate-600 leading-relaxed">{item.details}</p>}
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs text-slate-500 flex items-center gap-1.5">
+            <p className="text-xs text-slate-500 flex flex-wrap items-center gap-1.5">
               <FileText className="w-3.5 h-3.5" />
-              Source: <span className="font-semibold text-slate-700">{item.source}</span>
+              {item.external ? 'Source:' : 'By'} <span className="font-semibold text-slate-700">{item.source}</span>
               <span>· {item.publishedAt}</span>
               <span className="px-1.5 py-0.5 rounded bg-slate-100 text-[10px] text-slate-500">Demo content</span>
             </p>
             <div className="flex gap-2">
               <SaveButton saved={isSaved} onClick={save} />
-              <ActionButton onClick={() => setExpanded((v) => !v)}>
-                {expanded ? 'Show Less' : 'Read More'}
-              </ActionButton>
+              <ActionButton onClick={() => setExpanded((v) => !v)}>{expanded ? 'Show Less' : 'Read More'}</ActionButton>
             </div>
           </div>
         </CardShell>

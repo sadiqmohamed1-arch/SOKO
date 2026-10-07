@@ -1,10 +1,35 @@
-export type BuyerFeedTab =
-  | 'for-you'
-  | 'supplier-updates'
-  | 'products'
-  | 'market-hub'
-  | 'industry'
-  | 'insights';
+export type BuyerFeedTab = 'for-you' | 'market' | 'products' | 'suppliers' | 'insights' | 'industry';
+
+export type FeedContentClass = 'editorial' | 'intelligence' | 'sponsored';
+
+// Sponsored formats are prepared for future monetization; only product-spotlight is rendered in Phase 1.
+export type SponsoredFormat =
+  | 'product-spotlight'
+  | 'featured-supplier'
+  | 'category-sponsorship'
+  | 'product-launch'
+  | 'technical-content'
+  | 'market-report'
+  | 'academy-sponsorship';
+
+export const SPONSORED_FORMAT_LABELS: Record<SponsoredFormat, string> = {
+  'product-spotlight': 'Product Spotlight',
+  'featured-supplier': 'Featured Supplier',
+  'category-sponsorship': 'Category Sponsor',
+  'product-launch': 'Product Launch',
+  'technical-content': 'Technical Content',
+  'market-report': 'Market Report',
+  'academy-sponsorship': 'Academy Partner',
+};
+
+export type FeedSlot =
+  | 'insight'
+  | 'new-product'
+  | 'market'
+  | 'editorial'
+  | 'supplier'
+  | 'news'
+  | 'product-discovery';
 
 export interface FeedSupplierRef {
   id: string;
@@ -13,6 +38,7 @@ export interface FeedSupplierRef {
   verified: boolean;
 }
 
+// Verification and intelligence scores come from the product/supplier record, never from a sponsorship.
 export interface FeedProductRef {
   id: string;
   name: string;
@@ -27,6 +53,8 @@ export interface FeedProductRef {
 
 interface FeedItemBase {
   id: string;
+  contentClass: FeedContentClass;
+  tab: Exclude<BuyerFeedTab, 'for-you'>;
   category: string;
   location: string;
   postedAt: string;
@@ -35,19 +63,21 @@ interface FeedItemBase {
 
 export type BuyerFeedItem =
   | (FeedItemBase & {
-      kind: 'supplier-update';
+      kind: 'supplier-activity';
+      slot: FeedSlot;
       supplier: FeedSupplierRef;
-      updateLabel: string;
       summary: string;
       product: FeedProductRef;
     })
   | (FeedItemBase & {
       kind: 'product';
+      slot: FeedSlot;
       supplier: FeedSupplierRef;
       product: FeedProductRef;
     })
   | (FeedItemBase & {
       kind: 'market-hub';
+      slot: FeedSlot;
       requirementId: string;
       title: string;
       projectType: string;
@@ -59,6 +89,7 @@ export type BuyerFeedItem =
     })
   | (FeedItemBase & {
       kind: 'verification';
+      slot: FeedSlot;
       supplier: FeedSupplierRef;
       tradeLicense: 'Verified' | 'Pending';
       documentationPct: number;
@@ -67,122 +98,146 @@ export type BuyerFeedItem =
     })
   | (FeedItemBase & {
       kind: 'insight';
+      slot: FeedSlot;
+      label: 'SOKO Insight' | 'New on SOKO' | 'Market Signal';
       headline: string;
       body: string;
-      breakdown: { label: string; value: number }[];
+      stats?: { label: string; value: string }[];
+      breakdown?: { label: string; value: number }[];
       ctaLabel: string;
       ctaTab: string;
     })
   | (FeedItemBase & {
-      kind: 'industry';
+      kind: 'editorial';
+      slot: FeedSlot;
+      label: string;
       headline: string;
       summary: string;
       details: string;
       source: string;
       publishedAt: string;
+      external: boolean;
+    })
+  | (FeedItemBase & {
+      kind: 'sponsored';
+      format: SponsoredFormat;
+      sponsor: FeedSupplierRef;
+      product: FeedProductRef;
+      targetCategories: string[];
+      approvedBySoko: true;
     });
-
-export const FEED_TAB_KINDS: Record<Exclude<BuyerFeedTab, 'for-you'>, BuyerFeedItem['kind'][]> = {
-  'supplier-updates': ['supplier-update', 'verification'],
-  products: ['product'],
-  'market-hub': ['market-hub'],
-  industry: ['industry'],
-  insights: ['insight'],
-};
 
 export interface BuyerInterestProfile {
   followedCategories: string[];
+  professionalInterests: string[];
   viewedSupplierIds: string[];
   viewedProductIds: string[];
   savedSupplierIds: string[];
   savedProductIds: string[];
+  savedCategories: string[];
   networkSupplierIds: string[];
   marketHubCategories: string[];
+  interactedCategories: string[];
   location: string;
 }
 
 export const DEMO_BUYER_INTERESTS: BuyerInterestProfile = {
-  followedCategories: ['Waterproofing', 'Steel & Rebar', 'MEP'],
-  viewedSupplierIds: ['sup_abc_waterproofing', 'sup_emirates_steel'],
+  followedCategories: ['Waterproofing', 'Steel & Rebar'],
+  professionalInterests: ['MEP', 'Procurement'],
+  viewedSupplierIds: ['sup_abc_waterproofing'],
   viewedProductIds: ['prd_mapelastic'],
   savedSupplierIds: ['sup_gulf_cm'],
   savedProductIds: [],
+  savedCategories: ['Waterproofing'],
   networkSupplierIds: ['sup_emirates_steel', 'sup_al_falah_mep'],
-  marketHubCategories: ['Waterproofing', 'Subcontracting'],
+  marketHubCategories: ['Waterproofing', 'Equipment Rental'],
+  interactedCategories: ['Logistics'],
   location: 'Dubai',
 };
 
-const supplierIdOf = (item: BuyerFeedItem) => ('supplier' in item ? item.supplier.id : undefined);
+const supplierIdOf = (item: BuyerFeedItem) =>
+  'supplier' in item ? item.supplier.id : item.kind === 'sponsored' ? item.sponsor.id : undefined;
 const productIdOf = (item: BuyerFeedItem) => ('product' in item ? item.product.id : undefined);
 
 export function scoreFeedItem(item: BuyerFeedItem, profile: BuyerInterestProfile) {
   const reasons: string[] = [];
   let score = 0;
+  const add = (points: number, reason: string) => {
+    score += points;
+    reasons.push(reason);
+  };
   const supplierId = supplierIdOf(item);
   const productId = productIdOf(item);
 
-  if (profile.followedCategories.includes(item.category)) {
-    score += 30;
-    reasons.push(`You follow ${item.category}`);
-  }
-  if (supplierId && profile.savedSupplierIds.includes(supplierId)) {
-    score += 25;
-    reasons.push('Saved supplier');
-  }
-  if (productId && profile.savedProductIds.includes(productId)) {
-    score += 25;
-    reasons.push('Saved product');
-  }
-  if (supplierId && profile.networkSupplierIds.includes(supplierId)) {
-    score += 20;
-    reasons.push('In your network');
-  }
-  if (supplierId && profile.viewedSupplierIds.includes(supplierId)) {
-    score += 15;
-    reasons.push('Supplier you viewed');
-  }
-  if (productId && profile.viewedProductIds.includes(productId)) {
-    score += 15;
-    reasons.push('Product you viewed');
-  }
-  if (item.kind === 'market-hub' && profile.marketHubCategories.includes(item.category)) {
-    score += 15;
-    reasons.push('Matches your Market Hub activity');
-  }
-  if (item.location.includes(profile.location)) {
-    score += 10;
-    reasons.push(`Near you in ${profile.location}`);
-  }
-  score += Math.max(0, 20 - item.ageHours / 6);
+  if (profile.followedCategories.includes(item.category)) add(30, `You follow ${item.category}`);
+  else if (profile.professionalInterests.includes(item.category)) add(25, `Relevant to your ${item.category} interests`);
 
-  return { score, reasons: reasons.slice(0, 2) };
+  if (productId && profile.savedProductIds.includes(productId)) add(25, 'You saved this product');
+  else if ('product' in item && profile.savedCategories.includes(item.product.category))
+    add(15, "Similar to products you've saved");
+
+  if (supplierId && profile.savedSupplierIds.includes(supplierId)) add(25, 'Supplier you saved');
+  if (supplierId && profile.networkSupplierIds.includes(supplierId)) add(20, 'Supplier in your network');
+  if (supplierId && profile.viewedSupplierIds.includes(supplierId)) add(15, "Supplier you've viewed");
+  if (productId && profile.viewedProductIds.includes(productId)) add(15, "Product you've viewed");
+
+  if (item.tab === 'market' && profile.marketHubCategories.includes(item.category))
+    add(20, 'Relevant to your Market Hub activity');
+  if (profile.interactedCategories.includes(item.category)) add(10, 'Based on your previous SOKO activity');
+  if (item.location.includes(profile.location)) add(10, `Trending in ${profile.location}`);
+
+  score += Math.max(0, 20 - item.ageHours / 6);
+  return { score, reasons: reasons.slice(0, 1) };
 }
 
-export function diversifyFeed<T extends { item: BuyerFeedItem; score: number }>(scored: T[]): T[] {
-  const bucketOf = (kind: BuyerFeedItem['kind']) =>
-    kind === 'verification' || kind === 'supplier-update' ? 'supplier' : kind;
-  const buckets: Record<string, T[]> = {};
-  [...scored]
-    .sort((a, b) => b.score - a.score)
-    .forEach((entry) => {
-      const key = bucketOf(entry.item.kind);
-      (buckets[key] ||= []).push(entry);
-    });
+const FOR_YOU_SEQUENCE: FeedSlot[] = [
+  'insight',
+  'new-product',
+  'market',
+  'editorial',
+  'supplier',
+  'news',
+  'product-discovery',
+];
 
-  const pattern = ['product', 'supplier', 'market-hub', 'insight', 'industry', 'supplier-or-product'];
-  const result: T[] = [];
-  while (result.length < scored.length) {
-    for (const slot of pattern) {
-      let key = slot;
-      if (slot === 'supplier-or-product') {
-        const s = buckets.supplier?.[0]?.score ?? -1;
-        const p = buckets.product?.[0]?.score ?? -1;
-        key = s >= p ? 'supplier' : 'product';
+export const SPONSORED_EVERY_N_ORGANIC = 6;
+
+// Prototype only: production sponsored frequency will be governed by SOKO, not a fixed interval.
+export function composeForYouFeed<T extends { item: BuyerFeedItem; score: number }>(
+  scored: T[],
+  profile: BuyerInterestProfile
+): T[] {
+  const byScore = [...scored].sort((a, b) => b.score - a.score);
+  const sponsored = byScore.filter(
+    (e) =>
+      e.item.kind === 'sponsored' &&
+      e.item.targetCategories.some((c) => profile.followedCategories.includes(c) || profile.professionalInterests.includes(c))
+  );
+  const buckets = new Map<FeedSlot, T[]>();
+  byScore.forEach((e) => {
+    if (e.item.kind === 'sponsored') return;
+    const list = buckets.get(e.item.slot) ?? [];
+    list.push(e);
+    buckets.set(e.item.slot, list);
+  });
+
+  const organic: T[] = [];
+  let remaining = byScore.length - byScore.filter((e) => e.item.kind === 'sponsored').length;
+  while (remaining > 0) {
+    for (const slot of FOR_YOU_SEQUENCE) {
+      const next = buckets.get(slot)?.shift();
+      if (next) {
+        organic.push(next);
+        remaining--;
       }
-      const next = buckets[key]?.shift();
-      if (next) result.push(next);
     }
   }
+
+  const result: T[] = [];
+  organic.forEach((entry, idx) => {
+    result.push(entry);
+    if ((idx + 1) % SPONSORED_EVERY_N_ORGANIC === 0 && sponsored.length) result.push(sponsored.shift()!);
+  });
   return result;
 }
 
@@ -190,30 +245,41 @@ export const BUYER_FEED_ITEMS: BuyerFeedItem[] = [
   {
     id: 'feed_insight_waterproofing',
     kind: 'insight',
+    slot: 'insight',
+    contentClass: 'intelligence',
+    tab: 'insights',
+    label: 'SOKO Insight',
     category: 'Waterproofing',
     location: 'UAE',
     postedAt: '2h ago',
     ageHours: 2,
-    headline: 'Waterproofing supplier activity increased this week',
-    body: '24 suppliers updated products or company information in the UAE Waterproofing category during the last 7 days.',
+    headline: 'Waterproofing activity increased 38% this week',
+    body: 'Demand and supplier activity in the UAE Waterproofing category rose sharply compared with the previous 7 days.',
+    stats: [
+      { label: 'New requirements', value: '24' },
+      { label: 'Suppliers updated', value: '11' },
+      { label: 'New products', value: '7' },
+    ],
     breakdown: [
       { label: 'Dubai', value: 11 },
       { label: 'Abu Dhabi', value: 8 },
       { label: 'Sharjah', value: 5 },
     ],
-    ctaLabel: 'Explore Waterproofing Suppliers',
+    ctaLabel: 'Explore Waterproofing',
     ctaTab: 'suppliers',
   },
   {
-    id: 'feed_su_abc',
-    kind: 'supplier-update',
+    id: 'feed_new_abc',
+    kind: 'supplier-activity',
+    slot: 'new-product',
+    contentClass: 'intelligence',
+    tab: 'products',
     category: 'Waterproofing',
     location: 'Dubai, UAE',
     postedAt: '3h ago',
     ageHours: 3,
     supplier: { id: 'sup_abc_waterproofing', name: 'ABC Waterproofing LLC', location: 'Dubai, UAE', verified: true },
-    updateLabel: 'New Product',
-    summary: 'ABC Waterproofing has added a new waterproofing system to its SOKO portfolio.',
+    summary: 'has added a new waterproofing product to the SOKO network.',
     product: {
       id: 'prd_sikaproof_a_plus',
       name: 'SikaProof A+',
@@ -227,6 +293,9 @@ export const BUYER_FEED_ITEMS: BuyerFeedItem[] = [
   {
     id: 'feed_mh_waterproofing',
     kind: 'market-hub',
+    slot: 'market',
+    contentClass: 'intelligence',
+    tab: 'market',
     category: 'Waterproofing',
     location: 'Dubai, UAE',
     postedAt: '5h ago',
@@ -241,8 +310,67 @@ export const BUYER_FEED_ITEMS: BuyerFeedItem[] = [
     interestedCount: 12,
   },
   {
+    id: 'feed_editorial_procurement',
+    kind: 'editorial',
+    slot: 'editorial',
+    contentClass: 'editorial',
+    tab: 'industry',
+    label: 'Procurement Insight',
+    category: 'Procurement',
+    location: 'UAE',
+    postedAt: '6h ago',
+    ageHours: 6,
+    headline: 'Locking Q1 2027 material prices: what UAE buyers are doing now',
+    summary:
+      'Procurement teams are shortening quotation validity windows and splitting large steel and MEP orders into staged call-offs to manage price exposure.',
+    details:
+      'SOKO spoke with sourcing leads across main contractors and developers. Common practices include 30-day price validity, indexed escalation clauses tied to published benchmarks, and pre-qualifying two alternates per critical package.',
+    source: 'SOKO Editorial Team',
+    publishedAt: '07 Oct 2026',
+    external: false,
+  },
+  {
+    id: 'feed_ver_emirates_steel',
+    kind: 'verification',
+    slot: 'supplier',
+    contentClass: 'intelligence',
+    tab: 'suppliers',
+    category: 'Steel & Rebar',
+    location: 'Abu Dhabi, UAE',
+    postedAt: '9h ago',
+    ageHours: 9,
+    supplier: { id: 'sup_emirates_steel', name: 'Emirates Steel Industries', location: 'Abu Dhabi, UAE', verified: true },
+    tradeLicense: 'Verified',
+    documentationPct: 94,
+    activeCertifications: 5,
+    lastVerified: '05 Oct 2026',
+  },
+  {
+    id: 'feed_news_steel',
+    kind: 'editorial',
+    slot: 'news',
+    contentClass: 'editorial',
+    tab: 'industry',
+    label: 'Industry News',
+    category: 'Steel & Rebar',
+    location: 'UAE',
+    postedAt: '12h ago',
+    ageHours: 12,
+    headline: 'UAE steel market update',
+    summary:
+      'Regional rebar mills report steady demand from infrastructure and residential projects, with delivered prices edging up on higher scrap costs and stronger Q4 order books.',
+    details:
+      'Delivered B500B rebar in the UAE is tracking roughly 1-2% higher week on week. Buyers with Q1 2027 pours may want to confirm price validity periods on open quotations and consider staged call-offs.',
+    source: 'Gulf Construction Review',
+    publishedAt: '06 Oct 2026',
+    external: true,
+  },
+  {
     id: 'feed_prd_mapelastic',
     kind: 'product',
+    slot: 'product-discovery',
+    contentClass: 'intelligence',
+    tab: 'products',
     category: 'Waterproofing',
     location: 'Dubai, UAE',
     postedAt: '7h ago',
@@ -261,56 +389,94 @@ export const BUYER_FEED_ITEMS: BuyerFeedItem[] = [
     },
   },
   {
-    id: 'feed_ver_emirates_steel',
-    kind: 'verification',
-    category: 'Steel & Rebar',
-    location: 'Abu Dhabi, UAE',
-    postedAt: '9h ago',
-    ageHours: 9,
-    supplier: { id: 'sup_emirates_steel', name: 'Emirates Steel Industries', location: 'Abu Dhabi, UAE', verified: true },
-    tradeLicense: 'Verified',
-    documentationPct: 94,
-    activeCertifications: 5,
-    lastVerified: '05 Oct 2026',
-  },
-  {
-    id: 'feed_ind_steel',
-    kind: 'industry',
-    category: 'Steel & Rebar',
-    location: 'UAE',
-    postedAt: '12h ago',
-    ageHours: 12,
-    headline: 'UAE steel market update',
-    summary:
-      'Regional rebar mills report steady demand from infrastructure and residential projects, with delivered prices edging up on higher scrap costs and stronger Q4 order books.',
-    source: 'Gulf Construction Review',
-    details:
-      'Delivered B500B rebar in the UAE is tracking roughly 1-2% higher week on week. Buyers with Q1 2027 pours may want to confirm price validity periods on open quotations and consider staged call-offs.',
-    publishedAt: '06 Oct 2026',
-  },
-  {
-    id: 'feed_prd_rebar',
-    kind: 'product',
-    category: 'Steel & Rebar',
-    location: 'Sharjah, UAE',
-    postedAt: '14h ago',
-    ageHours: 14,
-    supplier: { id: 'sup_conares', name: 'Conares Steel Trading', location: 'Sharjah, UAE', verified: true },
+    id: 'feed_sponsored_proofex',
+    kind: 'sponsored',
+    format: 'product-spotlight',
+    contentClass: 'sponsored',
+    tab: 'products',
+    approvedBySoko: true,
+    targetCategories: ['Waterproofing'],
+    category: 'Waterproofing',
+    location: 'Dubai, UAE',
+    postedAt: '1d ago',
+    ageHours: 24,
+    sponsor: { id: 'sup_al_mesbah', name: 'Al Mesbah Building Chemicals', location: 'Dubai, UAE', verified: true },
     product: {
-      id: 'prd_b500b_rebar',
-      name: 'B500B High-Yield Rebar (12-32 mm)',
-      type: 'Reinforcement Steel',
-      brand: 'Conares',
-      category: 'Steel & Rebar',
-      imageUrl: 'https://images.pexels.com/photos/46167/iron-rods-reinforcing-bars-rods-steel-bars-46167.jpeg?auto=compress&cs=tinysrgb&h=650&w=940',
+      id: 'prd_proofex_engage',
+      name: 'Fosroc Proofex Engage',
+      type: 'Pre-applied Waterproofing Membrane',
+      brand: 'Fosroc',
+      category: 'Waterproofing',
       technicalDocs: true,
       certification: true,
-      intelligenceScore: 91,
+      intelligenceScore: 82,
+    },
+  },
+  {
+    id: 'feed_new_mep_aggregate',
+    kind: 'insight',
+    slot: 'insight',
+    contentClass: 'intelligence',
+    tab: 'products',
+    label: 'New on SOKO',
+    category: 'MEP',
+    location: 'UAE',
+    postedAt: '10h ago',
+    ageHours: 10,
+    headline: '14 new MEP products were added this week from 6 verified suppliers',
+    body: 'Additions include pre-insulated chilled water piping, fire-rated cable trays and VRF indoor units.',
+    ctaLabel: 'Explore MEP Products',
+    ctaTab: 'products',
+  },
+  {
+    id: 'feed_signal_equipment',
+    kind: 'insight',
+    slot: 'market',
+    contentClass: 'intelligence',
+    tab: 'market',
+    label: 'Market Signal',
+    category: 'Equipment Rental',
+    location: 'Dubai, UAE',
+    postedAt: '14h ago',
+    ageHours: 14,
+    headline: 'Equipment rental requirements increased in Dubai this week',
+    body: 'Mobile crane, telehandler and generator rental requests on Market Hub rose compared with the previous 7 days.',
+    breakdown: [
+      { label: 'Cranes', value: 9 },
+      { label: 'Telehandlers', value: 6 },
+      { label: 'Generators', value: 4 },
+    ],
+    ctaLabel: 'Explore Market Hub',
+    ctaTab: 'opportunities',
+  },
+  {
+    id: 'feed_new_al_falah',
+    kind: 'supplier-activity',
+    slot: 'new-product',
+    contentClass: 'intelligence',
+    tab: 'products',
+    category: 'MEP',
+    location: 'Dubai, UAE',
+    postedAt: '1d ago',
+    ageHours: 24,
+    supplier: { id: 'sup_al_falah_mep', name: 'Al Falah MEP Supplies', location: 'Dubai, UAE', verified: true },
+    summary: 'has added a pre-insulated chilled water pipe range to the SOKO network.',
+    product: {
+      id: 'prd_preinsulated_pipe',
+      name: 'Pre-Insulated CHW Pipe System',
+      type: 'Chilled Water Piping',
+      brand: 'Kingspan',
+      category: 'MEP',
+      technicalDocs: true,
+      certification: false,
     },
   },
   {
     id: 'feed_mh_mep',
     kind: 'market-hub',
+    slot: 'market',
+    contentClass: 'intelligence',
+    tab: 'market',
     category: 'MEP',
     location: 'Abu Dhabi, UAE',
     postedAt: '18h ago',
@@ -325,60 +491,90 @@ export const BUYER_FEED_ITEMS: BuyerFeedItem[] = [
     interestedCount: 7,
   },
   {
-    id: 'feed_su_al_falah',
-    kind: 'supplier-update',
-    category: 'MEP',
+    id: 'feed_editorial_regulation',
+    kind: 'editorial',
+    slot: 'editorial',
+    contentClass: 'editorial',
+    tab: 'industry',
+    label: 'Regulatory Update',
+    category: 'Procurement',
     location: 'Dubai, UAE',
     postedAt: '1d ago',
-    ageHours: 24,
-    supplier: { id: 'sup_al_falah_mep', name: 'Al Falah MEP Supplies', location: 'Dubai, UAE', verified: true },
-    updateLabel: 'Portfolio Update',
-    summary: 'Al Falah MEP Supplies added a pre-insulated chilled water pipe range to its SOKO portfolio.',
-    product: {
-      id: 'prd_preinsulated_pipe',
-      name: 'Pre-Insulated CHW Pipe System',
-      type: 'Chilled Water Piping',
-      brand: 'Kingspan',
-      category: 'MEP',
-      technicalDocs: true,
-      certification: false,
-    },
+    ageHours: 28,
+    headline: 'Updated green building requirements for Dubai façade and insulation materials',
+    summary:
+      'New guidance raises documentation expectations for thermal performance and recycled content on submittals for new projects.',
+    details:
+      'Buyers should request updated technical data sheets and third-party test reports when issuing enquiries for insulation, glazing and cladding packages.',
+    source: 'Dubai Municipality bulletin, summarised by SOKO Editorial',
+    publishedAt: '05 Oct 2026',
+    external: true,
   },
   {
-    id: 'feed_insight_readymix',
-    kind: 'insight',
-    category: 'Ready Mix',
-    location: 'UAE',
+    id: 'feed_ver_conares',
+    kind: 'verification',
+    slot: 'supplier',
+    contentClass: 'intelligence',
+    tab: 'suppliers',
+    category: 'Steel & Rebar',
+    location: 'Sharjah, UAE',
     postedAt: '1d ago',
-    ageHours: 26,
-    headline: 'Ready Mix searches up 32% on SOKO',
-    body: 'Buyers searched for ready mix concrete suppliers more often this week, led by demand for C40 and C50 mixes in Dubai South and Abu Dhabi.',
-    breakdown: [
-      { label: 'Dubai', value: 18 },
-      { label: 'Abu Dhabi', value: 9 },
-      { label: 'Ajman', value: 4 },
-    ],
-    ctaLabel: 'Explore Ready Mix Suppliers',
-    ctaTab: 'suppliers',
+    ageHours: 30,
+    supplier: { id: 'sup_conares', name: 'Conares Steel Trading', location: 'Sharjah, UAE', verified: true },
+    tradeLicense: 'Verified',
+    documentationPct: 88,
+    activeCertifications: 3,
+    lastVerified: '04 Oct 2026',
   },
   {
-    id: 'feed_ind_freight',
-    kind: 'industry',
+    id: 'feed_news_freight',
+    kind: 'editorial',
+    slot: 'news',
+    contentClass: 'editorial',
+    tab: 'industry',
+    label: 'Industry News',
     category: 'Logistics',
     location: 'UAE',
     postedAt: '1d ago',
-    ageHours: 30,
+    ageHours: 32,
     headline: 'Asia to Jebel Ali container rates firm ahead of Q4',
     summary:
       'Freight forwarders report tighter capacity on Shanghai and Ningbo routes into Jebel Ali, which may extend lead times for imported fit-out and MEP materials.',
-    source: 'Middle East Logistics Bulletin',
     details:
       'Forwarders suggest adding one to two weeks of buffer to delivery schedules for imported items and confirming vessel bookings earlier than usual for November and December arrivals.',
+    source: 'Middle East Logistics Bulletin',
     publishedAt: '05 Oct 2026',
+    external: true,
+  },
+  {
+    id: 'feed_prd_rebar',
+    kind: 'product',
+    slot: 'product-discovery',
+    contentClass: 'intelligence',
+    tab: 'products',
+    category: 'Steel & Rebar',
+    location: 'Sharjah, UAE',
+    postedAt: '2d ago',
+    ageHours: 40,
+    supplier: { id: 'sup_conares', name: 'Conares Steel Trading', location: 'Sharjah, UAE', verified: true },
+    product: {
+      id: 'prd_b500b_rebar',
+      name: 'B500B High-Yield Rebar (12-32 mm)',
+      type: 'Reinforcement Steel',
+      brand: 'Conares',
+      category: 'Steel & Rebar',
+      imageUrl: 'https://images.pexels.com/photos/46167/iron-rods-reinforcing-bars-rods-steel-bars-46167.jpeg?auto=compress&cs=tinysrgb&h=650&w=940',
+      technicalDocs: true,
+      certification: true,
+      intelligenceScore: 91,
+    },
   },
   {
     id: 'feed_mh_equipment',
     kind: 'market-hub',
+    slot: 'market',
+    contentClass: 'intelligence',
+    tab: 'market',
     category: 'Equipment Rental',
     location: 'Sharjah, UAE',
     postedAt: '2d ago',

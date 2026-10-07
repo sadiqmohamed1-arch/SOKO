@@ -6,8 +6,7 @@ import {
   BuyerFeedItem,
   BuyerFeedTab,
   DEMO_BUYER_INTERESTS,
-  diversifyFeed,
-  FEED_TAB_KINDS,
+  composeForYouFeed,
   MY_SOKO_SHORTCUTS,
   scoreFeedItem,
 } from '../data/buyerHomeFeed';
@@ -23,11 +22,11 @@ interface BuyerHomeViewProps {
 
 const TABS: { id: BuyerFeedTab; label: string }[] = [
   { id: 'for-you', label: 'For You' },
-  { id: 'supplier-updates', label: 'Supplier Updates' },
+  { id: 'market', label: 'Market' },
   { id: 'products', label: 'Products' },
-  { id: 'market-hub', label: 'Market Hub' },
-  { id: 'industry', label: 'Industry Intelligence' },
+  { id: 'suppliers', label: 'Suppliers' },
   { id: 'insights', label: 'SOKO Insights' },
+  { id: 'industry', label: 'Industry News' },
 ];
 
 const SAVED_KEY = 'soko_buyer_home_saved_v1';
@@ -38,7 +37,7 @@ const searchableText = (item: BuyerFeedItem) =>
   [
     item.category,
     item.location,
-    'supplier' in item ? item.supplier.name : '',
+    'supplier' in item ? item.supplier.name : item.kind === 'sponsored' ? item.sponsor.name : '',
     'product' in item ? `${item.product.name} ${item.product.brand} ${item.product.type}` : '',
     'title' in item ? item.title : '',
     'headline' in item ? item.headline : '',
@@ -84,17 +83,19 @@ export const BuyerHomeView: React.FC<BuyerHomeViewProps> = ({
   const visibleItems = useMemo(() => {
     const q = query.trim().toLowerCase();
     const scored = BUYER_FEED_ITEMS.filter(
-      (item) => activeTab === 'for-you' || FEED_TAB_KINDS[activeTab].includes(item.kind)
+      (item) => activeTab === 'for-you' || item.tab === activeTab
     )
       .filter((item) => !q || searchableText(item).includes(q))
       .map((item) => ({ item, ...scoreFeedItem(item, interestProfile) }));
 
     return activeTab === 'for-you'
-      ? diversifyFeed(scored)
+      ? composeForYouFeed(scored, interestProfile)
       : scored.sort((a, b) => a.item.ageHours - b.item.ageHours);
   }, [activeTab, query, interestProfile]);
 
-  const savedProductExtra = BUYER_FEED_ITEMS.filter((i) => savedIds.includes(i.id) && 'product' in i).length;
+  const savedProductExtra = BUYER_FEED_ITEMS.filter(
+    (i) => savedIds.includes(i.id) && 'product' in i && i.kind !== 'sponsored'
+  ).length;
   const firstName = currentUser.name.split(' ')[0];
 
   return (
@@ -212,7 +213,7 @@ export const BuyerHomeView: React.FC<BuyerHomeViewProps> = ({
 
           {activeTab === 'for-you' && !query && (
             <p className="text-[11px] text-slate-500 px-1">
-              Ranked by the categories you follow, suppliers and products you've viewed or saved, your network, Market Hub activity and location.
+              Curated by SOKO and personalised to the categories you follow, suppliers and products you've viewed or saved, your network, Market Hub activity and location.
             </p>
           )}
 
