@@ -93,6 +93,7 @@ export interface BuyerSupplier {
   country: string;
   headquarters: string;
   regionsServed: string[];
+  marketsServed?: string[];
   description: string;
   established?: number;
   website?: string;
@@ -146,10 +147,10 @@ const iso = (name: string, validUntil: string): SupplierCertification => ({
 });
 
 const docs = (tds: number, sds: number, certs: number, approvals: number, tests: number): SupplierDocumentGroup[] => [
-  { label: 'Technical Datasheets', count: tds, access: 'public' },
+  { label: 'Product Datasheets', count: tds, access: 'public' },
   { label: 'Safety Datasheets', count: sds, access: 'public' },
-  { label: 'Product Certificates', count: certs, access: 'public' },
-  { label: 'Approvals', count: approvals, access: 'status-only' },
+  { label: 'Product Certifications', count: certs, access: 'public' },
+  { label: 'Technical Approvals', count: approvals, access: 'status-only' },
   { label: 'Test Reports', count: tests, access: 'status-only' },
 ];
 
@@ -255,41 +256,59 @@ export const BUYER_SUPPLIERS: BuyerSupplier[] = [
     types: ['Manufacturer'],
     categories: ['Steel & Rebar'],
     subcategories: ['Reinforcement Bar', 'Wire Rod', 'Structural Sections'],
-    capabilities: ['Steel Reinforcement', 'Wire Rod', 'Heavy Sections', 'Cut & Bend'],
+    capabilities: ['Reinforcement Steel', 'Wire Rod', 'Structural Sections', 'Rebar in Coil', 'Steel Manufacturing', 'Construction Steel'],
     brands: ['Emirates Steel'],
     ...UAE,
     headquarters: 'Abu Dhabi',
     regionsServed: ['Abu Dhabi', 'Dubai', 'Sharjah', 'Ras Al Khaimah'],
-    description: 'Integrated steel manufacturer producing reinforcement bar, wire rod and structural sections for UAE infrastructure and building projects.',
+    marketsServed: ['UAE', 'GCC'],
+    description:
+      'Manufacturer and supplier of reinforcement steel, wire rod and structural steel products serving construction and infrastructure projects across the UAE and regional markets.',
     established: 1998,
     website: 'emiratessteel.example',
     generalEmail: 'sales@emiratessteel.example',
-    tradeLicense: { status: 'verified', expiry: '2027-11-30' },
+    tradeLicense: { status: 'verified', expiry: '2027-08-18' },
     companyInfoVerified: true,
     documentationPct: 94,
-    profileCompletenessPct: 97,
+    profileCompletenessPct: 96,
     certifications: [
-      iso('ISO 9001:2015', '2027-05-14'),
-      iso('ISO 14001:2015', '2027-05-14'),
-      iso('ISO 45001:2018', '2027-05-14'),
+      iso('ISO 9001', '2027-03-12'),
+      iso('ISO 14001', '2027-06-20'),
+      iso('ISO 45001', '2027-06-20'),
       { name: 'CARES Product Certification', issuer: 'UK CARES', status: 'active', validUntil: '2027-02-28' },
       { name: 'EPD (Environmental Product Declaration)', issuer: 'International EPD System', status: 'active', validUntil: '2029-07-01' },
     ],
     technicalDocuments: docs(9, 4, 8, 5, 12),
     products: [
-      p('prd_es_b500b', 'B500B Rebar 8-40 mm', 'Reinforcement Steel', 'Steel & Rebar', 'Emirates Steel', IMG.rebar, true, true, 92),
-      p('prd_es_wirerod', 'Low Carbon Wire Rod', 'Wire Rod', 'Steel & Rebar', 'Emirates Steel', IMG.rebar, true, true, 85),
+      p('prd_es_b500b', 'B500B Rebar', 'Reinforcement Steel', 'Steel & Rebar', 'Emirates Steel', IMG.rebar, true, true, 91),
+      p('prd_es_wirerod', 'Low Carbon Wire Rod', 'Steel Wire Rod', 'Steel & Rebar', 'Emirates Steel', IMG.rebar, true, true, 85),
       p('prd_es_heavy', 'Heavy Sections (HEA/HEB)', 'Structural Steel', 'Steel & Rebar', 'Emirates Steel', IMG.rebar, true, true, 88),
       p('prd_es_coil', 'Rebar in Coil 8-16 mm', 'Reinforcement Steel', 'Steel & Rebar', 'Emirates Steel', IMG.rebar, true, true, 84),
+      p('prd_es_b500c', 'B500C High Ductility Rebar', 'Reinforcement Steel', 'Steel & Rebar', 'Emirates Steel', IMG.rebar, true, true, 87),
+      p('prd_es_ipe', 'IPE Beams', 'Structural Steel', 'Steel & Rebar', 'Emirates Steel', IMG.rebar, true, true, 83),
+      p('prd_es_upn', 'UPN Channels', 'Structural Steel', 'Steel & Rebar', 'Emirates Steel', IMG.rebar, true, false, 78),
+      p('prd_es_angles', 'Equal Angles', 'Structural Steel', 'Steel & Rebar', 'Emirates Steel', IMG.rebar, true, false, 76),
+      p('prd_es_sheet_piles', 'Steel Sheet Piles', 'Foundation Steel', 'Steel & Rebar', 'Emirates Steel', IMG.rebar, true, true, 82),
+      p('prd_es_mesh', 'Welded Wire Mesh', 'Reinforcement Steel', 'Steel & Rebar', 'Emirates Steel', IMG.rebar, true, true, 80),
+      p('prd_es_highc', 'High Carbon Wire Rod', 'Steel Wire Rod', 'Steel & Rebar', 'Emirates Steel', IMG.rebar, true, false, 74),
+      p('prd_es_billets', 'Steel Billets', 'Semi-Finished Steel', 'Steel & Rebar', 'Emirates Steel', IMG.rebar, false, false),
+      p('prd_es_blooms', 'Steel Blooms', 'Semi-Finished Steel', 'Steel & Rebar', 'Emirates Steel', IMG.rebar, false, false),
+      p('prd_es_epoxy', 'Epoxy Coated Rebar', 'Reinforcement Steel', 'Steel & Rebar', 'Emirates Steel', IMG.rebar, true, true, 81),
+      p('prd_es_couplers', 'Rebar Couplers', 'Reinforcement Accessories', 'Steel & Rebar', 'Emirates Steel', IMG.rebar, true, false, 72),
+      p('prd_es_cutbend', 'Cut & Bend Rebar Service', 'Fabrication Service', 'Steel & Rebar', 'Emirates Steel', IMG.rebar, false, false),
+      p('prd_es_hpiles', 'H-Piles', 'Foundation Steel', 'Steel & Rebar', 'Emirates Steel', IMG.rebar, true, true, 79),
+      p('prd_es_rails', 'Crane Rails', 'Structural Steel', 'Steel & Rebar', 'Emirates Steel', IMG.rebar, true, false, 70),
     ],
     contacts: [
+      { id: 'ct_ahmed_khan', name: 'Ahmed Khan', title: 'Commercial Manager', category: 'Steel & Rebar', location: 'Abu Dhabi, UAE', phone: '+971501234567', email: 'a.khan@emiratessteel.example', visibility: 'public' },
+      { id: 'ct_sarah_thomas', name: 'Sarah Thomas', title: 'Sales Manager', category: 'Steel & Rebar', location: 'Dubai, UAE', phone: '+971552345678', email: 's.thomas@emiratessteel.example', visibility: 'public' },
       { id: 'ct_khalid_mansoori', name: 'Khalid Al Mansoori', title: 'Key Accounts Director', category: 'Steel & Rebar', location: 'Abu Dhabi, UAE', phone: '+971504567890', email: 'k.mansoori@emiratessteel.example', visibility: 'public' },
       { id: 'ct_priya_menon', name: 'Priya Menon', title: 'Technical Services Engineer', category: 'Steel & Rebar', location: 'Abu Dhabi, UAE', email: 'p.menon@emiratessteel.example', visibility: 'network' },
     ],
     intelligenceScore: 91,
     networkActivity: 'Active',
     lastVerified: '2026-10-05',
-    updatedDaysAgo: 2,
+    updatedDaysAgo: 5,
   },
   {
     id: 'sup_conares',
@@ -896,6 +915,10 @@ export const supplierLocation = (s: BuyerSupplier) => `${s.headquarters}, ${s.co
 
 export const supplierTypeLine = (s: BuyerSupplier) => [...s.types, ...(s.descriptor ? [s.descriptor] : [])].join(' · ');
 
+export const supplierMarkets = (s: BuyerSupplier) => s.marketsServed ?? [s.countryCode === 'AE' ? 'UAE' : s.country, ...s.regionsServed];
+
+export const freshnessLabel = (days: number) => (days <= 1 ? 'Updated today' : `Updated ${days} days ago`);
+
 export const activeCertifications = (s: BuyerSupplier) => s.certifications.filter((c) => c.status === 'active').length;
 
 export const tradeLicenseLabel = (s: BuyerSupplier) =>
@@ -907,8 +930,7 @@ export function intelligenceSignals(s: BuyerSupplier) {
   const verification =
     s.status === 'verified' ? 'Strong' : s.status === 'pending' ? 'In progress' : s.status === 'update-required' ? 'Needs update' : 'Not verified';
   const productInfo = !s.products.length ? 'Not available' : ratio >= 0.8 ? 'Strong' : ratio >= 0.5 ? 'Moderate' : 'Limited';
-  const freshness =
-    s.updatedDaysAgo <= 1 ? 'Updated today' : s.updatedDaysAgo < 60 ? `Updated ${s.updatedDaysAgo} days ago` : 'Not recently updated';
+  const freshness = s.updatedDaysAgo < 60 ? freshnessLabel(s.updatedDaysAgo) : 'Not recently updated';
   return [
     { label: 'Verification', value: verification, tone: s.status === 'verified' ? 'good' : s.status === 'listed' ? 'neutral' : 'warn' },
     { label: 'Documentation Completeness', value: `${s.documentationPct}%`, tone: s.documentationPct >= 80 ? 'good' : s.documentationPct >= 50 ? 'warn' : 'neutral' },

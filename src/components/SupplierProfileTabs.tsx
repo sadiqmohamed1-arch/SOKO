@@ -5,17 +5,15 @@ import {
   SupplierCertification,
   formatDate,
   intelligenceSignals,
-  supplierLocation,
-  supplierTypeLine,
   tradeLicenseLabel,
 } from '../data/buyerSuppliers';
 import { ContactActions } from './ContactSupplierModal';
-import { ExternalSourceBadge, InfoTooltip, INTELLIGENCE_EXPLAINER } from './SupplierTrust';
+import { InfoTooltip, INTELLIGENCE_EXPLAINER } from './SupplierTrust';
 
 const PRODUCT_INTELLIGENCE_INFO =
   'Based on documentation completeness, supplier verification, product information and SOKO network activity.';
 
-const Panel: React.FC<{ title: string; children: React.ReactNode; aside?: React.ReactNode; className?: string }> = ({ title, children, aside, className = '' }) => (
+export const Panel: React.FC<{ title: string; children: React.ReactNode; aside?: React.ReactNode; className?: string }> = ({ title, children, aside, className = '' }) => (
   <section className={`bg-white rounded-xl border border-slate-200 p-5 ${className}`}>
     <div className="flex items-center justify-between gap-2 mb-3">
       <h3 className="text-[11px] font-semibold tracking-wider uppercase text-slate-500">{title}</h3>
@@ -23,26 +21,6 @@ const Panel: React.FC<{ title: string; children: React.ReactNode; aside?: React.
     </div>
     {children}
   </section>
-);
-
-const Chips: React.FC<{ items: string[]; empty?: string }> = ({ items, empty = 'Not provided' }) =>
-  items.length ? (
-    <ul className="flex flex-wrap gap-1.5">
-      {items.map((i) => (
-        <li key={i} className="px-2.5 py-1 rounded-md bg-slate-50 border border-slate-200 text-sm text-slate-700">
-          {i}
-        </li>
-      ))}
-    </ul>
-  ) : (
-    <p className="text-sm text-slate-400">{empty}</p>
-  );
-
-const Row: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
-  <div className="flex items-start justify-between gap-4 py-2 border-b border-slate-100 last:border-b-0">
-    <dt className="text-sm text-slate-500">{label}</dt>
-    <dd className="text-sm font-semibold text-slate-900 text-right">{children}</dd>
-  </div>
 );
 
 const useStoredIds = (key: string) => {
@@ -59,58 +37,6 @@ const useStoredIds = (key: string) => {
   return [ids, toggle] as const;
 };
 
-export const OverviewTab: React.FC<{ supplier: BuyerSupplier }> = ({ supplier: s }) => {
-  const external = (field: string) => s.externalSourceFields?.includes(field) && <ExternalSourceBadge />;
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-      <div className="lg:col-span-2 space-y-4">
-        <Panel title="About">
-          <p className="text-sm text-slate-700 leading-relaxed">{s.description}</p>
-        </Panel>
-        <Panel title="Supplier Capabilities">
-          <Chips items={s.capabilities} />
-        </Panel>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <Panel title="Categories">
-            <Chips items={[...s.categories, ...s.subcategories.slice(0, 2)]} />
-          </Panel>
-          <Panel title="Brands">
-            <Chips items={s.brands} empty="No brands listed" />
-          </Panel>
-          <Panel title="Markets Served">
-            <Chips items={[s.countryCode === 'AE' ? 'UAE' : s.country, ...s.regionsServed]} />
-          </Panel>
-        </div>
-      </div>
-      <div className="space-y-4">
-        <Panel title="Company Information">
-          <dl>
-            <Row label="Company Type">{supplierTypeLine(s)}</Row>
-            <Row label="Established">{s.established ?? 'Not provided'}</Row>
-            <Row label="Headquarters">
-              <span className="inline-flex flex-col items-end gap-1">
-                {supplierLocation(s)}
-                {external('Location')}
-              </span>
-            </Row>
-            <Row label="Website">{s.website ?? 'Not provided'}</Row>
-            <Row label="General Email">{s.generalEmail ?? 'Not provided'}</Row>
-          </dl>
-        </Panel>
-        <Panel title="Verification Summary">
-          <dl>
-            <Row label="Trade License">{tradeLicenseLabel(s)}</Row>
-            <Row label="Company Information">{s.companyInfoVerified ? 'Verified' : 'Not yet verified'}</Row>
-            <Row label="Documentation">{s.documentationPct}% Complete</Row>
-            <Row label="Last Verification">{formatDate(s.lastVerified)}</Row>
-          </dl>
-          <p className="mt-3 text-[11px] text-slate-400">Confidential company documents are never shown to buyers.</p>
-        </Panel>
-      </div>
-    </div>
-  );
-};
-
 export const ProductsTab: React.FC<{
   supplier: BuyerSupplier;
   onNavigateToTab: (tab: string) => void;
@@ -119,22 +45,24 @@ export const ProductsTab: React.FC<{
 }> = ({ supplier: s, onNavigateToTab, onContact, onNotify }) => {
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('all');
-  const [brand, setBrand] = useState('all');
+  const [productType, setProductType] = useState('all');
   const [docs, setDocs] = useState<'all' | 'tds' | 'missing'>('all');
+  const [certs, setCerts] = useState<'all' | 'yes' | 'no'>('all');
   const [savedProducts, toggleProduct] = useStoredIds('soko_buyer_saved_products_v1');
 
   const categories = Array.from(new Set(s.products.map((p) => p.category)));
-  const brands = Array.from(new Set(s.products.map((p) => p.brand)));
+  const productTypes = Array.from(new Set(s.products.map((p) => p.type)));
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return s.products.filter(
       (p) =>
-        (!q || `${p.name} ${p.type} ${p.brand}`.toLowerCase().includes(q)) &&
+        (!q || `${p.name} ${p.type} ${p.brand} ${p.category}`.toLowerCase().includes(q)) &&
         (category === 'all' || p.category === category) &&
-        (brand === 'all' || p.brand === brand) &&
-        (docs === 'all' || (docs === 'tds' ? p.technicalDatasheet : !p.technicalDatasheet))
+        (productType === 'all' || p.type === productType) &&
+        (docs === 'all' || (docs === 'tds' ? p.technicalDatasheet : !p.technicalDatasheet)) &&
+        (certs === 'all' || (certs === 'yes' ? p.certifications : !p.certifications))
     );
-  }, [s.products, query, category, brand, docs]);
+  }, [s.products, query, category, productType, docs, certs]);
 
   if (!s.products.length) {
     return (
@@ -149,9 +77,14 @@ export const ProductsTab: React.FC<{
 
   return (
     <div>
-      <div className="flex flex-col md:flex-row md:items-center gap-3 mb-4">
-        <h3 className="text-base font-semibold text-slate-900 shrink-0">{s.products.length} Products</h3>
-        <label className="relative flex-1">
+      <div className="mb-3">
+        <h3 className="text-base font-semibold text-slate-900">Products from {s.name}</h3>
+        <p className="text-xs text-slate-500 mt-0.5">
+          {visible.length === s.products.length ? `${s.products.length} products` : `${visible.length} of ${s.products.length} products`} · No pricing or ordering on SOKO
+        </p>
+      </div>
+      <div className="flex flex-col lg:flex-row lg:items-center gap-3 mb-4">
+        <label className="relative flex-1 min-w-0">
           <span className="sr-only">Search this supplier's products</span>
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
@@ -162,19 +95,24 @@ export const ProductsTab: React.FC<{
             className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 bg-white text-sm focus:outline-hidden focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
           />
         </label>
-        <div className="flex gap-2 overflow-x-auto">
+        <div className="grid grid-cols-2 sm:flex gap-2">
           <select aria-label="Category" value={category} onChange={(e) => setCategory(e.target.value)} className={selectCls}>
             <option value="all">All categories</option>
             {categories.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
-          <select aria-label="Brand" value={brand} onChange={(e) => setBrand(e.target.value)} className={selectCls}>
-            <option value="all">All brands</option>
-            {brands.map((b) => <option key={b} value={b}>{b}</option>)}
+          <select aria-label="Product Type" value={productType} onChange={(e) => setProductType(e.target.value)} className={selectCls}>
+            <option value="all">All product types</option>
+            {productTypes.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
           <select aria-label="Documentation" value={docs} onChange={(e) => setDocs(e.target.value as typeof docs)} className={selectCls}>
             <option value="all">All documentation</option>
             <option value="tds">Datasheet available</option>
             <option value="missing">Datasheet missing</option>
+          </select>
+          <select aria-label="Certification" value={certs} onChange={(e) => setCerts(e.target.value as typeof certs)} className={selectCls}>
+            <option value="all">All certification</option>
+            <option value="yes">Certified products</option>
+            <option value="no">No certification</option>
           </select>
         </div>
       </div>
@@ -182,7 +120,7 @@ export const ProductsTab: React.FC<{
       {visible.length === 0 ? (
         <p className="bg-white rounded-xl border border-slate-200 px-6 py-8 text-center text-sm text-slate-500">No products match these filters.</p>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {visible.map((p) => {
             const saved = savedProducts.includes(p.id);
             return (
@@ -190,7 +128,7 @@ export const ProductsTab: React.FC<{
                 <img src={p.imageUrl} alt={p.name} className="h-32 w-full object-cover rounded-t-xl" loading="lazy" />
                 <div className="p-4 flex-1 flex flex-col">
                   <p className="text-sm font-semibold text-slate-900 leading-tight">{p.name}</p>
-                  <p className="text-xs text-slate-500 mt-0.5">{p.type}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">{p.category} · {p.type}</p>
                   <dl className="mt-3 space-y-1 text-xs">
                     <div className="flex justify-between"><dt className="text-slate-500">Brand</dt><dd className="font-semibold text-slate-800">{p.brand}</dd></div>
                     <div className="flex justify-between"><dt className="text-slate-500">Technical Datasheet</dt><dd className={`font-semibold ${p.technicalDatasheet ? 'text-emerald-700' : 'text-slate-500'}`}>{p.technicalDatasheet ? 'Available' : 'Not available'}</dd></div>
@@ -248,11 +186,11 @@ export const CertificationsTab: React.FC<{ supplier: BuyerSupplier }> = ({ suppl
   const productsWithDocs = s.products.filter((p) => p.technicalDatasheet);
   return (
     <div className="space-y-4">
-      <Panel title="Company Documents">
+      <Panel title="Company Verification">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {[
-            { name: 'Trade License', status: tradeLicenseLabel(s), expiry: s.tradeLicense.expiry },
-            { name: 'Company Registration Information', status: s.companyInfoVerified ? 'Verified' : 'Not yet verified' },
+            { name: 'Trade License', status: tradeLicenseLabel(s), expiry: s.tradeLicense.expiry, checked: s.lastVerified },
+            { name: 'Company Registration Information', status: s.companyInfoVerified ? 'Verified' : 'Not yet verified', checked: s.lastVerified },
           ].map((d) => (
             <div key={d.name} className="rounded-lg border border-slate-200 p-3">
               <p className="text-sm font-semibold text-slate-900 flex items-center gap-1.5">
@@ -262,6 +200,7 @@ export const CertificationsTab: React.FC<{ supplier: BuyerSupplier }> = ({ suppl
               <dl className="mt-2 text-xs space-y-1">
                 <div className="flex justify-between"><dt className="text-slate-500">Status</dt><dd className="font-semibold text-slate-800">{d.status}</dd></div>
                 {d.expiry && <div className="flex justify-between"><dt className="text-slate-500">Expiry</dt><dd className="font-semibold text-slate-800">{formatDate(d.expiry)}</dd></div>}
+                {d.checked && <div className="flex justify-between"><dt className="text-slate-500">Last Checked</dt><dd className="font-semibold text-slate-800">{formatDate(d.checked)}</dd></div>}
                 <div className="flex justify-between"><dt className="text-slate-500">Access</dt><dd className="text-slate-600 inline-flex items-center gap-1"><Lock className="w-3 h-3" />Verification status only</dd></div>
               </dl>
             </div>
@@ -290,7 +229,7 @@ export const CertificationsTab: React.FC<{ supplier: BuyerSupplier }> = ({ suppl
         )}
       </Panel>
 
-      <Panel title="Product / Technical Documentation">
+      <Panel title="Technical Documentation">
         {s.technicalDocuments.length ? (
           <ul className="divide-y divide-slate-100">
             {s.technicalDocuments.map((g) => (
@@ -307,10 +246,10 @@ export const CertificationsTab: React.FC<{ supplier: BuyerSupplier }> = ({ suppl
                       onClick={() => setOpenGroup(openGroup === g.label ? null : g.label)}
                       className="text-xs font-semibold text-blue-700 hover:text-blue-800 cursor-pointer"
                     >
-                      {openGroup === g.label ? 'Hide' : 'View Documents'}
+                      {openGroup === g.label ? 'Hide' : 'View Document'}
                     </button>
                   ) : (
-                    <span className="text-xs text-slate-500 inline-flex items-center gap-1"><Lock className="w-3 h-3" />{g.count ? 'Status only' : 'None submitted'}</span>
+                    <span className="text-xs text-slate-500 inline-flex items-center gap-1"><Lock className="w-3 h-3" />{g.count ? 'Confidential · status only' : 'None submitted'}</span>
                   )}
                 </div>
                 {openGroup === g.label && (
