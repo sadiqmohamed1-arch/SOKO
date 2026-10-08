@@ -1,4 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { companyById, companyUser, effectiveRole, loadSupplierStore, membershipsOfUser, saveSupplierStore, syncDirectory } from './data/supplierStore';
+import { ROLE_META, SupplierStore } from './data/supplierTypes';
+import { leaveCompany, setTier } from './data/supplierService';
+import { marketWorkspaceFor, planToTier, syncMarketPlans } from './data/supplierMarket';
+import { SupplierWorkspaceView } from './components/supplierWorkspace/SupplierWorkspaceView';
+import { SupplierOnboarding } from './components/supplierWorkspace/SupplierOnboarding';
+import { SupplierTab } from './components/supplierWorkspace/SupplierShared';
+import { Toast } from './components/NetworkShared';
 import { Navbar } from './components/Navbar';
 import { BuyerNavbar } from './components/BuyerNavbar';
 import { ComingSoonView } from './components/ComingSoonView';
@@ -96,6 +104,76 @@ function MainApp() {
     const saved = localStorage.getItem('procurelink_user');
     return saved ? JSON.parse(saved) : INITIAL_CURRENT_USER;
   });
+
+  const [supplierStore, setSupplierStoreState] = useState<SupplierStore>(loadSupplierStore);
+  const updateSupplierStore = useCallback((next: SupplierStore) => {
+    syncDirectory(next);
+    syncMarketPlans(next.companies);
+    saveSupplierStore(next);
+    setSupplierStoreState(next);
+  }, []);
+  useEffect(() => {
+    syncMarketPlans(supplierStore.companies);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const [marketNonce, setMarketNonce] = useState(0);
+  const [appToast, setAppToast] = useState<string | null>(null);
+  const notifyApp = useCallback((m: string) => {
+    setAppToast(m);
+    window.setTimeout(() => setAppToast((t) => (t === m ? null : t)), 3200);
+  }, []);
+  const sessionUser = useMemo(
+    () => companyUser({ id: currentUser.id, name: currentUser.name, email: currentUser.email, title: currentUser.title }),
+    [currentUser.id, currentUser.name, currentUser.email, currentUser.title],
+  );
+  const companyMemberships = currentUser.role === 'buyer' ? membershipsOfUser(supplierStore, sessionUser.id) : [];
+  const requestedCompanyId = activeWorkspaceId.startsWith('company:') ? activeWorkspaceId.slice(8) : null;
+  const activeMembership = companyMemberships.find((m) => m.companyId === requestedCompanyId);
+  const activeCompany = activeMembership ? companyById(supplierStore, activeMembership.companyId) : undefined;
+  const activeCompanyId = activeCompany?.id ?? null;
+  const activeMarketWorkspace = useMemo(
+    () => (activeCompany && activeMembership ? marketWorkspaceFor(activeCompany, effectiveRole(supplierStore, activeMembership), sessionUser) : undefined),
+    [activeCompany, activeMembership, supplierStore, sessionUser],
+  );
+
+  const switchWorkspace = (id: string) => {
+    setActiveWorkspaceId(id);
+    setActiveTab(id === 'personal' ? 'feed' : 'sw-dashboard');
+  };
+
+  useEffect(() => {
+    if (requestedCompanyId && !activeCompanyId) {
+      setActiveWorkspaceId('personal');
+      setActiveTab('feed');
+    } else if (!activeCompanyId && activeTab.startsWith('sw-')) {
+      setActiveTab('feed');
+    } else if (activeCompanyId && activeTab === 'feed') {
+      setActiveTab('sw-dashboard');
+    }
+  }, [requestedCompanyId, activeCompanyId, activeTab]);
+
+  const handleLeaveCompany = () => {
+    if (!activeCompanyId) return;
+    const name = activeCompany?.profile.tradingName;
+    const r = leaveCompany(supplierStore, sessionUser, activeCompanyId);
+    if (!r.ok) return notifyApp(r.error);
+    updateSupplierStore(r.store);
+    switchWorkspace('personal');
+    notifyApp(`You left ${name}. Your personal account is unchanged.`);
+  };
+
+  const handleCompanyPlanChange = (plan: Parameters<typeof planToTier>[0]) => {
+    if (!activeCompany || !activeMembership) return;
+    const tier = planToTier(plan);
+    if (tier === activeCompany.tier) return;
+    const r = setTier({ store: supplierStore, user: sessionUser, companyId: activeCompany.id, role: effectiveRole(supplierStore, activeMembership) }, tier);
+    if (r.ok) updateSupplierStore(r.store);
+    else {
+      syncMarketPlans(supplierStore.companies);
+      setMarketNonce((n) => n + 1);
+      notifyApp(r.error);
+    }
+  };
 
   // Sync authUser to currentUser when authenticated
   useEffect(() => {
@@ -572,7 +650,7 @@ function MainApp() {
             senderId: currentUser.id,
             senderName: currentUser.name,
             senderRole: currentUser.role,
-            text: `Hello ${name}, I am reaching out from ${currentUser.company} regarding current procurement opportunities and capacity availability.`,
+            text: `Hello ${name}, I am reaching out from ${activeCompany?.profile.tradingName ?? currentUser.company} regarding current procurement opportunities and capacity availability.`,
             timestamp: 'Just now',
           },
         ],
@@ -689,6 +767,11 @@ function MainApp() {
   // Corporate workspaces get appended here once the Buyer joins a Contractor/Developer company.
   const buyerWorkspaces: Workspace[] = [
     { id: 'personal', kind: 'personal', name: currentUser.name, roleLabel: 'Buyer' },
+    ...companyMemberships.flatMap((m): Workspace[] => {
+      const c = companyById(supplierStore, m.companyId);
+      if (!c) return [];
+      return [{ id: `company:${c.id}`, kind: 'corporate', name: c.profile.tradingName, roleLabel: `Supplier · ${ROLE_META[m.role].label}${c.tier === 'premium' ? ' · Premium' : ''}` }];
+    }),
   ];
 
   if (viewMode === 'landing') {
@@ -725,7 +808,8 @@ function MainApp() {
           rewardPoints={rewardProfile.totalPoints}
           workspaces={buyerWorkspaces}
           activeWorkspaceId={activeWorkspaceId}
-          onSwitchWorkspace={setActiveWorkspaceId}
+          onSwitchWorkspace={switchWorkspace}
+          onOpenSupplierOnboarding={() => setActiveTab('supplier-onboarding')}
           onOpenProfile={() => {
             setCardMode('edit');
             setActiveTab('card');
@@ -835,8 +919,40 @@ function MainApp() {
           />
         )}
 
+        {activeTab.startsWith('sw-') && activeCompanyId && (
+          <SupplierWorkspaceView
+            key={activeCompanyId}
+            tab={activeTab as SupplierTab}
+            store={supplierStore}
+            onStoreChange={updateSupplierStore}
+            user={sessionUser}
+            companyId={activeCompanyId}
+            onNavigate={setActiveTab}
+            onLeaveCompany={handleLeaveCompany}
+            onStartMessageWith={handleStartMessageWith}
+            networkContacts={contacts}
+            onUpdateNetworkContacts={setContacts}
+          />
+        )}
+
+        {activeTab === 'supplier-onboarding' && currentUser.role === 'buyer' && (
+          <div className="px-4 sm:px-6 py-8">
+            <SupplierOnboarding
+              store={supplierStore}
+              user={sessionUser}
+              onStoreChange={updateSupplierStore}
+              onOpenWorkspace={(id) => switchWorkspace(`company:${id}`)}
+              onCancel={() => setActiveTab(activeCompanyId ? 'sw-dashboard' : 'feed')}
+              notify={notifyApp}
+            />
+          </div>
+        )}
+
         {activeTab === 'opportunities' && (
           <MarketHubView
+            key={`${activeMarketWorkspace?.id ?? 'personal'}-${marketNonce}`}
+            companyWorkspace={activeMarketWorkspace}
+            onPlanChange={activeMarketWorkspace ? handleCompanyPlanChange : undefined}
             currentUser={currentUser}
             onNavigateToTab={(tab) => setActiveTab(tab)}
             onAskSokoAi={(q) => {
@@ -986,6 +1102,8 @@ function MainApp() {
           />
         )}
       </main>
+
+      <Toast message={appToast} />
 
       {/* Modals */}
       <CreatePostModal

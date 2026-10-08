@@ -18,6 +18,13 @@ import {
   Check,
   Building2,
   Award,
+  LayoutDashboard,
+  FolderLock,
+  CalendarCheck,
+  ChartColumn,
+  UsersRound,
+  Crown,
+  PlusCircle,
 } from 'lucide-react';
 import { SokoLogo } from './SokoLogo';
 import { Conversation, UserProfile, UserRole, Workspace } from '../types';
@@ -37,6 +44,7 @@ interface BuyerNavbarProps {
   isAuthenticated?: boolean;
   onLogout?: () => void;
   onOpenAuthModal?: (mode: 'login' | 'signup') => void;
+  onOpenSupplierOnboarding?: () => void;
 }
 
 type OpenMenu = 'none' | 'notifications' | 'profile';
@@ -49,6 +57,23 @@ const NAV_ITEMS = [
   { id: 'contacts', label: 'My Network', icon: Contact },
   { id: 'opportunities', label: 'Market Hub', icon: FolderKanban },
   { id: 'messages', label: 'Messaging', icon: MessageSquare },
+];
+
+const SUPPLIER_NAV_ITEMS = [
+  { id: 'sw-dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'sw-profile', label: 'Company Profile', icon: Building2 },
+  { id: 'sw-products', label: 'Products', icon: Package },
+  { id: 'sw-documents', label: 'Documents', icon: FolderLock },
+  { id: 'opportunities', label: 'Market Hub', icon: FolderKanban },
+  { id: 'sw-contacts', label: 'Contacts', icon: Contact },
+  { id: 'sw-visits', label: 'Visits', icon: CalendarCheck },
+  { id: 'sw-insights', label: 'Insights', icon: ChartColumn },
+];
+
+const COMPANY_MENU = [
+  { id: 'sw-team', label: 'Team', icon: UsersRound },
+  { id: 'sw-plan', label: 'Subscription', icon: Crown },
+  { id: 'sw-settings', label: 'Workspace Settings', icon: Settings },
 ];
 
 export const BuyerNavbar: React.FC<BuyerNavbarProps> = ({
@@ -66,6 +91,7 @@ export const BuyerNavbar: React.FC<BuyerNavbarProps> = ({
   isAuthenticated,
   onLogout,
   onOpenAuthModal,
+  onOpenSupplierOnboarding,
 }) => {
   const [openMenu, setOpenMenu] = useState<OpenMenu>('none');
   const rightRef = useRef<HTMLDivElement>(null);
@@ -73,6 +99,8 @@ export const BuyerNavbar: React.FC<BuyerNavbarProps> = ({
   const personalWorkspace = workspaces.find((w) => w.kind === 'personal');
   const corporateWorkspaces = workspaces.filter((w) => w.kind === 'corporate');
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) ?? personalWorkspace;
+  const companyMode = activeWorkspace?.kind === 'corporate';
+  const navItems = companyMode ? SUPPLIER_NAV_ITEMS : NAV_ITEMS;
 
   const unreadConversations = conversations.filter((c) => c.unreadCount > 0);
   const unreadTotal = unreadConversations.reduce((sum, c) => sum + c.unreadCount, 0);
@@ -112,6 +140,8 @@ export const BuyerNavbar: React.FC<BuyerNavbarProps> = ({
       >
         {ws.kind === 'personal' ? (
           <img src={currentUser.avatarUrl} alt={ws.name} className="w-9 h-9 rounded-full object-cover shrink-0" />
+        ) : ws.logoUrl ? (
+          <img src={ws.logoUrl} alt="" className="w-9 h-9 rounded-lg object-cover shrink-0" />
         ) : (
           <div className="w-9 h-9 rounded-lg bg-slate-900 text-white flex items-center justify-center shrink-0">
             <Building2 className="w-4 h-4" />
@@ -131,15 +161,15 @@ export const BuyerNavbar: React.FC<BuyerNavbarProps> = ({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center justify-between h-16 gap-3">
         <button
           id="brand-logo-btn"
-          onClick={() => setActiveTab('feed')}
+          onClick={() => setActiveTab(companyMode ? 'sw-dashboard' : 'feed')}
           className="flex items-center shrink-0 cursor-pointer"
-          title="Home"
+          title={companyMode ? 'Company dashboard' : 'Home'}
         >
           <SokoLogo size="md" className="shadow-xs" />
         </button>
 
         <nav className="flex items-center gap-0.5 sm:gap-1 overflow-x-auto">
-          {NAV_ITEMS.map((item) => {
+          {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
             const badge = item.id === 'messages' ? unreadTotal : 0;
@@ -161,14 +191,38 @@ export const BuyerNavbar: React.FC<BuyerNavbarProps> = ({
                     </span>
                   )}
                 </div>
-                <span className="hidden lg:inline mt-1">{item.label}</span>
-                {isActive && <span className="absolute bottom-0 left-2 right-2 h-0.5 rounded-t-full bg-blue-700 hidden lg:block" />}
+                <span className={`hidden ${companyMode ? 'xl:inline' : 'lg:inline'} mt-1 whitespace-nowrap`}>{item.label}</span>
+                {isActive && <span className={`absolute bottom-0 left-2 right-2 h-0.5 rounded-t-full bg-blue-700 hidden ${companyMode ? 'xl:block' : 'lg:block'}`} />}
               </button>
             );
           })}
         </nav>
 
         <div ref={rightRef} className="flex items-center gap-1.5 sm:gap-2 shrink-0 relative">
+          {companyMode && (
+            <>
+              <button
+                id="nav-btn-soko-ai"
+                onClick={() => setActiveTab('soko-ai')}
+                title="SOKO AI"
+                className={`p-2 rounded-lg transition-colors cursor-pointer ${activeTab === 'soko-ai' ? 'bg-violet-50 text-violet-700' : 'text-violet-600 hover:bg-violet-50'}`}
+              >
+                <Sparkles className="w-5 h-5" />
+              </button>
+              <button
+                id="nav-btn-messages"
+                onClick={() => setActiveTab('messages')}
+                title="Messaging"
+                className={`relative p-2 rounded-lg transition-colors cursor-pointer ${activeTab === 'messages' ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-100'}`}
+              >
+                <MessageSquare className="w-5 h-5" />
+                {unreadTotal > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 bg-red-600 text-white text-[10px] font-bold px-1.5 rounded-full ring-2 ring-white">{unreadTotal}</span>
+                )}
+              </button>
+            </>
+          )}
+          {!companyMode && (
           <button
             id="nav-btn-academy"
             onClick={() => setActiveTab('academy')}
@@ -186,6 +240,7 @@ export const BuyerNavbar: React.FC<BuyerNavbarProps> = ({
               {rewardPoints ?? 720}
             </span>
           </button>
+          )}
 
           <button
             id="nav-btn-notifications"
@@ -214,7 +269,7 @@ export const BuyerNavbar: React.FC<BuyerNavbarProps> = ({
             <img src={currentUser.avatarUrl} alt={currentUser.name} className="w-8 h-8 rounded-full object-cover" />
             <div className="hidden md:flex flex-col items-start leading-tight text-left">
               <span className="text-xs font-semibold text-slate-900 max-w-[120px] truncate">{currentUser.name}</span>
-              <span className="text-[10px] text-slate-500">Buyer</span>
+              <span className="text-[10px] text-slate-500 max-w-[120px] truncate">{companyMode ? activeWorkspace?.roleLabel : 'Buyer'}</span>
               <span className="text-[10px] text-blue-700 max-w-[120px] truncate">
                 {activeWorkspace?.kind === 'corporate' ? activeWorkspace.name : 'Personal Workspace'}
               </span>
@@ -258,7 +313,7 @@ export const BuyerNavbar: React.FC<BuyerNavbarProps> = ({
           {openMenu === 'profile' && (
             <div
               id="user-profile-dropdown"
-              className="absolute right-0 top-full mt-2 w-72 bg-white rounded-2xl shadow-2xl border border-slate-200 p-2 z-50 text-slate-800 animate-in fade-in slide-in-from-top-2 duration-150"
+              className="absolute right-0 top-full mt-2 w-72 max-h-[calc(100vh-5rem)] overflow-y-auto bg-white rounded-2xl shadow-2xl border border-slate-200 p-2 z-50 text-slate-800 animate-in fade-in slide-in-from-top-2 duration-150"
             >
               <div className="px-2 pt-1 pb-2 flex items-center justify-between">
                 <span className="text-[11px] text-slate-500">Current context</span>
@@ -273,6 +328,38 @@ export const BuyerNavbar: React.FC<BuyerNavbarProps> = ({
                 <>
                   <p className="px-2 pt-3 pb-1.5 text-[10px] font-semibold tracking-wider text-slate-400">WORKSPACES</p>
                   {corporateWorkspaces.map(workspaceRow)}
+                </>
+              )}
+
+              {onOpenSupplierOnboarding && (
+                <button
+                  type="button"
+                  onClick={() => go(onOpenSupplierOnboarding)}
+                  className="mt-1 w-full flex items-center gap-3 px-2 py-2 rounded-lg text-sm text-blue-700 hover:bg-blue-50 transition-colors cursor-pointer"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  Register or join a supplier company
+                </button>
+              )}
+
+              {companyMode && (
+                <>
+                  <div className="my-2 border-t border-slate-100" />
+                  <p className="px-2 pt-1 pb-1.5 text-[10px] font-semibold tracking-wider text-slate-400">COMPANY</p>
+                  {COMPANY_MENU.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => go(() => setActiveTab(item.id))}
+                        className={`w-full flex items-center gap-3 px-2 py-2 rounded-lg text-sm transition-colors cursor-pointer ${activeTab === item.id ? 'bg-slate-100 text-slate-900' : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900'}`}
+                      >
+                        <Icon className={`w-4 h-4 ${item.id === 'sw-plan' ? 'text-[#8a702f]' : 'text-slate-500'}`} />
+                        {item.label}
+                      </button>
+                    );
+                  })}
                 </>
               )}
 

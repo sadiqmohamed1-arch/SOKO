@@ -123,7 +123,7 @@ export interface BuyerSupplier {
   externalSourceFields?: string[];
 }
 
-const IMG = {
+export const IMG = {
   waterproofing: 'https://images.pexels.com/photos/31762405/pexels-photo-31762405.jpeg?auto=compress&cs=tinysrgb&h=650&w=940',
   membrane: 'https://images.pexels.com/photos/39238328/pexels-photo-39238328.jpeg?auto=compress&cs=tinysrgb&h=650&w=940',
   rebar: 'https://images.pexels.com/photos/46167/iron-rods-reinforcing-bars-rods-steel-bars-46167.jpeg?auto=compress&cs=tinysrgb&h=650&w=940',

@@ -12,6 +12,7 @@ import {
   InboxItem,
   MarketHubStore,
   MarketOpportunity,
+  MarketWorkspace,
   OpportunityView,
   OwnerCampaignView,
   PlanId,
@@ -53,8 +54,9 @@ export const resetMarketStore = () => {
 
 export type AppRole = keyof typeof WORKSPACES;
 
-export const actorFor = (store: MarketHubStore, role: AppRole): Actor => {
-  const workspace = WORKSPACES[role];
+export const actorFor = (store: MarketHubStore, role: AppRole): Actor => actorForWorkspace(store, WORKSPACES[role]);
+
+export const actorForWorkspace = (store: MarketHubStore, workspace: MarketWorkspace): Actor => {
   // A personal workspace can never carry a company plan, whatever is stored.
   const plan: PlanId =
     workspace.kind === 'personal_buyer' ? 'free_buyer' : workspace.kind === 'soko_admin' ? 'platform' : store.workspacePlans[workspace.id] ?? UPGRADE_PATHS[workspace.kind][0];

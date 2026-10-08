@@ -3,8 +3,8 @@ import { Building2, Compass, Crown, ListChecks, Lock, Megaphone, Plus } from 'lu
 import { UserProfile } from '../../types';
 import { BUYER_SUPPLIERS, supplierLocation } from '../../data/buyerSuppliers';
 import { PLANS } from '../../data/marketHubCatalog';
-import { AppRole, actorFor, campaignKindFor, campaignPermission, draftInputOf, inboxFor, listOpportunities, loadMarketStore, saveMarketStore, toggleSaveOpportunity } from '../../data/marketHubService';
-import { CampaignDraftInput, CampaignKind, MarketHubStore, OpportunityView, ServiceResult } from '../../data/marketHubTypes';
+import { AppRole, actorFor, actorForWorkspace, campaignKindFor, campaignPermission, draftInputOf, inboxFor, listOpportunities, loadMarketStore, saveMarketStore, toggleSaveOpportunity } from '../../data/marketHubService';
+import { CampaignDraftInput, CampaignKind, MarketHubStore, MarketWorkspace, OpportunityView, PlanId, ServiceResult } from '../../data/marketHubTypes';
 import { ProfileDialog } from '../ProfileDialog';
 import { Toast, VerifiedCompanyBadge, btnPrimary } from '../NetworkShared';
 import { CampaignCenter, CampaignNav } from './CampaignCenter';
@@ -29,9 +29,11 @@ interface MarketHubViewProps {
   onNavigateToTab: (tab: string) => void;
   onAskSokoAi: (query: string) => void;
   onSwitchRole?: (role: AppRole) => void;
+  companyWorkspace?: MarketWorkspace;
+  onPlanChange?: (plan: PlanId) => void;
 }
 
-export const MarketHubView: React.FC<MarketHubViewProps> = ({ currentUser, onNavigateToTab, onAskSokoAi, onSwitchRole }) => {
+export const MarketHubView: React.FC<MarketHubViewProps> = ({ currentUser, onNavigateToTab, onAskSokoAi, onSwitchRole, companyWorkspace, onPlanChange }) => {
   const [store, setStore] = useState<MarketHubStore>(loadMarketStore);
   const [dest, setDest] = useState<Destination>('explore');
   const [explore, setExplore] = useState<ExploreState>(EMPTY_EXPLORE);
@@ -44,7 +46,7 @@ export const MarketHubView: React.FC<MarketHubViewProps> = ({ currentUser, onNav
   const [toast, setToast] = useState<string | null>(null);
 
   const role = (['buyer', 'contractor', 'supplier', 'admin'].includes(currentUser.role) ? currentUser.role : 'buyer') as AppRole;
-  const actor = useMemo(() => actorFor(store, role), [store, role]);
+  const actor = useMemo(() => (companyWorkspace ? actorForWorkspace(store, companyWorkspace) : actorFor(store, role)), [store, role, companyWorkspace]);
   const ws = actor.workspace;
 
   const notify = (m: string) => {
@@ -57,13 +59,15 @@ export const MarketHubView: React.FC<MarketHubViewProps> = ({ currentUser, onNav
       notify(r.error);
       return false;
     }
+    const nextPlan = r.store.workspacePlans[ws.id];
+    if (companyWorkspace && nextPlan && nextPlan !== store.workspacePlans[ws.id]) onPlanChange?.(nextPlan);
     setStore(r.store);
     saveMarketStore(r.store);
     if (success) notify(typeof success === 'function' ? success(r.value) : success);
     return true;
   };
 
-  const hub: Hub = { store, actor, run, notify, askAi: onAskSokoAi, openSupplier: setSupplierId, switchWorkspace: onSwitchRole };
+  const hub: Hub = { store, actor, run, notify, askAi: onAskSokoAi, openSupplier: setSupplierId, switchWorkspace: companyWorkspace ? undefined : onSwitchRole };
 
   const all = useMemo(() => listOpportunities(store, actor), [store, actor]);
   const byId = (id: string | null) => all.find((o) => o.id === id);
