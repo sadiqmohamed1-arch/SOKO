@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Building2, ChartColumn, Paperclip, Pencil, Rocket, Star } from 'lucide-react';
+import { ArrowLeft, Building2, Lock, Paperclip, Pause, Pencil, Play, Rocket, Star } from 'lucide-react';
 import { BUYER_SUPPLIERS } from '../../data/buyerSuppliers';
 import { supplierRecipient } from '../../data/marketHubCatalog';
 import {
@@ -10,13 +10,16 @@ import {
   launchCampaign,
   launchesInLast7Days,
   moderateCampaign,
+  setCampaignPaused,
   submitCampaignForReview,
   updateResponse,
 } from '../../data/marketHubService';
 import { CampaignResponse, OwnerCampaignView } from '../../data/marketHubTypes';
 import { ProfileDialog } from '../ProfileDialog';
 import { ConfirmDialog, StatusPill, VerifiedCompanyBadge, btnGhost, btnPrimary, btnSecondary } from '../NetworkShared';
-import { CampaignStatusPill, DemoNote, Field, Hub, ProgressRow, daysAgo, fmtDate } from './MarketHubShared';
+import { CampaignStatusPill, DemoNote, Field, Hub, KpiCard, daysAgo, fmtDate } from './MarketHubShared';
+import { pct, responsesOf } from './CampaignDashboard';
+import { ActivityTimeline, Breakdown, Funnel, InsightCard, tally } from './CampaignInsights';
 
 export const AVAIL_LABEL: Record<CampaignResponse['availability'], string> = {
   available: 'Available from stock',
@@ -30,30 +33,6 @@ const small = '!min-h-8 !px-2.5 text-xs';
 const directoryIdFor = (responderId: string) => {
   const id = supplierRecipient(responderId)?.supplierId;
   return id && BUYER_SUPPLIERS.some((s) => s.id === id) ? id : undefined;
-};
-
-const ResponseActivity: React.FC<{ responses: CampaignResponse[] }> = ({ responses }) => {
-  const days = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    d.setDate(d.getDate() - (6 - i));
-    return d;
-  });
-  const counts = days.map((d) => responses.filter((r) => new Date(r.at).toDateString() === d.toDateString()).length);
-  const max = Math.max(1, ...counts);
-  return (
-    <div>
-      <p className="text-xs font-semibold text-slate-700">Responses, last 7 days</p>
-      <div className="mt-2 flex items-end gap-1.5 h-20">
-        {counts.map((c, i) => (
-          <div key={i} className="flex-1 flex flex-col items-center gap-1">
-            <div className="w-full rounded-t-md bg-blue-600/85 transition-all duration-700" style={{ height: `${Math.max(4, (c / max) * 64)}px`, opacity: c ? 1 : 0.15 }} title={`${c} responses`} />
-            <span className="text-[10px] text-slate-400">{days[i].toLocaleDateString('en-GB', { weekday: 'narrow' })}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
 };
 
 const ResponseDialog: React.FC<{ r: CampaignResponse; onClose: () => void; footer: React.ReactNode }> = ({ r, onClose, footer }) => (
@@ -82,21 +61,76 @@ const ResponseDialog: React.FC<{ r: CampaignResponse; onClose: () => void; foote
   </ProfileDialog>
 );
 
+const TargetRow: React.FC<{ label: string; values?: string[]; fallback?: string }> = ({ label, values, fallback = 'Any' }) => (
+  <div className="grid grid-cols-[110px_1fr] gap-3 py-2 text-xs">
+    <dt className="font-semibold text-slate-500">{label}</dt>
+    <dd className="flex flex-wrap gap-1">
+      {values?.length ? (
+        values.map((x) => (
+          <span key={x} className="px-2 py-0.5 rounded-md bg-slate-100 font-semibold text-slate-700">
+            {x}
+          </span>
+        ))
+      ) : (
+        <span className="text-slate-500">{fallback}</span>
+      )}
+    </dd>
+  </div>
+);
+
+const AudienceSummary: React.FC<{ view: OwnerCampaignView }> = ({ view }) => {
+  const c = view.campaign;
+  const s = c.supplierAudience;
+  const b = c.buyerAudience;
+  return (
+    <>
+      <p className="text-xs text-slate-500">
+        {c.kind === 'sourcing' ? 'Relevant SOKO suppliers matching' : 'Opted-in SOKO buyers and companies matching'} these filters.{' '}
+        <span className="font-semibold text-slate-900 tabular-nums">{view.metrics.eligible}</span> eligible.
+      </p>
+      <dl className="mt-2 divide-y divide-slate-100">
+        {s && (
+          <>
+            <TargetRow label="Categories" values={s.categories} />
+            <TargetRow label="Subcategories" values={s.subcategories} />
+            <TargetRow label="Supplier types" values={s.supplierTypes} />
+            <TargetRow label="Locations" values={s.emirates} fallback="All emirates" />
+            <TargetRow label="Verification" values={s.verifiedOnly ? ['Verified suppliers only'] : []} fallback="All suppliers" />
+            {s.keywords && <TargetRow label="Keywords" values={[s.keywords]} />}
+          </>
+        )}
+        {b && (
+          <>
+            <TargetRow label="Following" values={b.categories} />
+            <TargetRow label="Locations" values={b.emirates} fallback="All emirates" />
+            <TargetRow label="Roles" values={b.roles} />
+            <TargetRow label="Company types" values={b.companyTypes} />
+            {b.productInterests && <TargetRow label="Interests" values={[b.productInterests]} />}
+          </>
+        )}
+      </dl>
+      <p className="mt-3 flex items-start gap-1.5 text-[11px] text-slate-500">
+        <Lock className="w-3.5 h-3.5 mt-px shrink-0 text-slate-400" />
+        Recipients are matched and reached by SOKO. Names, emails and phone numbers are never shown to senders and cannot be exported.
+      </p>
+    </>
+  );
+};
+
 export const CampaignDetail: React.FC<{
   hub: Hub;
   view: OwnerCampaignView;
   focusResponses?: boolean;
   onBack: () => void;
   onEdit: () => void;
-  onAnalytics: () => void;
-}> = ({ hub, view, focusResponses, onBack, onEdit, onAnalytics }) => {
+}> = ({ hub, view, focusResponses, onBack, onEdit }) => {
   const { campaign: c, metrics: m, disclosedInterests } = view;
   const [openResponse, setOpenResponse] = useState<string | null>(null);
   const responsesRef = useRef<HTMLElement>(null);
   useEffect(() => {
     if (focusResponses) responsesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [focusResponses]);
-  const [confirm, setConfirm] = useState<'launch' | 'close' | 'discard' | null>(null);
+  const [confirm, setConfirm] = useState<'launch' | 'close' | 'discard' | 'pause' | null>(null);
   const account = creditAccount(hub.store, hub.actor);
   const resp = c.responses.find((r) => r.id === openResponse);
   const sourcing = c.kind === 'sourcing';
@@ -134,7 +168,7 @@ export const CampaignDetail: React.FC<{
     <div className="space-y-4 animate-[fadeIn_0.2s_ease-out]">
       <button type="button" onClick={onBack} className={`${btnGhost} -ml-3`}>
         <ArrowLeft className="w-4 h-4" />
-        My Campaigns
+        Campaigns
       </button>
 
       <div className="rounded-2xl border border-slate-200 bg-white p-5">
@@ -154,12 +188,6 @@ export const CampaignDetail: React.FC<{
             {c.reviewNote && <p className="mt-2 text-xs rounded-lg bg-amber-50 border border-amber-200 text-amber-900 px-3 py-2">SOKO review note: {c.reviewNote}</p>}
           </div>
           <div className="flex flex-wrap gap-2 shrink-0">
-            {c.launchedAt && (
-              <button type="button" onClick={onAnalytics} className={btnGhost}>
-                <ChartColumn className="w-4 h-4" />
-                Analytics
-              </button>
-            )}
             {(c.status === 'draft' || c.status === 'rejected') && (
               <>
                 {c.status === 'draft' && (
@@ -194,6 +222,18 @@ export const CampaignDetail: React.FC<{
               </button>
             )}
             {c.status === 'active' && (
+              <button type="button" onClick={() => setConfirm('pause')} className={btnSecondary}>
+                <Pause className="w-4 h-4" />
+                Pause
+              </button>
+            )}
+            {c.status === 'paused' && (
+              <button type="button" onClick={() => hub.run(setCampaignPaused(hub.store, hub.actor, c.id, false), 'Campaign resumed')} className={btnPrimary}>
+                <Play className="w-4 h-4" />
+                Resume
+              </button>
+            )}
+            {(c.status === 'active' || c.status === 'paused') && (
               <button type="button" onClick={() => setConfirm('close')} className={btnSecondary}>
                 Close Campaign
               </button>
@@ -201,38 +241,35 @@ export const CampaignDetail: React.FC<{
           </div>
         </div>
         {c.status === 'scheduled' && c.scheduledFor && <p className="mt-3 text-xs text-slate-500">Scheduled to deliver on {fmtDate(c.scheduledFor)}.</p>}
+        {c.status === 'paused' && <p className="mt-3 text-xs text-amber-800">Paused: recipients cannot see or respond to this campaign until you resume it. Responses already received stay available.</p>}
         {c.status === 'suspended' && <p className="mt-3 text-xs text-red-700">This campaign was suspended by SOKO moderation and is no longer visible to recipients.</p>}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold text-slate-900">Campaign performance</h3>
-            {m.includesDemoValues && <StatusPill tone="slate">Includes demo values</StatusPill>}
-          </div>
-          <ProgressRow label="Eligible audience" value={m.eligible} of={m.eligible} tone="slate" />
-          <ProgressRow label="Delivered" value={m.delivered} of={m.eligible} />
-          <ProgressRow label="Viewed" value={m.viewed} of={m.delivered} />
-          <ProgressRow label="Clicked" value={m.clicked} of={m.delivered} />
-          <ProgressRow label="Interested" value={m.interested} of={m.delivered} tone="gold" />
-          {sourcing && <ProgressRow label="Responded" value={m.responded} of={m.delivered} tone="gold" />}
-          {sourcing && <ProgressRow label="Shortlisted" value={m.shortlisted} of={Math.max(m.responded, 1)} tone="green" />}
-          <DemoNote>
-            "Viewed" counts only recorded inbox views{m.includesDemoValues ? ' plus a labelled demo baseline' : ''}. Recipients who have not responded are shown as totals only — their identities are never revealed.
-          </DemoNote>
-        </section>
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 space-y-4">
-          <dl className="grid grid-cols-2 gap-4">
-            <Field label="Response rate" value={`${m.responseRate}%`} />
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <KpiCard label="Delivered" value={c.launchedAt ? m.delivered : '—'} hint={`of ${m.eligible} eligible`} />
+        <KpiCard label="View Rate" value={c.launchedAt ? `${pct(m.viewed, m.delivered)}%` : '—'} hint={`${m.viewed} viewed ÷ delivered`} />
+        <KpiCard label="Response Rate" value={c.launchedAt ? `${pct(responsesOf(view), m.delivered)}%` : '—'} hint={sourcing ? `${m.responded} responses ÷ delivered` : `${responsesOf(view)} shared identity ÷ delivered`} />
+        <KpiCard label="Interested" value={m.interested} hint={`${disclosedInterests.length} shared identity`} />
+        <KpiCard label="Credits Consumed" value={m.creditsUsed} hint={`${c.creditsRequired} estimated · demo credits`} />
+      </div>
+      {m.includesDemoValues && <DemoNote>Simulated: this campaign includes a labelled demo baseline and sample responses. They do not represent real performance.</DemoNote>}
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <InsightCard title="Audience Targeting">
+          <AudienceSummary view={view} />
+        </InsightCard>
+        <InsightCard title="Delivery Funnel">
+          {c.launchedAt ? <Funnel v={view} /> : <p className="text-sm text-slate-500">The funnel appears after SOKO approves and delivers this campaign. Estimated eligible audience: {m.eligible}.</p>}
+          <dl className="mt-4 grid grid-cols-3 gap-3">
             <Field label="Declined" value={String(m.declined)} />
             <Field label="Duration" value={m.durationDays ? `${m.durationDays} days` : 'Not launched'} />
-            <Field label="Credits used" value={`${m.creditsUsed} of ${c.creditsRequired} est.`} />
-            {c.frequencyCapped ? <Field label="Held by frequency limit" value={`${c.frequencyCapped} recipients`} /> : null}
+            <Field label="Deadline" value={fmtDate(c.responseDeadline)} />
+            {c.frequencyCapped ? <Field label="Held by weekly limit" value={`${c.frequencyCapped} recipients`} /> : null}
             {m.reports ? <Field label="Spam reports" value={String(m.reports)} /> : null}
           </dl>
-          {sourcing && <ResponseActivity responses={c.responses} />}
-        </section>
+        </InsightCard>
       </div>
+
 
       {sourcing ? (
         <section ref={responsesRef} className="rounded-2xl border border-slate-200 bg-white overflow-hidden scroll-mt-4">
@@ -290,20 +327,41 @@ export const CampaignDetail: React.FC<{
         </section>
       ) : null}
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5">
-        <h3 className="text-sm font-semibold text-slate-900">Interested recipients who shared their identity</h3>
+      <section ref={sourcing ? undefined : responsesRef} className="rounded-2xl border border-slate-200 bg-white p-5 scroll-mt-4">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold text-slate-900">
+            Interested Recipients <span className="text-slate-400 tabular-nums">{m.interested}</span>
+          </h3>
+          <span className="text-[11px] text-slate-500">{m.interested - disclosedInterests.length > 0 ? `${m.interested - disclosedInterests.length} counted anonymously` : ''}</span>
+        </div>
         {disclosedInterests.length ? (
-          <ul className="mt-2 flex flex-wrap gap-2">
+          <ul className="mt-3 divide-y divide-slate-100">
             {disclosedInterests.map((d, i) => (
-              <li key={i} className="px-2.5 py-1 rounded-full bg-slate-100 text-xs font-semibold text-slate-700">
-                {d.companyName}
+              <li key={i} className="flex items-center justify-between gap-3 py-2 text-sm">
+                <span className="font-semibold text-slate-800">{d.companyName}</span>
+                <span className="text-xs text-slate-500">Shared identity · {daysAgo(d.at)}</span>
               </li>
             ))}
           </ul>
         ) : (
-          <p className="mt-1 text-sm text-slate-500">None yet. Other interested recipients are counted anonymously.</p>
+          <p className="mt-1 text-sm text-slate-500">None have shared their identity yet. Interested recipients are counted anonymously unless they choose to share.</p>
         )}
+        {!sourcing && disclosedInterests.length > 0 && <p className="mt-2 text-[11px] text-slate-400">Follow up through SOKO messaging. Contact details are not shared with campaign senders.</p>}
       </section>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <InsightCard title="Campaign Activity" className="lg:col-span-1">
+          <ActivityTimeline v={view} />
+        </InsightCard>
+        <InsightCard title="Responses by Category">
+          <Breakdown rows={sourcing ? tally(c.responses.map((r) => r.category)) : []} empty={sourcing ? 'No responses yet.' : 'Promotional campaigns collect interest rather than structured responses.'} />
+        </InsightCard>
+        <InsightCard title="Responses by Location">
+          <Breakdown rows={sourcing ? tally(c.responses.map((r) => r.location)) : []} empty={sourcing ? 'No responses yet.' : 'Location breakdowns are available for sourcing campaign responses.'} />
+        </InsightCard>
+      </div>
+
+      <DemoNote>Views are counted only when a recipient opens the campaign in their Campaign Inbox. Delivery, credits and SOKO review are simulated in this prototype.</DemoNote>
 
       {resp && (
         <ResponseDialog
@@ -347,6 +405,15 @@ export const CampaignDetail: React.FC<{
           </dl>
           <p className="px-5 pb-4 text-xs text-slate-500">Recipients already at their weekly campaign limit are held back and not charged.</p>
         </ProfileDialog>
+      )}
+      {confirm === 'pause' && (
+        <ConfirmDialog
+          title="Pause campaign?"
+          message="Recipients will not see this campaign or be able to respond until you resume it. No extra credits are used."
+          confirmLabel="Pause Campaign"
+          onConfirm={() => hub.run(setCampaignPaused(hub.store, hub.actor, c.id, true), 'Campaign paused')}
+          onClose={() => setConfirm(null)}
+        />
       )}
       {confirm === 'close' && (
         <ConfirmDialog

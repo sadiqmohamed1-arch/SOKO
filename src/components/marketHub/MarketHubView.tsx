@@ -18,7 +18,7 @@ type Destination = 'explore' | 'campaigns' | 'activity';
 
 const DESTINATIONS: { id: Destination; label: string; caption: string; icon: typeof Compass }[] = [
   { id: 'explore', label: 'Explore', caption: 'Requirements, supply, projects', icon: Compass },
-  { id: 'campaigns', label: 'Campaign Center', caption: 'Dashboard, inbox and credits', icon: Megaphone },
+  { id: 'campaigns', label: 'Campaign Center', caption: 'Dashboard, campaigns, inbox', icon: Megaphone },
   { id: 'activity', label: 'My Activity', caption: 'Posts, interests and saved', icon: ListChecks },
 ];
 
@@ -124,7 +124,8 @@ export const MarketHubView: React.FC<MarketHubViewProps> = ({ currentUser, onNav
       </header>
 
       <nav aria-label="Market Hub" className="mt-5 grid grid-cols-3 gap-2 p-1.5 rounded-2xl bg-slate-100">
-        {DESTINATIONS.map((d) => {
+        {DESTINATIONS.map((base) => {
+          const d = base.id === 'campaigns' && ws.kind === 'personal_buyer' ? { ...base, label: 'Campaign Inbox', caption: 'Requirements and offers for you' } : base;
           const on = dest === d.id;
           const Icon = d.icon;
           return (
@@ -180,7 +181,7 @@ export const MarketHubView: React.FC<MarketHubViewProps> = ({ currentUser, onNav
           />
         )}
         {dest === 'activity' && (
-          <MyActivityTab hub={hub} list={all} onOpen={(o) => setOpenOpp(o.id)} onPost={() => setPosting(true)} onOpenInbox={() => openCampaigns({ section: 'inbox' })} />
+          <MyActivityTab hub={hub} list={all} onOpen={(o) => setOpenOpp(o.id)} onPost={() => setPosting(true)} onOpenCampaign={(section, id) => openCampaigns({ section, id })} />
         )}
       </div>
 

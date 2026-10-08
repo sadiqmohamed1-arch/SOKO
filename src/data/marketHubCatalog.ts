@@ -148,7 +148,7 @@ export const UPGRADE_PATHS: Record<MarketWorkspace['kind'], PlanId[]> = {
 export const DEFAULT_PLANS: Record<string, PlanId> = {
   ws_personal_buyer: 'free_buyer',
   ws_apex_gc: 'contractor_premium',
-  ws_apex_castings: 'free_supplier',
+  ws_apex_castings: 'supplier_pro',
   ws_meridian: 'contractor_premium',
   ws_sup_al_mesbah: 'supplier_pro',
   ws_sup_emirates_steel: 'supplier_pro',
@@ -315,6 +315,23 @@ const generatedBuyers = (): BuyerRecipient[] => {
 };
 
 export const BUYER_POOL: BuyerRecipient[] = generatedBuyers();
+
+const BUYER_COMPANY_NAMES = [
+  'Gulf Horizon Contracting',
+  'Al Rawdah Building Works',
+  'Coastline Developments',
+  'Falcon Ridge Construction',
+  'Desert Palm Engineering',
+  'Marina Gate Contractors',
+  'Oasis Fit-Out Group',
+  'Northern Emirates Builders',
+];
+
+// Shown only when a pool buyer consented to share identity with the sender.
+export const buyerCompanyName = (id: string) => {
+  const n = /^pool_buyer_(\d+)$/.exec(id)?.[1];
+  return n ? BUYER_COMPANY_NAMES[Number(n) % BUYER_COMPANY_NAMES.length] : undefined;
+};
 
 export const DEFAULT_BUYER_PREFS: Record<string, BuyerPreferences> = {
   ws_personal_buyer: {

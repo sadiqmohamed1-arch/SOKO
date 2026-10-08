@@ -220,9 +220,9 @@ const DetailDialog: React.FC<{ hub: Hub; item: InboxItem; onClose: () => void; a
   );
 };
 
-export const CampaignInbox: React.FC<{ hub: Hub }> = ({ hub }) => {
+export const CampaignInbox: React.FC<{ hub: Hub; initialOpen?: string | null }> = ({ hub, initialOpen }) => {
   const [tab, setTab] = useState<InboxTab>('all');
-  const [open, setOpen] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(initialOpen ?? null);
   const [dialog, setDialog] = useState<{ type: 'respond' | 'interest' | 'report'; id: string } | null>(null);
   const items = useMemo(() => inboxFor(hub.store, hub.actor), [hub.store, hub.actor]);
   const prefs = promoPrefs(hub.store, hub.actor);

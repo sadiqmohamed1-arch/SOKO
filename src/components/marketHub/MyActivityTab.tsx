@@ -1,51 +1,145 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ChevronRight, ClipboardList } from 'lucide-react';
 import { opportunityTypeLabel } from '../../data/marketHubCatalog';
-import { inboxFor, myResponse } from '../../data/marketHubService';
+import { inboxFor, myResponse, ownerCampaigns } from '../../data/marketHubService';
 import { OpportunityView } from '../../data/marketHubTypes';
 import { StatusPill, btnPrimary } from '../NetworkShared';
-import { EmptyState, Hub, daysAgo, opportunityStatus } from './MarketHubShared';
+import { CampaignSection } from './CampaignCenter';
+import { responsesOf } from './CampaignDashboard';
+import { EmptyState, Hub, daysAgo } from './MarketHubShared';
 
-const Row: React.FC<{ o: OpportunityView; meta: string; onOpen: () => void; badge?: React.ReactNode }> = ({ o, meta, onOpen, badge }) => {
-  const s = opportunityStatus(o);
-  return (
-    <li>
-      <button type="button" onClick={onOpen} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-slate-50 transition-colors cursor-pointer">
-        <span className="min-w-0 flex-1">
-          <span className="block text-sm font-semibold text-slate-900 truncate">{o.title}</span>
-          <span className="block text-xs text-slate-500 truncate">
-            {opportunityTypeLabel(o.type)} · {o.category} · {o.location} · {meta}
-          </span>
-        </span>
-        {badge ?? <StatusPill tone={s.tone}>{s.label}</StatusPill>}
-        <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
-      </button>
-    </li>
-  );
+const STATUSES = ['New Responses', 'Awaiting Review', 'Connection Requested', 'Connected', 'Closed'] as const;
+type ActivityStatus = (typeof STATUSES)[number] | 'Open';
+
+const TONE: Record<ActivityStatus, 'blue' | 'amber' | 'gold' | 'slate'> = {
+  'New Responses': 'gold',
+  'Awaiting Review': 'amber',
+  'Connection Requested': 'blue',
+  Connected: 'blue',
+  Closed: 'slate',
+  Open: 'slate',
 };
 
-const Section: React.FC<{ title: string; count: number; empty: string; children: React.ReactNode }> = ({ title, count, empty, children }) => (
+interface Item {
+  id: string;
+  title: string;
+  meta: string;
+  status: ActivityStatus;
+  note?: string;
+  open: () => void;
+}
+
+const postedStatus = (o: OpportunityView): ActivityStatus => {
+  const st = (o.interests ?? []).map((i) => i.status);
+  if (o.status === 'closed') return 'Closed';
+  if (st.includes('interested')) return 'New Responses';
+  if (st.includes('connection_requested')) return 'Connection Requested';
+  if (st.includes('under_review')) return 'Awaiting Review';
+  if (st.includes('connected')) return 'Connected';
+  return 'Open';
+};
+
+const interestStatus = (o: OpportunityView): ActivityStatus => {
+  const s = o.myInterest?.status;
+  if (o.status === 'closed' || s === 'declined') return 'Closed';
+  if (s === 'connected') return 'Connected';
+  if (s === 'connection_requested') return 'Connection Requested';
+  return 'Awaiting Review';
+};
+
+const oppMeta = (o: OpportunityView, extra: string) => `${opportunityTypeLabel(o.type)} · ${o.category} · ${o.location} · ${extra}`;
+
+const Section: React.FC<{ title: string; items: Item[]; total: number; empty: string }> = ({ title, items, total, empty }) => (
   <section className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
     <h2 className="px-4 py-3 border-b border-slate-100 text-sm font-semibold text-slate-900">
-      {title} <span className="ml-1 text-slate-400 tabular-nums">{count}</span>
+      {title} <span className="ml-1 text-slate-400 tabular-nums">{items.length}</span>
     </h2>
-    {count ? <ul className="divide-y divide-slate-100">{children}</ul> : <p className="px-4 py-6 text-sm text-slate-500">{empty}</p>}
+    {items.length ? (
+      <ul className="divide-y divide-slate-100">
+        {items.map((it) => (
+          <li key={it.id}>
+            <button type="button" onClick={it.open} className="group w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-slate-50 transition-colors cursor-pointer">
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold text-slate-900 leading-snug">{it.title}</span>
+                <span className="block mt-0.5 text-xs text-slate-500 leading-relaxed">{it.meta}</span>
+                {it.note && <span className="block mt-0.5 text-[11px] font-semibold text-slate-600">{it.note}</span>}
+              </span>
+              <StatusPill tone={TONE[it.status]}>{it.status}</StatusPill>
+              <ChevronRight className="w-4 h-4 text-slate-300 shrink-0 transition-transform group-hover:translate-x-0.5" />
+            </button>
+          </li>
+        ))}
+      </ul>
+    ) : (
+      <p className="px-4 py-6 text-sm text-slate-500">{total ? 'Nothing here matches this status.' : empty}</p>
+    )}
   </section>
 );
 
-export const MyActivityTab: React.FC<{ hub: Hub; list: OpportunityView[]; onOpen: (o: OpportunityView) => void; onPost: () => void; onOpenInbox: () => void }> = ({
-  hub,
-  list,
-  onOpen,
-  onPost,
-  onOpenInbox,
-}) => {
-  const mine = list.filter((o) => o.isMine);
-  const interests = list.filter((o) => o.myInterest);
-  const saved = list.filter((o) => o.saved);
-  const responded = inboxFor(hub.store, hub.actor).filter((i) => i.responded || i.interested);
+export const MyActivityTab: React.FC<{
+  hub: Hub;
+  list: OpportunityView[];
+  onOpen: (o: OpportunityView) => void;
+  onPost: () => void;
+  onOpenCampaign: (section: CampaignSection, id: string) => void;
+}> = ({ hub, list, onOpen, onPost, onOpenCampaign }) => {
+  const [filter, setFilter] = useState<ActivityStatus | 'All'>('All');
 
-  if (!mine.length && !interests.length && !saved.length && !responded.length)
+  const posted: Item[] = list
+    .filter((o) => o.isMine)
+    .map((o) => {
+      const n = (o.interests ?? []).length;
+      const fresh = (o.interests ?? []).filter((i) => i.status === 'interested').length;
+      return { id: o.id, title: o.title, meta: oppMeta(o, `${n} ${n === 1 ? 'response' : 'responses'}`), note: fresh ? `${fresh} new to review` : undefined, status: postedStatus(o), open: () => onOpen(o) };
+    });
+  const interests: Item[] = list
+    .filter((o) => o.myInterest)
+    .map((o) => ({ id: o.id, title: o.title, meta: oppMeta(o, o.publisherDisplay), status: interestStatus(o), open: () => onOpen(o) }));
+  const saved: Item[] = list
+    .filter((o) => o.saved)
+    .map((o) => ({ id: o.id, title: o.title, meta: oppMeta(o, `Posted ${daysAgo(o.postedAt)}`), status: o.status === 'closed' ? 'Closed' : 'Open', open: () => onOpen(o) }));
+
+  const today = new Date().toISOString().slice(0, 10);
+  const sent: Item[] = inboxFor(hub.store, hub.actor)
+    .filter((i) => i.responded || i.interested)
+    .map((i) => {
+      const r = myResponse(hub.store, hub.actor, i.id);
+      const status: ActivityStatus = r?.connectRequested ? 'Connection Requested' : i.expiry && i.expiry < today ? 'Closed' : 'Awaiting Review';
+      return {
+        id: `in_${i.id}`,
+        title: i.title,
+        meta: `${i.typeLabel} · ${i.senderDisplay} · ${r ? 'You responded' : 'You shared interest'}`,
+        note: r?.status === 'Shortlisted' ? 'Shortlisted by the sender' : undefined,
+        status,
+        open: () => onOpenCampaign('inbox', i.id),
+      };
+    });
+  const received: Item[] = ownerCampaigns(hub.store, hub.actor)
+    .filter((v) => v.campaign.launchedAt && responsesOf(v) > 0)
+    .map((v) => {
+      const n = responsesOf(v);
+      const shortlisted = v.metrics.shortlisted;
+      const closed = ['completed', 'suspended'].includes(v.campaign.status);
+      return {
+        id: `own_${v.campaign.id}`,
+        title: v.campaign.title,
+        meta: `Your campaign · ${n} ${v.campaign.kind === 'sourcing' ? (n === 1 ? 'response' : 'responses') : 'interested'} · ${v.metrics.viewed} viewed`,
+        note: shortlisted ? `${shortlisted} shortlisted` : undefined,
+        status: closed ? 'Closed' : 'New Responses',
+        open: () => onOpenCampaign('campaigns', v.campaign.id),
+      };
+    });
+  const campaignItems = [...received, ...sent];
+
+  const groups = [
+    { title: 'Posted opportunities', items: posted, empty: 'You have not posted any opportunities yet.' },
+    { title: 'My interests', items: interests, empty: 'Express interest in an opportunity to track it here.' },
+    { title: 'Saved opportunities', items: saved, empty: 'Save opportunities to come back to them later.' },
+    { title: 'Campaign responses', items: campaignItems, empty: 'Responses to your campaigns, and campaigns you respond to, appear here.' },
+  ];
+  const everything = groups.flatMap((g) => g.items);
+
+  if (!everything.length)
     return (
       <EmptyState
         icon={<ClipboardList className="w-5 h-5" />}
@@ -59,51 +153,35 @@ export const MyActivityTab: React.FC<{ hub: Hub; list: OpportunityView[]; onOpen
       />
     );
 
+  const match = (it: Item) => filter === 'All' || it.status === filter;
+  const count = (s: ActivityStatus | 'All') => (s === 'All' ? everything.length : everything.filter((it) => it.status === s).length);
+
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      <Section title="Posted by you" count={mine.length} empty="You have not posted any opportunities yet.">
-        {mine.map((o) => {
-          const pending = (o.interests ?? []).filter((i) => i.status === 'interested' || i.status === 'connection_requested').length;
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Filter by status">
+        {(['All', ...STATUSES] as const).map((s) => {
+          const on = filter === s;
           return (
-            <Row
-              key={o.id}
-              o={o}
-              meta={`${(o.interests ?? []).length} responses`}
-              onOpen={() => onOpen(o)}
-              badge={pending ? <StatusPill tone="amber">{pending} to review</StatusPill> : <StatusPill tone={o.status === 'open' ? 'blue' : 'slate'}>{o.status === 'open' ? 'Open' : 'Closed'}</StatusPill>}
-            />
+            <button
+              key={s}
+              type="button"
+              aria-pressed={on}
+              onClick={() => setFilter(s)}
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold border transition-colors cursor-pointer ${
+                on ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-900'
+              }`}
+            >
+              {s}
+              <span className={`tabular-nums ${on ? 'text-slate-300' : 'text-slate-400'}`}>{count(s)}</span>
+            </button>
           );
         })}
-      </Section>
-      <Section title="Your interests" count={interests.length} empty="Express interest in an opportunity to track it here.">
-        {interests.map((o) => (
-          <Row key={o.id} o={o} meta={o.publisherDisplay} onOpen={() => onOpen(o)} />
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        {groups.map((g) => (
+          <Section key={g.title} title={g.title} items={g.items.filter(match)} total={g.items.length} empty={g.empty} />
         ))}
-      </Section>
-      <Section title="Saved opportunities" count={saved.length} empty="Save opportunities to come back to them later.">
-        {saved.map((o) => (
-          <Row key={o.id} o={o} meta={`Posted ${daysAgo(o.postedAt)}`} onOpen={() => onOpen(o)} />
-        ))}
-      </Section>
-      <Section title="Campaign responses" count={responded.length} empty="Campaigns you respond to from your Campaign Inbox appear here.">
-        {responded.map((i) => {
-          const r = myResponse(hub.store, hub.actor, i.id);
-          return (
-            <li key={i.id}>
-              <button type="button" onClick={onOpenInbox} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-slate-50 transition-colors cursor-pointer">
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-semibold text-slate-900 truncate">{i.title}</span>
-                  <span className="block text-xs text-slate-500 truncate">
-                    {i.typeLabel} · {i.senderDisplay}
-                  </span>
-                </span>
-                <StatusPill tone={r?.status === 'Shortlisted' ? 'gold' : 'blue'}>{r?.status ?? 'Interested'}</StatusPill>
-                <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
-              </button>
-            </li>
-          );
-        })}
-      </Section>
+      </div>
     </div>
   );
 };

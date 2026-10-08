@@ -5,14 +5,14 @@ import { creditAccount, launchesInLast7Days, ownerCampaigns } from '../../data/m
 import { CampaignStatus, OwnerCampaignView } from '../../data/marketHubTypes';
 import { btnPrimary, btnSecondary } from '../NetworkShared';
 import { CampaignNav } from './CampaignCenter';
-import { CampaignStatusPill, DemoNote, EmptyState, Hub, KpiCard, daysAgo, fmtDate } from './MarketHubShared';
+import { CampaignStatusPill, DemoNote, EmptyState, Hub, KpiCard, campaignLocation, daysAgo, fmtDate } from './MarketHubShared';
 
 export const responsesOf = (v: OwnerCampaignView) => (v.campaign.kind === 'sourcing' ? v.metrics.responded : v.disclosedInterests.length);
 
 export const pct = (n: number, of: number) => (of ? Math.round((n / of) * 100) : 0);
 
 const STATUS_GROUPS: { label: string; statuses: CampaignStatus[]; bar: string }[] = [
-  { label: 'Active', statuses: ['active'], bar: 'bg-emerald-600' },
+  { label: 'Active / Paused', statuses: ['active', 'paused'], bar: 'bg-emerald-600' },
   { label: 'Approved / Scheduled', statuses: ['approved', 'scheduled'], bar: 'bg-blue-600' },
   { label: 'Pending Review', statuses: ['pending_review'], bar: 'bg-amber-500' },
   { label: 'Draft', statuses: ['draft'], bar: 'bg-slate-400' },
@@ -63,6 +63,8 @@ export const CampaignDashboard: React.FC<{ hub: Hub; canCreate: boolean; onCreat
   const sum = (f: (v: OwnerCampaignView) => number) => views.reduce((n, v) => n + f(v), 0);
   const delivered = sum((v) => v.metrics.delivered);
   const responses = sum(responsesOf);
+  const viewed = sum((v) => v.metrics.viewed);
+  const paused = views.filter((v) => v.campaign.status === 'paused').length;
   const launched = views.filter((v) => v.campaign.launchedAt).sort((a, b) => b.campaign.launchedAt!.localeCompare(a.campaign.launchedAt!));
   const chartData = launched.slice(0, 5).map((v) => ({
     name: v.campaign.title.length > 22 ? `${v.campaign.title.slice(0, 21)}…` : v.campaign.title,
@@ -85,20 +87,34 @@ export const CampaignDashboard: React.FC<{ hub: Hub; canCreate: boolean; onCreat
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <KpiCard label="Total Campaigns" value={views.length} />
-        <KpiCard label="Active Campaigns" value={views.filter((v) => v.campaign.status === 'active').length} />
-        <KpiCard label="Eligible Audience" value={sum((v) => v.metrics.eligible)} hint="Across all campaigns" />
-        <KpiCard label="Delivered" value={delivered} hint="Campaign Inboxes reached" />
-        <KpiCard label="Viewed" value={sum((v) => v.metrics.viewed)} hint="Recorded inbox views" />
-        <KpiCard label="Interested" value={sum((v) => v.metrics.interested)} />
-        <KpiCard label="Responses" value={responses} hint={sourcing ? 'Supplier responses received' : 'Interested buyers who shared identity'} />
-        <KpiCard label="Response Rate" value={`${pct(responses, delivered)}%`} hint="Responses ÷ delivered" />
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl bg-slate-900 px-5 py-4">
+        <div>
+          <p className="text-sm font-semibold text-white">{sourcing ? 'Reach relevant suppliers for your next requirement' : 'Promote your products to relevant buyers and companies'}</p>
+          <p className="mt-0.5 text-xs text-slate-300">
+            {sourcing ? 'Sourcing campaigns are delivered to matching suppliers\u2019 Campaign Inbox after SOKO review.' : 'Promotional campaigns reach opted-in buyers following your categories, after SOKO review.'}
+          </p>
+        </div>
+        {canCreate && (
+          <button type="button" onClick={onCreate} className="shrink-0 inline-flex items-center justify-center gap-1.5 min-h-10 px-4 rounded-lg bg-gold-500 hover:bg-gold-300 text-slate-900 text-sm font-semibold transition-colors cursor-pointer">
+            <Plus className="w-4 h-4" />
+            Create Campaign
+          </button>
+        )}
       </div>
-      {anyDemo && <DemoNote>Figures include labelled demo values for sample campaigns (for example, Waterproofing Material Requirement). They do not represent real campaign performance.</DemoNote>}
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-3">
+        <KpiCard label="Total Campaigns" value={views.length} />
+        <KpiCard label="Active Campaigns" value={views.filter((v) => v.campaign.status === 'active').length} hint={paused ? `${paused} paused` : undefined} />
+        <KpiCard label="Delivered" value={delivered} hint="Campaign Inboxes reached" />
+        <KpiCard label="Viewed" value={viewed} hint={`${pct(viewed, delivered)}% of delivered`} />
+        <KpiCard label="Responses Received" value={responses} hint={sourcing ? `${pct(responses, delivered)}% · responses ÷ delivered` : 'Buyers who shared identity'} />
+        <KpiCard label="Interested Recipients" value={sum((v) => v.metrics.interested)} hint="Mostly anonymous" />
+        <KpiCard label="Available Credits" value={account.available} hint={`${account.used} used · demo`} />
+      </div>
+      {anyDemo && <DemoNote>Simulated: figures include labelled demo values for sample campaigns (for example, {sourcing ? 'Waterproofing Material Requirement' : 'the ProSeal membrane launch'}). They do not represent real campaign performance.</DemoNote>}
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <Panel title="Campaign Performance" className="lg:col-span-2" action={launched.length ? <LinkBtn onClick={() => onNav({ section: 'analytics', id: launched[0].campaign.id })}>Analytics</LinkBtn> : undefined}>
+        <Panel title="Campaign Performance" className="lg:col-span-2" action={launched.length ? <LinkBtn onClick={() => onNav({ section: 'campaigns', id: launched[0].campaign.id })}>Latest campaign</LinkBtn> : undefined}>
           {chartData.length ? (
             <div className="h-64 -ml-4">
               <ResponsiveContainer width="100%" height="100%">
@@ -159,25 +175,45 @@ export const CampaignDashboard: React.FC<{ hub: Hub; canCreate: boolean; onCreat
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Panel title="Recent Campaigns" action={<LinkBtn onClick={() => onNav({ section: 'campaigns' })}>My Campaigns</LinkBtn>}>
-          <ul className="-mx-2 divide-y divide-slate-100">
-            {recent.map((v) => (
-              <li key={v.campaign.id}>
-                <button type="button" onClick={() => onNav({ section: 'campaigns', id: v.campaign.id })} className="w-full flex items-center gap-3 px-2 py-2.5 rounded-lg text-left hover:bg-slate-50 transition-colors cursor-pointer">
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-semibold text-slate-900 truncate">{v.campaign.title}</span>
-                    <span className="block text-xs text-slate-500 truncate">
+      <Panel title="Recent Campaigns" action={<LinkBtn onClick={() => onNav({ section: 'campaigns' })}>All campaigns</LinkBtn>}>
+        <div className="-mx-5 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 border-y border-slate-100 bg-slate-50">
+                <th className="px-5 py-2">Campaign</th>
+                <th className="px-3 py-2">Location</th>
+                <th className="px-3 py-2 text-right">Sent</th>
+                <th className="px-3 py-2 text-right">Viewed</th>
+                <th className="px-3 py-2 text-right">Responses</th>
+                <th className="px-5 py-2">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {recent.map((v) => (
+                <tr key={v.campaign.id} onClick={() => onNav({ section: 'campaigns', id: v.campaign.id })} className="hover:bg-slate-50 cursor-pointer transition-colors">
+                  <td className="px-5 py-2.5 min-w-[220px]">
+                    <button type="button" className="text-left font-semibold text-slate-900 hover:text-blue-700 cursor-pointer">
+                      {v.campaign.title}
+                    </button>
+                    <span className="block text-[11px] text-slate-500">
                       {v.campaign.category} · {v.campaign.launchedAt ? `Launched ${fmtDate(v.campaign.launchedAt)}` : `Created ${fmtDate(v.campaign.createdAt)}`}
                     </span>
-                  </span>
-                  <CampaignStatusPill status={v.campaign.status} />
-                </button>
-              </li>
-            ))}
-          </ul>
-        </Panel>
+                  </td>
+                  <td className="px-3 py-2.5 text-slate-600">{campaignLocation(v.campaign)}</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums">{v.campaign.launchedAt ? v.metrics.delivered : '—'}</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums">{v.campaign.launchedAt ? v.metrics.viewed : '—'}</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums">{v.campaign.launchedAt ? responsesOf(v) : '—'}</td>
+                  <td className="px-5 py-2.5">
+                    <CampaignStatusPill status={v.campaign.status} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
 
+      <div className="grid gap-4">
         <Panel title={sourcing ? 'Recent Supplier Responses' : 'Recent Buyer Interest'}>
           {recentResponses.length ? (
             <ul className="-mx-2 divide-y divide-slate-100">

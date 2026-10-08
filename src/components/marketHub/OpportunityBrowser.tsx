@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bookmark, BookmarkCheck, CalendarDays, MapPin, RotateCcw, Ruler, Search, Users } from 'lucide-react';
+import { Bookmark, BookmarkCheck, CalendarDays, ChevronDown, MapPin, RotateCcw, Ruler, Search, SlidersHorizontal, Users } from 'lucide-react';
 import { EMIRATES, OPPORTUNITY_TYPES, TRADE_CATEGORIES, opportunityGroup, opportunityTypeLabel, subcategoriesOf } from '../../data/marketHubCatalog';
 import { OpportunityGroup, OpportunityType, OpportunityView, Urgency } from '../../data/marketHubTypes';
 import { StatusPill, btnPrimary, btnSecondary, iconBtn } from '../NetworkShared';
@@ -61,8 +61,22 @@ export const OpportunityFilterBar: React.FC<{ filters: OpportunityFilters; onCha
   const set = <K extends keyof OpportunityFilters>(k: K, v: OpportunityFilters[K]) => onChange({ ...f, [k]: v, ...(k === 'category' ? { subcategory: '' } : {}) });
   const types = OPPORTUNITY_TYPES.filter((t) => !group || t.group === group);
   const changed = JSON.stringify(f) !== JSON.stringify(EMPTY_OPP_FILTERS);
+  const active = (Object.keys(f) as (keyof OpportunityFilters)[]).filter((k) => f[k] !== EMPTY_OPP_FILTERS[k]).length;
+  const [open, setOpen] = React.useState(false);
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div>
+    <button
+      type="button"
+      onClick={() => setOpen((v) => !v)}
+      aria-expanded={open}
+      className="md:hidden inline-flex items-center gap-2 min-h-9 px-3 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 cursor-pointer"
+    >
+      <SlidersHorizontal className="w-3.5 h-3.5" />
+      {open ? 'Hide filters' : 'Filters'}
+      {active > 0 && <span className="min-w-5 px-1.5 rounded-full bg-blue-600 text-white text-[11px] leading-5 text-center">{active}</span>}
+      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
+    </button>
+    <div className={`${open ? 'grid' : 'hidden'} mt-2 grid-cols-2 gap-2 md:mt-0 md:flex md:flex-wrap md:items-center [&>select]:w-full md:[&>select]:w-auto`}>
       <select aria-label="Opportunity type" className={selectCls} value={f.type} onChange={(e) => set('type', e.target.value as OpportunityFilters['type'])}>
         <option value="">All opportunity types</option>
         {types.map((t) => (
@@ -117,6 +131,7 @@ export const OpportunityFilterBar: React.FC<{ filters: OpportunityFilters; onCha
         </button>
       )}
     </div>
+    </div>
   );
 };
 
@@ -146,20 +161,23 @@ export const OpportunityCard: React.FC<{
         {o.category}
         {o.subcategory && ` · ${o.subcategory}`} · {o.isConfidential && !o.isMine ? 'Confidential Buyer' : o.publisherDisplay}
       </p>
-      <p className="mt-2 text-sm text-slate-600 leading-relaxed line-clamp-2">{o.description}</p>
-      <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs text-slate-600">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <MapPin className="w-3.5 h-3.5 shrink-0 text-slate-400" />
-          <span className="truncate">{o.location}</span>
+      <p className="mt-2 text-sm text-slate-600 leading-relaxed line-clamp-3">{o.description}</p>
+      <dl className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-1.5 text-xs text-slate-700">
+        <div className="flex items-start gap-1.5 min-w-0">
+          <MapPin className="w-3.5 h-3.5 mt-px shrink-0 text-slate-400" />
+          <dt className="sr-only">Location</dt>
+          <dd>{o.location}</dd>
         </div>
-        <div className="flex items-center gap-1.5 min-w-0">
-          <CalendarDays className="w-3.5 h-3.5 shrink-0 text-slate-400" />
-          <span className="truncate">Required {fmtMonth(o.requiredBy)}</span>
+        <div className="flex items-start gap-1.5 min-w-0">
+          <CalendarDays className="w-3.5 h-3.5 mt-px shrink-0 text-slate-400" />
+          <dt className="sr-only">Required date</dt>
+          <dd>Required {fmtMonth(o.requiredBy)}</dd>
         </div>
         {o.scope && (
-          <div className="col-span-2 flex items-center gap-1.5 min-w-0">
-            <Ruler className="w-3.5 h-3.5 shrink-0 text-slate-400" />
-            <span className="truncate">{o.scope}</span>
+          <div className="sm:col-span-2 flex items-start gap-1.5 min-w-0">
+            <Ruler className="w-3.5 h-3.5 mt-px shrink-0 text-slate-400" />
+            <dt className="sr-only">Quantity / scope</dt>
+            <dd className="font-medium">{o.scope}</dd>
           </div>
         )}
       </dl>
@@ -195,7 +213,7 @@ export const OpportunityGrid: React.FC<{
   onReset?: () => void;
 }> = ({ list, onOpen, onInterest, onSave, onReset }) =>
   list.length ? (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+    <div className="grid gap-4 md:grid-cols-2">
       {list.map((o) => (
         <OpportunityCard key={o.id} o={o} onOpen={() => onOpen(o)} onInterest={() => onInterest(o)} onSave={() => onSave(o)} />
       ))}

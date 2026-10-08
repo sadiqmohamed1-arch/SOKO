@@ -1,6 +1,6 @@
 import React from 'react';
 import { Info } from 'lucide-react';
-import { Actor, CampaignStatus, InterestStatus, MarketHubStore, OpportunityView, ServiceResult } from '../../data/marketHubTypes';
+import { Actor, CampaignStatus, InterestStatus, MarketHubStore, OpportunityView, OwnerCampaignView, ServiceResult } from '../../data/marketHubTypes';
 import { StatusPill } from '../NetworkShared';
 
 export type Tone = 'blue' | 'slate' | 'amber' | 'gold';
@@ -40,9 +40,16 @@ export const CAMPAIGN_STATUS: Record<CampaignStatus, { label: string; tone: Tone
   approved: { label: 'Approved', tone: 'blue' },
   scheduled: { label: 'Scheduled', tone: 'blue' },
   active: { label: 'Active', tone: 'green' },
+  paused: { label: 'Paused', tone: 'amber' },
   completed: { label: 'Completed', tone: 'slate' },
   rejected: { label: 'Rejected', tone: 'red' },
   suspended: { label: 'Suspended', tone: 'red' },
+};
+
+export const campaignLocation = (c: OwnerCampaignView['campaign']) => {
+  const emirates = (c.kind === 'sourcing' ? c.supplierAudience?.emirates : c.buyerAudience?.emirates) ?? [];
+  if (c.kind === 'sourcing' && c.deliveryLocation) return emirates.length ? `${c.deliveryLocation} · suppliers in ${emirates.join(', ')}` : c.deliveryLocation;
+  return emirates.length ? emirates.join(', ') : 'All emirates';
 };
 
 export const CampaignStatusPill: React.FC<{ status: CampaignStatus }> = ({ status }) => {

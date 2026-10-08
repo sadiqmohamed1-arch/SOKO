@@ -1,18 +1,18 @@
 import React, { useState } from 'react';
-import { ChartColumn, Copy, Eye, Megaphone, MessageSquareText, MoreHorizontal, Plus, XCircle } from 'lucide-react';
-import { closeCampaign, duplicateCampaign, ownerCampaigns } from '../../data/marketHubService';
+import { Copy, Eye, Megaphone, MessageSquareText, MoreHorizontal, Pause, Play, Plus, XCircle } from 'lucide-react';
+import { closeCampaign, duplicateCampaign, ownerCampaigns, setCampaignPaused } from '../../data/marketHubService';
 import { CampaignStatus, OwnerCampaignView } from '../../data/marketHubTypes';
 import { ConfirmDialog, btnPrimary } from '../NetworkShared';
 import { CampaignNav } from './CampaignCenter';
 import { responsesOf } from './CampaignDashboard';
-import { CampaignStatusPill, EmptyState, Hub, SubTabs, fmtDate } from './MarketHubShared';
+import { CampaignStatusPill, EmptyState, Hub, SubTabs, campaignLocation, fmtDate } from './MarketHubShared';
 
 type StatusFilter = 'all' | 'draft' | 'pending' | 'active' | 'completed';
 
 const FILTER_STATUSES: Record<Exclude<StatusFilter, 'all'>, CampaignStatus[]> = {
   draft: ['draft', 'rejected'],
   pending: ['pending_review', 'approved', 'scheduled'],
-  active: ['active'],
+  active: ['active', 'paused'],
   completed: ['completed', 'suspended'],
 };
 
@@ -21,8 +21,9 @@ const FILTER_LABEL: Record<StatusFilter, string> = { all: 'All', draft: 'Draft',
 const audienceLabel = (v: OwnerCampaignView) => {
   const a = v.campaign.kind === 'sourcing' ? v.campaign.supplierAudience : v.campaign.buyerAudience;
   const who = v.campaign.kind === 'sourcing' ? 'suppliers' : 'buyers';
-  return `${v.metrics.eligible} ${who}${a?.categories.length ? ` · ${a.categories.length} ${a.categories.length === 1 ? 'category' : 'categories'}` : ''}`;
+  return { size: `${v.metrics.eligible} ${who}`, cats: a?.categories.join(', ') ?? '' };
 };
+
 
 const MenuItem: React.FC<{ icon: React.ReactNode; label: string; onClick: () => void; disabled?: boolean; danger?: boolean }> = ({ icon, label, onClick, disabled, danger }) => (
   <button
@@ -81,13 +82,12 @@ export const MyCampaigns: React.FC<{ hub: Hub; canCreate: boolean; onCreate: () 
                 <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 bg-slate-50 border-b border-slate-200">
                   <th className="px-4 py-2.5 rounded-tl-2xl">Campaign Name</th>
                   <th className="px-3 py-2.5">Type</th>
-                  <th className="px-3 py-2.5">Category</th>
                   <th className="px-3 py-2.5">Audience</th>
-                  <th className="px-3 py-2.5">Status</th>
-                  <th className="px-3 py-2.5 text-right">Delivered</th>
+                  <th className="px-3 py-2.5">Location</th>
+                  <th className="px-3 py-2.5 text-right">Sent</th>
                   <th className="px-3 py-2.5 text-right">Viewed</th>
                   <th className="px-3 py-2.5 text-right">Responses</th>
-                  <th className="px-3 py-2.5">Closing Date</th>
+                  <th className="px-3 py-2.5">Status</th>
                   <th className="px-4 py-2.5 text-right rounded-tr-2xl">Actions</th>
                 </tr>
               </thead>
@@ -95,24 +95,29 @@ export const MyCampaigns: React.FC<{ hub: Hub; canCreate: boolean; onCreate: () 
                 {shown.map((v) => {
                   const c = v.campaign;
                   const launched = !!c.launchedAt;
+                  const aud = audienceLabel(v);
                   return (
                     <tr key={c.id} className="hover:bg-slate-50/70 transition-colors">
-                      <td className="px-4 py-3 max-w-[260px]">
-                        <button type="button" onClick={() => onNav({ section: 'campaigns', id: c.id })} className="block w-full text-left font-semibold text-slate-900 hover:text-blue-700 truncate cursor-pointer">
+                      <td className="px-4 py-3 min-w-[220px] max-w-[300px]">
+                        <button type="button" onClick={() => onNav({ section: 'campaigns', id: c.id })} className="block w-full text-left font-semibold leading-snug text-slate-900 hover:text-blue-700 cursor-pointer">
                           {c.title}
                         </button>
-                        <span className="block text-[11px] text-slate-500">Created {fmtDate(c.createdAt)}</span>
+                        <span className="block text-[11px] text-slate-500">
+                          {c.category} · closes {fmtDate(c.closedAt ?? c.responseDeadline)}
+                        </span>
                       </td>
                       <td className="px-3 py-3 text-slate-600 whitespace-nowrap">{c.kind === 'sourcing' ? 'Sourcing' : 'Promotional'}</td>
-                      <td className="px-3 py-3 text-slate-600 whitespace-nowrap">{c.category}</td>
-                      <td className="px-3 py-3 text-slate-600 whitespace-nowrap">{audienceLabel(v)}</td>
-                      <td className="px-3 py-3">
-                        <CampaignStatusPill status={c.status} />
+                      <td className="px-3 py-3 text-slate-600 min-w-[150px]">
+                        <span className="block font-semibold text-slate-800 whitespace-nowrap">{aud.size}</span>
+                        <span className="block text-[11px] text-slate-500">{aud.cats}</span>
                       </td>
+                      <td className="px-3 py-3 text-slate-600 min-w-[110px]">{campaignLocation(c)}</td>
                       <td className="px-3 py-3 text-right tabular-nums text-slate-900">{launched ? v.metrics.delivered : '—'}</td>
                       <td className="px-3 py-3 text-right tabular-nums text-slate-900">{launched ? v.metrics.viewed : '—'}</td>
                       <td className="px-3 py-3 text-right tabular-nums text-slate-900">{launched ? responsesOf(v) : '—'}</td>
-                      <td className="px-3 py-3 text-slate-600 whitespace-nowrap">{fmtDate(c.closedAt ?? c.responseDeadline)}</td>
+                      <td className="px-3 py-3">
+                        <CampaignStatusPill status={c.status} />
+                      </td>
                       <td className="px-4 py-3">
                         <div className="flex justify-end gap-1">
                           <button
@@ -141,15 +146,18 @@ export const MyCampaigns: React.FC<{ hub: Hub; canCreate: boolean; onCreate: () 
                               <div className="fixed inset-0 z-30" onClick={() => setMenu(null)} onWheel={() => setMenu(null)} />
                               <div role="menu" style={{ top: menu.top, right: menu.right }} className="fixed z-40 w-56 py-1 rounded-xl border border-slate-200 bg-white shadow-lg animate-[fadeIn_0.15s_ease-out]">
                                 <MenuItem icon={<Eye className="w-4 h-4" />} label="View Campaign" onClick={() => act(() => onNav({ section: 'campaigns', id: c.id }))} />
-                                {c.kind === 'sourcing' && (
-                                  <MenuItem
-                                    icon={<MessageSquareText className="w-4 h-4" />}
-                                    label={`View Responses (${c.responses.length})`}
-                                    disabled={!launched}
-                                    onClick={() => act(() => onNav({ section: 'campaigns', id: c.id, focus: 'responses' }))}
-                                  />
+                                <MenuItem
+                                  icon={<MessageSquareText className="w-4 h-4" />}
+                                  label={c.kind === 'sourcing' ? `View Responses (${c.responses.length})` : `View Interested (${v.metrics.interested})`}
+                                  disabled={!launched}
+                                  onClick={() => act(() => onNav({ section: 'campaigns', id: c.id, focus: 'responses' }))}
+                                />
+                                {c.status === 'active' && (
+                                  <MenuItem icon={<Pause className="w-4 h-4" />} label="Pause Campaign" onClick={() => act(() => hub.run(setCampaignPaused(hub.store, hub.actor, c.id, true), 'Campaign paused'))} />
                                 )}
-                                <MenuItem icon={<ChartColumn className="w-4 h-4" />} label="View Analytics" disabled={!launched} onClick={() => act(() => onNav({ section: 'analytics', id: c.id }))} />
+                                {c.status === 'paused' && (
+                                  <MenuItem icon={<Play className="w-4 h-4" />} label="Resume Campaign" onClick={() => act(() => hub.run(setCampaignPaused(hub.store, hub.actor, c.id, false), 'Campaign resumed'))} />
+                                )}
                                 <MenuItem
                                   icon={<Copy className="w-4 h-4" />}
                                   label="Duplicate Campaign"
@@ -161,7 +169,7 @@ export const MyCampaigns: React.FC<{ hub: Hub; canCreate: boolean; onCreate: () 
                                     })
                                   }
                                 />
-                                <MenuItem icon={<XCircle className="w-4 h-4" />} label="Close Campaign" danger disabled={c.status !== 'active'} onClick={() => act(() => setClosing(v))} />
+                                <MenuItem icon={<XCircle className="w-4 h-4" />} label="Close Campaign" danger disabled={c.status !== 'active' && c.status !== 'paused'} onClick={() => act(() => setClosing(v))} />
                               </div>
                             </>
                           )}
@@ -177,7 +185,7 @@ export const MyCampaigns: React.FC<{ hub: Hub; canCreate: boolean; onCreate: () 
           <p className="px-5 py-10 text-center text-sm text-slate-500">No {FILTER_LABEL[filter].toLowerCase()} campaigns.</p>
         )}
       </div>
-      <p className="text-[11px] text-slate-400">Pending includes campaigns awaiting SOKO review, approved and scheduled. Delivered, viewed and response counts appear after launch.</p>
+      <p className="text-[11px] text-slate-400">Pending includes campaigns awaiting SOKO review, approved and scheduled. Sent, viewed and response counts appear after delivery and include labelled demo values.</p>
 
       {closing && (
         <ConfirmDialog

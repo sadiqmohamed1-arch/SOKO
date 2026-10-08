@@ -11,7 +11,7 @@ type Queue = 'pending' | 'reported' | 'live' | 'decided';
 const QUEUE_STATUSES: Record<Queue, CampaignStatus[]> = {
   pending: ['pending_review'],
   reported: [],
-  live: ['approved', 'scheduled', 'active'],
+  live: ['approved', 'scheduled', 'active', 'paused'],
   decided: ['completed', 'rejected', 'suspended'],
 };
 

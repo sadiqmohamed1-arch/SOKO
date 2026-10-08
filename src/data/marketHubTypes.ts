@@ -134,7 +134,7 @@ export interface OpportunityView {
 }
 
 export type CampaignKind = 'sourcing' | 'promotion';
-export type CampaignStatus = 'draft' | 'pending_review' | 'approved' | 'scheduled' | 'active' | 'completed' | 'rejected' | 'suspended';
+export type CampaignStatus = 'draft' | 'pending_review' | 'approved' | 'scheduled' | 'active' | 'paused' | 'completed' | 'rejected' | 'suspended';
 export type PromoType =
   | 'new_product'
   | 'special_offer'

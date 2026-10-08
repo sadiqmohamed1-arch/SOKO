@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, Coins, Lock, ShieldCheck, Users } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Coins, Lock, ShieldCheck, Users } from 'lucide-react';
 import { BUYER_COMPANY_TYPES, BUYER_ROLES, EMIRATES, PROMO_TYPES, SUPPLIER_TYPE_OPTIONS, TRADE_CATEGORIES, promoTypeLabel, subcategoriesOf } from '../../data/marketHubCatalog';
 import { EMPTY_BUYER_AUDIENCE, EMPTY_SUPPLIER_AUDIENCE } from '../../data/marketHubAudience';
 import { creditAccount, estimateAudience, saveCampaignDraft, submitCampaignForReview } from '../../data/marketHubService';
@@ -9,7 +9,36 @@ import { btnGhost, btnPrimary, btnSecondary, inputCls, labelCls } from '../Netwo
 import { CampaignCard } from './CampaignInbox';
 import { ChipToggle, Field, Hub, fmtDate } from './MarketHubShared';
 
-const STEP_LABELS = ['Campaign Information', 'Target Audience', 'Campaign Preview', 'Launch Campaign'];
+const STEP_LABELS = ['Campaign Details', 'Target Audience', 'Preview Reach & Credit Cost', 'Review', 'Publish'];
+
+const inDays = (n: number) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+
+const example = (kind: CampaignKind): CampaignDraftInput =>
+  kind === 'sourcing'
+    ? {
+        ...blank(kind),
+        title: 'Waterproofing membrane required for podium deck',
+        category: 'Waterproofing',
+        subcategory: 'Waterproofing Membrane',
+        itemRequired: 'SBS modified bituminous membrane, 4mm, torch-applied',
+        quantity: '3200',
+        unit: 'sqm',
+        deliveryLocation: 'Dubai',
+        description: 'Podium deck and planter areas for a mid-rise residential project. Please quote supply rate, lead time and manufacturer warranty. Approved-brand submittals preferred.',
+        requiredDate: inDays(28),
+        responseDeadline: inDays(10),
+        supplierAudience: { ...EMPTY_SUPPLIER_AUDIENCE, categories: ['Waterproofing'], emirates: ['Dubai', 'Abu Dhabi'] },
+      }
+    : {
+        ...blank(kind),
+        title: 'Launch: ProSeal crystalline waterproofing admixture',
+        category: 'Construction Chemicals',
+        promoType: 'new_product',
+        offerHighlight: 'Introductory price and free site trial for the first 20 projects',
+        description: 'New crystalline admixture for basements, water tanks and podium slabs. Technical data sheet and site trial available on request.',
+        responseDeadline: inDays(30),
+        buyerAudience: { ...EMPTY_BUYER_AUDIENCE, categories: ['Waterproofing', 'Construction Chemicals'] },
+      };
 
 const blank = (kind: CampaignKind): CampaignDraftInput => ({
   kind,
@@ -105,6 +134,10 @@ export const CampaignWizard: React.FC<{ hub: Hub; kind: CampaignKind; draft?: { 
     onDone(saved.value);
   };
 
+  const audienceText = sourcing
+    ? [f.supplierAudience!.categories.join(', '), f.supplierAudience!.emirates.join(', ') || 'All emirates'].filter(Boolean).join(' suppliers · ')
+    : `Buyers following ${f.buyerAudience!.categories.join(', ') || '—'}`;
+
   const preview: InboxItem = {
     id: 'preview',
     kind,
@@ -129,7 +162,7 @@ export const CampaignWizard: React.FC<{ hub: Hub; kind: CampaignKind; draft?: { 
   return (
     <ProfileDialog
       title={sourcing ? 'Create Sourcing Campaign' : 'Create Promotional Campaign'}
-      subtitle={`Step ${step + 1} of 4 · ${STEP_LABELS[step]}`}
+      subtitle={`Step ${step + 1} of ${STEP_LABELS.length} · ${STEP_LABELS[step]}`}
       size="lg"
       onClose={onClose}
       footer={
@@ -154,7 +187,7 @@ export const CampaignWizard: React.FC<{ hub: Hub; kind: CampaignKind; draft?: { 
                   Save Draft
                 </button>
               )}
-              {step < 3 ? (
+              {step < STEP_LABELS.length - 1 ? (
                 <button type="button" onClick={next} className={btnPrimary}>
                   Continue
                   <ArrowRight className="w-4 h-4" />
@@ -162,7 +195,7 @@ export const CampaignWizard: React.FC<{ hub: Hub; kind: CampaignKind; draft?: { 
               ) : (
                 <button type="button" onClick={submit} disabled={!confirmed} className={btnPrimary}>
                   <ShieldCheck className="w-4 h-4" />
-                  Submit for SOKO Review
+                  Publish for SOKO Review
                 </button>
               )}
             </div>
@@ -170,11 +203,11 @@ export const CampaignWizard: React.FC<{ hub: Hub; kind: CampaignKind; draft?: { 
         </div>
       }
     >
-      <ol className="px-5 pt-4 grid grid-cols-4 gap-1.5" aria-label="Progress">
+      <ol className="px-5 pt-4 grid grid-cols-5 gap-1.5" aria-label="Progress">
         {STEP_LABELS.map((l, i) => (
           <li key={l}>
             <div className={`h-1 rounded-full transition-colors ${i <= step ? 'bg-blue-600' : 'bg-slate-200'}`} />
-            <p className={`mt-1 text-[10px] font-semibold truncate ${i === step ? 'text-slate-900' : 'text-slate-400'}`}>{l}</p>
+            <p className={`mt-1 text-[10px] font-semibold leading-tight ${i === step ? 'text-slate-900' : 'text-slate-400'}`}>{l}</p>
           </li>
         ))}
       </ol>
@@ -182,6 +215,16 @@ export const CampaignWizard: React.FC<{ hub: Hub; kind: CampaignKind; draft?: { 
       <div key={step} className="px-5 py-4 animate-[fadeIn_0.2s_ease-out]">
         {step === 0 && (
           <div className="grid gap-4 sm:grid-cols-2">
+            {!draft && (
+              <div className="sm:col-span-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-2">
+                <p className="text-xs text-slate-600">
+                  {sourcing ? 'Example: waterproofing membrane for Dubai and Abu Dhabi suppliers.' : 'Example: new construction chemical for buyers following Waterproofing and Construction Chemicals.'}
+                </p>
+                <button type="button" onClick={() => (setF(example(kind)), setError(null))} className={btnGhost}>
+                  Use example
+                </button>
+              </div>
+            )}
             <div className="sm:col-span-2">
               <label className={labelCls} htmlFor="cw-title">
                 Campaign title
@@ -407,35 +450,13 @@ export const CampaignWizard: React.FC<{ hub: Hub; kind: CampaignKind; draft?: { 
         )}
 
         {step === 2 && (
-          <div className="space-y-3">
-            <p className="text-sm text-slate-600">This is exactly how the campaign appears in each recipient's Campaign Inbox.</p>
-            <div className="rounded-2xl bg-slate-100 p-4">
-              <CampaignCard
-                item={preview}
-                preview
-                actions={
-                  <span className="text-[11px] text-slate-500">
-                    {sourcing ? 'View Requirement · Interested · Submit Response · Decline' : 'View Offer · View Supplier · Interested · Save'}
-                  </span>
-                }
-              />
-            </div>
-            <dl className="grid grid-cols-2 sm:grid-cols-3 gap-4 pt-2">
-              <Field label="Description" value={f.description} />
-              <Field label="Attachment" value={f.attachmentName} />
-              <Field label={sourcing ? 'Required date' : 'Valid until'} value={sourcing ? f.requiredDate && fmtDate(f.requiredDate) : fmtDate(f.responseDeadline)} />
-            </dl>
-          </div>
-        )}
-
-        {step === 3 && (
           <div className="space-y-4">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {[
-                ['Eligible audience', estimate.eligible, <Users key="u" className="w-4 h-4" />],
-                ['Credits required', estimate.credits, <Coins key="c" className="w-4 h-4" />],
+                ['Estimated eligible audience', estimate.eligible, <Users key="u" className="w-4 h-4" />],
+                ['Credit cost', estimate.credits, <Coins key="c" className="w-4 h-4" />],
+                ['Available credits', account.available, <Coins key="a" className="w-4 h-4" />],
                 ['Remaining after launch', account.available - estimate.credits, <Coins key="r" className="w-4 h-4" />],
-                [sourcing ? 'Response deadline' : 'Valid until', fmtDate(f.responseDeadline), <Check key="d" className="w-4 h-4" />],
               ].map(([label, value, icon]) => (
                 <div key={String(label)} className="rounded-xl border border-slate-200 p-3">
                   <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
@@ -446,11 +467,49 @@ export const CampaignWizard: React.FC<{ hub: Hub; kind: CampaignKind; draft?: { 
                 </div>
               ))}
             </div>
+            <p className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-xs leading-relaxed text-slate-600">
+              The eligible audience is an estimate of SOKO {sourcing ? 'suppliers' : 'buyers'} matching your targeting today. It is not a guarantee of delivery, views or responses. Recipient names and contact
+              details are never shown to you.
+            </p>
             {account.available < estimate.credits && (
               <p className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-900">
                 You have {account.available} credits available. You can still submit for review, but launch will need more credits — see Plans &amp; Credits.
               </p>
             )}
+            <div>
+              <p className="text-sm text-slate-600 mb-2">How the campaign appears in each recipient's Campaign Inbox:</p>
+              <div className="rounded-2xl bg-slate-100 p-4">
+                <CampaignCard
+                  item={preview}
+                  preview
+                  actions={
+                    <span className="text-[11px] text-slate-500">
+                      {sourcing ? 'View Requirement · Interested · Submit Response · Decline' : 'View Offer · View Supplier · Interested · Save'}
+                    </span>
+                  }
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {step === 3 && (
+          <div className="space-y-4">
+            <dl className="grid grid-cols-2 sm:grid-cols-3 gap-4 rounded-xl border border-slate-200 p-4">
+              <Field label="Campaign" value={f.title} />
+              <Field label="Type" value={sourcing ? 'Sourcing Requirement' : promoTypeLabel(f.promoType)} />
+              <Field label="Category" value={[f.category, f.subcategory].filter(Boolean).join(' · ')} />
+              {sourcing && <Field label="Item required" value={[f.itemRequired, f.quantity && `${f.quantity} ${f.unit ?? ''}`.trim()].filter(Boolean).join(' · ')} />}
+              <Field label="Audience" value={audienceText} />
+              <Field label="Location" value={sourcing ? f.deliveryLocation : f.buyerAudience!.emirates.join(', ') || 'All emirates'} />
+              <Field label={sourcing ? 'Response deadline' : 'Valid until'} value={fmtDate(f.responseDeadline)} />
+              {sourcing && <Field label="Required date" value={f.requiredDate && fmtDate(f.requiredDate)} />}
+              <Field label="Sender shown as" value={preview.senderDisplay} />
+              <Field label="Estimated audience" value={`${estimate.eligible} eligible`} />
+              <Field label="Credit cost" value={`${estimate.credits} credits`} />
+              <Field label="Attachment" value={f.attachmentName} />
+            </dl>
+            <Field label="Description" value={f.description} />
             <div>
               <label className={labelCls} htmlFor="cw-sched">
                 Schedule delivery (optional)
@@ -458,11 +517,21 @@ export const CampaignWizard: React.FC<{ hub: Hub; kind: CampaignKind; draft?: { 
               <input id="cw-sched" type="date" className={`${inputCls} sm:max-w-xs`} value={f.scheduledFor} onChange={(e) => set('scheduledFor', e.target.value)} />
               <p className="mt-1 text-[11px] text-slate-400">Leave empty to deliver as soon as you launch after approval.</p>
             </div>
+          </div>
+        )}
+
+        {step === 4 && (
+          <div className="space-y-4">
             <ol className="rounded-xl bg-slate-50 border border-slate-200 p-4 space-y-1.5 text-xs text-slate-600">
               <li>1. SOKO reviews the campaign for relevance (simulated in this prototype).</li>
               <li>2. Once approved, you launch it. Credits are deducted only at launch.</li>
               <li>3. Recipients receive it in their Campaign Inbox. No emails or texts are sent.</li>
+              <li>4. Delivery, views and responses depend on recipients and are not guaranteed.</li>
             </ol>
+            <p className="flex items-start gap-2 text-xs text-slate-500">
+              <Lock className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+              Recipient lists and contact details stay private. Companies are only revealed to you if they choose to respond or share interest.
+            </p>
             <label className="flex items-start gap-2.5 text-sm text-slate-700 cursor-pointer">
               <input type="checkbox" className="mt-0.5 accent-blue-700" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />I confirm this campaign is a genuine, relevant {sourcing ? 'requirement' : 'offer'} for the selected
               audience and follows SOKO campaign guidelines.

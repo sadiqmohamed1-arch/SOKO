@@ -2,7 +2,7 @@ import { DEFAULT_BUYER_PREFS, DEFAULT_PLANS, PLANS, SUPPLIER_POOL, supplierRecip
 import { audienceIds, creditsFor } from './marketHubAudience';
 import { Campaign, CampaignResponse, MarketHubStore, MarketOpportunity, OpportunityInterest } from './marketHubTypes';
 
-export const STORE_VERSION = 1;
+export const STORE_VERSION = 2;
 
 const DAY = 86_400_000;
 const daysAgo = (d: number) => new Date(Date.now() - d * DAY).toISOString();
@@ -297,13 +297,23 @@ const campaign = (c: Partial<Campaign> & Pick<Campaign, 'id' | 'kind' | 'title' 
   const ids = audienceIds(base, DEFAULT_BUYER_PREFS);
   base.estimatedAudience = ids.length;
   base.creditsRequired = creditsFor(ids.length);
-  if (['active', 'completed', 'suspended'].includes(base.status) && !base.recipientIds) {
+  if (['active', 'paused', 'completed', 'suspended'].includes(base.status) && !base.recipientIds) {
     base.recipientIds = ids;
     base.delivered = ids.length;
     base.creditsUsed = base.creditsRequired;
   }
   return base;
 };
+
+const withDisclosedInterest = (c: Campaign, count: number): Campaign => ({
+  ...c,
+  events: [
+    ...c.events,
+    ...(c.recipientIds ?? []).slice(0, count).map((recipientId, i) => ({ recipientId, type: 'interested' as const, at: daysAgo(1 + (i % 4)), shareIdentity: true })),
+  ],
+});
+
+const CASTINGS = { ownerWorkspaceId: 'ws_apex_castings', ownerCompany: 'Apex Industrial Castings & Alloys' } as const;
 
 const CAMPAIGNS: Campaign[] = [
   campaign({
@@ -534,6 +544,62 @@ const CAMPAIGNS: Campaign[] = [
     reviewedAt: daysAgo(11),
     reviewNote: 'Rejected: no specific product, offer or category relevance.',
     buyerAudience: { categories: ['Finishes', 'Waterproofing', 'MEP', 'Equipment'], emirates: [], roles: [], companyTypes: [], productInterests: '' },
+  }),
+  withDisclosedInterest(
+    campaign({
+      id: 'cmp_castings_membrane',
+      kind: 'promotion',
+      promoType: 'new_product',
+      title: 'New Construction Chemical Launch – ProSeal 4 mm Bituminous Membrane',
+      category: 'Waterproofing',
+      subcategory: 'Membranes',
+      description: 'Introducing ProSeal, a 4 mm SBS-modified bituminous membrane manufactured in Dubai, with DM approval and full podium system accessories.',
+      offerHighlight: 'Introductory pricing and free technical site visit until month end',
+      ...CASTINGS,
+      status: 'active',
+      submittedAt: daysAgo(5),
+      reviewedAt: daysAgo(4),
+      launchedAt: daysAgo(4),
+      buyerAudience: { categories: ['Waterproofing', 'Construction Chemicals'], emirates: [], roles: [], companyTypes: [], productInterests: '' },
+      demoBaseline: { delivered: 0, viewed: 34, clicked: 19, interested: 4, declined: 2 },
+    }),
+    5
+  ),
+  withDisclosedInterest(
+    campaign({
+      id: 'cmp_castings_rebar_stock',
+      kind: 'promotion',
+      promoType: 'stock_availability',
+      title: 'Cut & Bend Rebar – Ready Stock in Dubai',
+      category: 'Steel & Rebar',
+      subcategory: 'Reinforcement Bar',
+      description: 'B500B rebar 10–32 mm with in-house cut & bend, dispatched from our Dubai Industrial City yard.',
+      offerHighlight: 'Dispatch within 72 hours',
+      ...CASTINGS,
+      status: 'completed',
+      createdAt: daysAgo(30),
+      submittedAt: daysAgo(28),
+      reviewedAt: daysAgo(27),
+      launchedAt: daysAgo(27),
+      closedAt: daysAgo(13),
+      responseDeadline: daysAhead(-13),
+      buyerAudience: { categories: ['Steel & Rebar'], emirates: ['Dubai', 'Abu Dhabi'], roles: [], companyTypes: [], productInterests: '' },
+      demoBaseline: { delivered: 0, viewed: 22, clicked: 11, interested: 2, declined: 3 },
+    }),
+    3
+  ),
+  campaign({
+    id: 'cmp_castings_sections',
+    kind: 'promotion',
+    promoType: 'manufacturing_capability',
+    title: 'Structural Steel Castings – Fabrication Capacity Available',
+    category: 'Steel & Rebar',
+    subcategory: 'Structural Sections',
+    description: 'Spare casting and fabrication capacity for custom structural nodes and connections, Q1 delivery slots available.',
+    ...CASTINGS,
+    status: 'draft',
+    createdAt: daysAgo(1),
+    buyerAudience: { categories: ['Steel & Rebar'], emirates: [], roles: [], companyTypes: ['Main Contractor', 'Developer'], productInterests: '' },
   }),
 ];
 

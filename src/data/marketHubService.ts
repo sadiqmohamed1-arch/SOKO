@@ -1,4 +1,4 @@
-import { DEFAULT_BUYER_PREFS, DEMO_COMPANY_NAMES, PLANS, TRADE_CATEGORIES, UPGRADE_PATHS, WORKSPACES, promoTypeLabel, supplierRecipient } from './marketHubCatalog';
+import { DEFAULT_BUYER_PREFS, DEMO_COMPANY_NAMES, buyerCompanyName, PLANS, TRADE_CATEGORIES, UPGRADE_PATHS, WORKSPACES, promoTypeLabel, supplierRecipient } from './marketHubCatalog';
 import { RECIPIENT_WEEKLY_CAP, audienceIds, creditsFor } from './marketHubAudience';
 import { STORE_VERSION, buildDemoStore } from './marketHubDemo';
 import {
@@ -62,7 +62,7 @@ export const actorFor = (store: MarketHubStore, role: AppRole): Actor => {
 };
 
 const companyLabel = (wsId: string) =>
-  Object.values(WORKSPACES).find((w) => w.id === wsId)?.companyName ?? DEMO_COMPANY_NAMES[wsId] ?? supplierRecipient(wsId)?.companyName ?? 'SOKO member';
+  Object.values(WORKSPACES).find((w) => w.id === wsId)?.companyName ?? DEMO_COMPANY_NAMES[wsId] ?? supplierRecipient(wsId)?.companyName ?? buyerCompanyName(wsId) ?? 'SOKO member';
 
 const updateOpp = (store: MarketHubStore, id: string, fn: (o: MarketOpportunity) => MarketOpportunity): MarketHubStore => ({
   ...store,
@@ -327,8 +327,15 @@ export const launchCampaign = (store: MarketHubStore, actor: Actor, id: string):
 export const closeCampaign = (store: MarketHubStore, actor: Actor, id: string): ServiceResult => {
   const c = ownedCampaign(store, actor, id);
   if (!c) return fail('Campaign not found in this workspace.');
-  if (c.status !== 'active') return fail('Only active campaigns can be closed.');
+  if (c.status !== 'active' && c.status !== 'paused') return fail('Only active or paused campaigns can be closed.');
   return ok(updateCampaign(store, id, (x) => ({ ...x, status: 'completed', closedAt: now() })), undefined);
+};
+
+export const setCampaignPaused = (store: MarketHubStore, actor: Actor, id: string, paused: boolean): ServiceResult => {
+  const c = ownedCampaign(store, actor, id);
+  if (!c) return fail('Campaign not found in this workspace.');
+  if (c.status !== (paused ? 'active' : 'paused')) return fail(paused ? 'Only active campaigns can be paused.' : 'Only paused campaigns can be resumed.');
+  return ok(updateCampaign(store, id, (x) => ({ ...x, status: paused ? 'paused' : 'active' })), undefined);
 };
 
 export const deleteDraft = (store: MarketHubStore, actor: Actor, id: string): ServiceResult => {
@@ -522,7 +529,7 @@ export const submitCampaignResponse = (store: MarketHubStore, actor: Actor, id: 
 
 export const myResponse = (store: MarketHubStore, actor: Actor, id: string) => {
   const r = store.campaigns.find((x) => x.id === id)?.responses.find((x) => x.responderId === actor.workspace.id);
-  return r ? { status: r.shortlisted ? 'Shortlisted' : 'Submitted', at: r.at } : null;
+  return r ? { status: r.shortlisted ? 'Shortlisted' : 'Submitted', at: r.at, connectRequested: r.connectRequested } : null;
 };
 
 export const promoPrefs = (store: MarketHubStore, actor: Actor) => store.buyerPrefs[actor.workspace.id];
@@ -608,7 +615,7 @@ export const moderateCampaign = (store: MarketHubStore, actor: Actor, id: string
   const c = store.campaigns.find((x) => x.id === id);
   if (!c) return fail('Campaign not found.');
   if ((action === 'approve' || action === 'reject') && c.status !== 'pending_review') return fail('Only campaigns pending review can be approved or rejected.');
-  if (action === 'suspend' && !['approved', 'scheduled', 'active'].includes(c.status)) return fail('Only approved, scheduled or active campaigns can be suspended.');
+  if (action === 'suspend' && !['approved', 'scheduled', 'active', 'paused'].includes(c.status)) return fail('Only approved, scheduled or active campaigns can be suspended.');
   if (action === 'reject' && !note.trim()) return fail('Add a reason so the company can fix the campaign.');
   const status = { approve: 'approved', reject: 'rejected', suspend: 'suspended' } as const;
   return ok(updateCampaign(store, id, (x) => ({ ...x, status: status[action], reviewedAt: now(), reviewNote: note.trim() || undefined })), undefined);
