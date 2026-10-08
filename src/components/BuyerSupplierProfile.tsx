@@ -1,3 +1,4 @@
+import { isSupplierContactSaved, toggleSupplierContact } from '../data/myNetwork';
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle, ArrowLeft, Bookmark, BookmarkCheck, CheckCircle2, Clock, ExternalLink, Info, MapPin, MessageSquare, Share2, Sparkles } from 'lucide-react';
 import { CommunityContact } from '../types';
@@ -28,8 +29,6 @@ const SECTION_FOR_TAB: Record<ProfileTab, string | null> = {
   contacts: 'profile-contacts',
   intelligence: 'profile-soko-info',
 };
-
-const DEFAULT_AVATAR = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80';
 
 interface BuyerSupplierProfileProps {
   supplier: BuyerSupplier;
@@ -129,34 +128,6 @@ const WhyMatched: React.FC<{ supplier: BuyerSupplier; query: string }> = ({ supp
   );
 };
 
-const networkId = (s: BuyerSupplier, c: SupplierContact) => `supplier_${s.id}_${c.id}`;
-
-const toNetworkContact = (s: BuyerSupplier, c: SupplierContact): CommunityContact => {
-  const phone = c.visibility === 'public' ? c.phone ?? '' : '';
-  return {
-    id: networkId(s, c),
-    name: c.name,
-    title: c.title,
-    company: s.name,
-    role: 'supplier',
-    category: c.category,
-    avatarUrl: DEFAULT_AVATAR,
-    location: c.location,
-    phone,
-    whatsappNumber: phone,
-    email: c.email ?? '',
-    website: s.website,
-    verified: s.status === 'verified',
-    bio: `${c.title} at ${s.name}.`,
-    isMaintained: true,
-    tags: ['Supplier Directory'],
-    accessStatus: 'direct',
-    connectionStatus: 'connected',
-    connectedDate: 'Saved just now',
-    products: s.capabilities.slice(0, 3),
-  };
-};
-
 const actionBtn =
   'inline-flex items-center justify-center gap-1.5 min-h-10 px-4 rounded-lg text-sm font-semibold transition-colors cursor-pointer';
 
@@ -199,23 +170,12 @@ export const BuyerSupplierProfile: React.FC<BuyerSupplierProfileProps> = ({
     };
   }, [s]);
 
-  const isContactSaved = (c: SupplierContact) => networkContacts.some((n) => n.id === networkId(s, c) && n.connectionStatus === 'connected');
+  const isContactSaved = (c: SupplierContact) => isSupplierContactSaved(networkContacts, s, c);
 
   const toggleContact = (c: SupplierContact) => {
-    const id = networkId(s, c);
-    const existing = networkContacts.find((n) => n.id === id);
-    if (!existing) {
-      onUpdateNetworkContacts([toNetworkContact(s, c), ...networkContacts]);
-      onNotify(`${c.name} saved to My Network`);
-      return;
-    }
-    const nowSaved = existing.connectionStatus !== 'connected';
-    onUpdateNetworkContacts(
-      networkContacts.map((n) =>
-        n.id === id ? (nowSaved ? toNetworkContact(s, c) : { ...n, connectionStatus: 'not_connected', isMaintained: false }) : n
-      )
-    );
-    onNotify(nowSaved ? `${c.name} saved to My Network` : `${c.name} removed from My Network`);
+    const wasSaved = isContactSaved(c);
+    onUpdateNetworkContacts(toggleSupplierContact(networkContacts, s, c));
+    onNotify(wasSaved ? `${c.name} removed from My Network` : `${c.name} saved to My Network`);
   };
 
   const requestDocument = (label: string) => onNotify(`Request for ${label} sent to ${s.name}`);

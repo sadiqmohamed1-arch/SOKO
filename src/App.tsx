@@ -13,6 +13,8 @@ import { BusinessCardView } from './components/BusinessCardView';
 import { OpportunitiesView } from './components/OpportunitiesView';
 import { ContactsView } from './components/ContactsView';
 import { SUPPLIER_SHARE_PARAM } from './data/buyerSuppliers';
+import { CARD_SHARE_PARAM, NetworkTab, seedNetworkDemo } from './data/myNetwork';
+import { BuyerNetworkView } from './components/BuyerNetworkView';
 import { OfficeKioskView } from './components/OfficeKioskView';
 import { JobsView } from './components/JobsView';
 import { AnalyticsView } from './components/AnalyticsView';
@@ -74,7 +76,16 @@ function MainApp() {
   const [authModalMode, setAuthModalMode] = useState<'login' | 'signup'>('login');
 
   // Navigation
-  const [activeTab, setActiveTab] = useState<string>(() => (new URLSearchParams(window.location.search).has(SUPPLIER_SHARE_PARAM) ? 'suppliers' : 'feed'));
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has(CARD_SHARE_PARAM)) return 'contacts';
+    return params.has(SUPPLIER_SHARE_PARAM) ? 'suppliers' : 'feed';
+  });
+  const [networkEntry, setNetworkEntry] = useState<{ tab: NetworkTab; nonce: number }>({ tab: 'contacts', nonce: 0 });
+  const openNetwork = (tab: NetworkTab) => {
+    setNetworkEntry((prev) => ({ tab, nonce: prev.nonce + 1 }));
+    setActiveTab('contacts');
+  };
   const [cardMode, setCardMode] = useState<'preview' | 'edit'>('preview');
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>('personal');
   const [globalSearch, setGlobalSearch] = useState<string>('');
@@ -151,11 +162,11 @@ function MainApp() {
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length >= 50 && parsed.some((c: any) => c.connectionStatus)) {
-          return parsed;
+          return seedNetworkDemo(parsed);
         }
       } catch {}
     }
-    return INITIAL_COMMUNITY_CONTACTS;
+    return seedNetworkDemo(INITIAL_COMMUNITY_CONTACTS);
   });
 
   const [officeVisits, setOfficeVisits] = useState<OfficeKioskVisit[]>(() => {
@@ -707,7 +718,7 @@ function MainApp() {
       {currentUser.role === 'buyer' ? (
         <BuyerNavbar
           activeTab={activeTab}
-          setActiveTab={setActiveTab}
+          setActiveTab={(tab) => (tab === 'contacts' ? openNetwork('contacts') : setActiveTab(tab))}
           currentUser={currentUser}
           conversations={conversations}
           rewardPoints={rewardProfile.totalPoints}
@@ -718,10 +729,7 @@ function MainApp() {
             setCardMode('edit');
             setActiveTab('card');
           }}
-          onOpenBusinessCard={() => {
-            setCardMode('preview');
-            setActiveTab('card');
-          }}
+          onOpenBusinessCard={() => openNetwork('cards')}
           onSwitchDemoRole={handleRoleChange}
           isAuthenticated={isAuthenticated}
           onLogout={logout}
@@ -761,10 +769,7 @@ function MainApp() {
           <BuyerHomeView
             currentUser={currentUser}
             onNavigateToTab={(tab) => setActiveTab(tab)}
-            onOpenBusinessCard={() => {
-              setCardMode('preview');
-              setActiveTab('card');
-            }}
+            onOpenBusinessCard={() => openNetwork('cards')}
             onStartMessageWith={handleStartMessageWith}
           />
         )}
@@ -841,7 +846,19 @@ function MainApp() {
           />
         )}
 
-        {activeTab === 'contacts' && (
+        {activeTab === 'contacts' && currentUser.role === 'buyer' && (
+          <BuyerNetworkView
+            key={networkEntry.nonce}
+            initialTab={networkEntry.tab}
+            contacts={contacts}
+            onUpdateContacts={setContacts}
+            currentUser={currentUser}
+            onUpdateUser={(patch) => setCurrentUser((prev) => ({ ...prev, ...patch }))}
+            onStartMessageWith={handleStartMessageWith}
+          />
+        )}
+
+        {activeTab === 'contacts' && currentUser.role !== 'buyer' && (
           <ContactsView
             contacts={contacts}
             onUpdateContacts={setContacts}

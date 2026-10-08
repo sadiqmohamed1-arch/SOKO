@@ -525,6 +525,15 @@ export interface CommunityContact {
   connectedDate?: string;
   products?: string[];
   sharedVia?: 'nfc' | 'app';
+  favorite?: boolean;
+  dateAdded?: string;
+  lastContactedAt?: string;
+  relationshipType?: string;
+  companyId?: string;
+  sokoId?: string;
+  officePhone?: string;
+  specialization?: string;
+  source?: 'manual' | 'import' | 'supplier-profile' | 'soko';
 }
 
 export interface OfficeKioskVisit {
