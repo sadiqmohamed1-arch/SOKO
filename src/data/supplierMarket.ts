@@ -14,7 +14,7 @@ const MEMBER_ROLE: Record<CompanyRole, MarketWorkspace['memberRole']> = {
   contractor_admin: 'owner',
   procurement_manager: 'campaign_manager',
   procurement_officer: 'member',
-  technical_reviewer: 'member',
+  project_manager: 'member',
 };
 
 export const marketWorkspaceFor = (c: CompanyRecord, role: CompanyRole, user: SessionUser): MarketWorkspace => ({

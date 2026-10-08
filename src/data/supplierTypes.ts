@@ -5,7 +5,7 @@ export type SupplierRole = 'supplier_admin' | 'sales_manager' | 'sales_rep' | 't
 
 export type CompanyKind = 'supplier' | 'contractor';
 
-export type ContractorRole = 'contractor_admin' | 'procurement_manager' | 'procurement_officer' | 'technical_reviewer' | 'viewer';
+export type ContractorRole = 'contractor_admin' | 'procurement_manager' | 'procurement_officer' | 'project_manager' | 'viewer';
 
 export type CompanyRole = SupplierRole | ContractorRole;
 
@@ -55,27 +55,27 @@ export const SUPPLIER_ROLES = Object.keys(ROLE_META) as SupplierRole[];
 export const CONTRACTOR_ROLE_META: Record<ContractorRole, { label: string; description: string; permissions: Permission[] }> = {
   contractor_admin: {
     label: 'Company Admin',
-    description: 'Full control of the contractor workspace, team, vendor directory and settings.',
+    description: 'Full company administration, membership management and authorized vendor oversight.',
     permissions: ['profile.edit', 'products.manage', 'documents.view', 'documents.manage', 'documents.share', 'contacts.manage', 'campaigns.manage', 'visits.manage', 'team.manage', 'plan.manage', 'records.delete'],
   },
   procurement_manager: {
     label: 'Procurement Manager',
-    description: 'Manages vendors, suppliers, RFQs and procurement intelligence.',
+    description: 'Manage vendor registration, reviews, approvals, sourcing, contacts and visits.',
     permissions: ['profile.edit', 'products.manage', 'documents.view', 'documents.share', 'contacts.manage', 'campaigns.manage', 'visits.manage'],
   },
   procurement_officer: {
-    label: 'Procurement Officer',
-    description: 'Handles day-to-day supplier interactions and vendor records.',
-    permissions: ['products.manage', 'documents.view', 'contacts.manage', 'visits.manage'],
+    label: 'Buyer / Procurement',
+    description: 'Manage vendor records, sourcing opportunities and contacts. Cannot administer company memberships or grant themselves approval authority.',
+    permissions: ['documents.view', 'contacts.manage', 'visits.manage'],
   },
-  technical_reviewer: {
-    label: 'Technical Reviewer',
-    description: 'Reviews supplier compliance and technical documentation.',
-    permissions: ['documents.view', 'documents.manage'],
+  project_manager: {
+    label: 'Project Manager',
+    description: 'Manage authorized project-related visits and vendor interactions without company administration privileges.',
+    permissions: ['documents.view', 'visits.manage'],
   },
   viewer: {
     label: 'Viewer',
-    description: 'Read-only access to the contractor workspace.',
+    description: 'Read-only access to permitted company information. No approvals, document modifications, invitations or company settings changes.',
     permissions: [],
   },
 };

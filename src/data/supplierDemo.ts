@@ -262,7 +262,7 @@ export const buildSupplierDemo = (directory: BuyerSupplier[]): SupplierStore => 
       // GEC Dubai — Mohamed Sadiq is procurement_manager (approved membership)
       member(GEC, 'usr_me_01', 'Mohamed Sadiq', 'mohamed.sadiq@gec-dubai.ae', 'Procurement Manager / Authorized Buyer', 'contractor_admin', 'active', 200),
       member(GEC, 'usr_hassan_q', 'Hassan Qureshi', 'h.qureshi@gec-dubai.ae', 'Project Engineer', 'procurement_officer', 'active', 150),
-      member(GEC, 'usr_fatima_n', 'Fatima Nasser', 'f.nasser@gec-dubai.ae', 'Technical Reviewer', 'technical_reviewer', 'active', 100),
+      member(GEC, 'usr_fatima_n', 'Fatima Nasser', 'f.nasser@gec-dubai.ae', 'Project Manager', 'project_manager', 'active', 100),
     ],
     products: [...productsFor(abc, false), ...productsFor(es, true)],
     documents: [

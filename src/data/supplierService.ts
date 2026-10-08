@@ -232,7 +232,12 @@ const editMember = (ctx: SupplierCtx, id: string, fn: (m: CompanyMembership) => 
   if (!m) return fail('Team member not found.');
   const next = fn(m);
   const memberships = next ? ctx.store.memberships.map((x) => (x.id === id ? next : x)) : ctx.store.memberships.filter((x) => x.id !== id);
-  if (activeAdmins({ ...ctx.store, memberships }, ctx.companyId).length === 0) return fail('A company must keep at least one active Supplier Admin.');
+  const adminsAfter = activeAdmins({ ...ctx.store, memberships }, ctx.companyId);
+  if (adminsAfter.length === 0) {
+    const company = companyById(ctx.store, ctx.companyId);
+    const adminLabel = company?.kind === 'contractor' ? 'Company Admin' : 'Supplier Admin';
+    return fail(`A company must keep at least one active ${adminLabel}.`);
+  }
   return done(touch(ctx.store, ctx, action(m), 'team', { memberships }), undefined);
 };
 
@@ -522,7 +527,11 @@ export const leaveCompany = (store: SupplierStore, user: SessionUser, companyId:
   const mine = store.memberships.find((m) => m.companyId === companyId && m.userId === user.id);
   if (!mine) return fail('You are not a member of this company.');
   const remaining = store.memberships.filter((m) => m.id !== mine.id);
-  if (mine.role === 'supplier_admin' && activeAdmins({ ...store, memberships: remaining }, companyId).length === 0) return fail('Assign another Supplier Admin before leaving this company.');
+  if ((mine.role === 'supplier_admin' || mine.role === 'contractor_admin') && activeAdmins({ ...store, memberships: remaining }, companyId).length === 0) {
+    const company = companyById(store, companyId);
+    const adminLabel = company?.kind === 'contractor' ? 'Company Admin' : 'Supplier Admin';
+    return fail(`Assign another ${adminLabel} before leaving this company.`);
+  }
   return done(
     { ...store, memberships: remaining, audit: [{ id: uid('aud'), companyId, at: now(), actor: user.name, action: `${user.name} left the company workspace`, kind: 'team' as const }, ...store.audit] },
     undefined,
