@@ -127,6 +127,7 @@ export const uploadDocument = (ctx: SupplierCtx, input: UploadInput): SupplierRe
     access: input.access,
     archived: false,
     forVerification: false,
+    visibility: 'private',
     shares: [],
     versions: [{ version: 1, fileName: input.fileName, at: now(), by: ctx.user.name }],
   };
@@ -155,14 +156,14 @@ export const shareDocument = (ctx: SupplierCtx, id: string, companyName: string,
     ? editDoc(
         ctx,
         id,
-        (d) => ({ ...d, shares: [...d.shares, { id: uid('sh'), company: companyName.trim(), at: now(), until: new Date(Date.now() + days * 86400000).toISOString().slice(0, 10), by: ctx.user.name }] }),
+        (d) => ({ ...d, visibility: d.visibility === 'private' ? 'shared' : d.visibility, shares: [...d.shares, { id: uid('sh'), company: companyName.trim(), at: now(), until: new Date(Date.now() + days * 86400000).toISOString().slice(0, 10), by: ctx.user.name }] }),
         (d) => `Shared "${d.name}" with ${companyName.trim()} for ${days} days`,
         'documents.share',
       )
     : fail('Choose a company to share with.');
 
 export const revokeShare = (ctx: SupplierCtx, id: string, shareId: string) =>
-  editDoc(ctx, id, (d) => ({ ...d, shares: d.shares.filter((s) => s.id !== shareId) }), (d) => `Revoked access to "${d.name}"`, 'documents.share');
+  editDoc(ctx, id, (d) => ({ ...d, visibility: d.shares.filter((s) => s.id !== shareId).length === 0 && d.visibility === 'shared' ? 'private' : d.visibility, shares: d.shares.filter((s) => s.id !== shareId) }), (d) => `Revoked access to "${d.name}"`, 'documents.share');
 
 export const submitVerification = (ctx: SupplierCtx, fileName: string, sizeMb: number): SupplierResult<CompanyRecord> => {
   const d = deny(ctx, 'profile.edit');
@@ -184,6 +185,7 @@ export const submitVerification = (ctx: SupplierCtx, fileName: string, sizeMb: n
     access: 'admins',
     archived: false,
     forVerification: true,
+    visibility: 'private',
     shares: [],
     versions: [{ version: 1, fileName, at: now(), by: ctx.user.name }],
   };
@@ -440,7 +442,7 @@ export const registerCompany = (store: SupplierStore, user: SessionUser, input: 
   const documents: CompanyDocument[] = input.licenseFile
     ? [{
         id: uid('doc'), companyId: id, name: 'Trade License (verification)', category: 'Trade Licenses', fileName: input.licenseFile.name, sizeMb: input.licenseFile.sizeMb,
-        uploadedAt: now(), uploadedBy: user.name, expiry: p.licenseExpiry || undefined, reminderDays: 30, access: 'admins', archived: false, forVerification: true, shares: [],
+        uploadedAt: now(), uploadedBy: user.name, expiry: p.licenseExpiry || undefined, reminderDays: 30, access: 'admins', archived: false, forVerification: true, visibility: 'private', shares: [],
         versions: [{ version: 1, fileName: input.licenseFile.name, at: now(), by: user.name }],
       }]
     : [];

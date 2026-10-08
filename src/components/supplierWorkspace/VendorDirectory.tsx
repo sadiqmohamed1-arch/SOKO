@@ -1,14 +1,17 @@
 import React, { useState, useMemo } from 'react';
 import {
   Users, Search, Plus, Trash2, ExternalLink, Lock,
-  ShieldCheck, ShieldQuestion, ChevronRight,
+  ShieldCheck, ShieldQuestion, ChevronRight, ArrowLeft,
+  FileText, Download, Eye, EyeOff, Clock, X,
 } from 'lucide-react';
-import { VendorRecord, VendorApprovalStatus, CompanyRecord } from '../../data/supplierTypes';
+import { VendorRecord, VendorApprovalStatus, CompanyDocument, DocumentVisibility } from '../../data/supplierTypes';
 import { addVendor, updateVendorStatus, removeVendor, addVendorNote, deleteVendorNote } from '../../data/supplierService';
 import { StatusPill, btnPrimary, btnSecondary, btnGhost, inputCls, labelCls } from '../NetworkShared';
 import { ProfileDialog } from '../ProfileDialog';
 import { DemoNote, EmptyState, Field, KpiCard, SubTabs, fmtDate } from '../marketHub/MarketHubShared';
 import { PageHeader, SW } from './SupplierShared';
+import { BUYER_SUPPLIERS, BuyerSupplier } from '../../data/buyerSuppliers';
+import { BuyerSupplierProfile, ProfileTab } from '../BuyerSupplierProfile';
 
 const APPROVAL_META: Record<VendorApprovalStatus, { label: string; tone: 'blue' | 'slate' | 'amber' | 'gold' }> = {
   'not-reviewed': { label: 'Not Reviewed', tone: 'slate' },
@@ -21,12 +24,145 @@ const APPROVAL_META: Record<VendorApprovalStatus, { label: string; tone: 'blue' 
 
 const APPROVAL_OPTIONS: VendorApprovalStatus[] = ['not-reviewed', 'under-review', 'approved', 'conditionally-approved', 'rejected', 'suspended'];
 
+const VISIBILITY_META: Record<DocumentVisibility, { label: string; icon: typeof Lock; cls: string }> = {
+  'private': { label: 'Private', icon: Lock, cls: 'text-slate-500 bg-slate-50 border-slate-200' },
+  'public': { label: 'Public', icon: Eye, cls: 'text-blue-700 bg-blue-50 border-blue-200' },
+  'shared': { label: 'Shared', icon: ExternalLink, cls: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+};
+
 type Filter = 'all' | 'approved' | 'review' | 'external' | 'new';
 
+// ─── Document Access Check ─────────────────────────────────────────
+/**
+ * Checks if a contractor company can access a supplier document.
+ * Access is granted if:
+ * - The document is shared with the contractor's trading name
+ * - The share has not expired
+ * Returns the matching share if access is granted, undefined otherwise.
+ */
+const findValidShare = (doc: CompanyDocument, companyTradingName: string) => {
+  return doc.shares.find((s) => {
+    if (s.company !== companyTradingName) return false;
+    const until = new Date(s.until);
+    return until > new Date();
+  });
+};
+
+const isShareExpired = (doc: CompanyDocument, companyTradingName: string) => {
+  const share = doc.shares.find((s) => s.company === companyTradingName);
+  if (!share) return false;
+  return new Date(share.until) <= new Date();
+};
+
+// ─── Shared Document Row ───────────────────────────────────────────
+const SharedDocRow: React.FC<{ doc: CompanyDocument; sw: SW; onView: () => void }> = ({ doc, sw, onView }) => {
+  const share = findValidShare(doc, sw.company.profile.tradingName);
+  const expired = isShareExpired(doc, sw.company.profile.tradingName);
+  const canAccess = !!share && !expired;
+  const visMeta = VISIBILITY_META[doc.visibility];
+
+  return (
+    <div className={`rounded-lg border px-3 py-2.5 text-sm ${canAccess ? 'border-slate-200 bg-white' : 'border-rose-200 bg-rose-50/50'}`}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+            <span className="font-medium text-slate-900 truncate">{doc.name}</span>
+            <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border ${visMeta.cls}`}>
+              <visMeta.icon className="w-2.5 h-2.5" />{visMeta.label}
+            </span>
+          </div>
+          <p className="text-xs text-slate-500 mt-0.5">
+            {doc.category} · {doc.sizeMb.toFixed(1)} MB · Shared by {doc.uploadedBy} on {fmtDate(share?.at ?? doc.uploadedAt)}
+          </p>
+          {share && (
+            <p className={`text-[10px] mt-0.5 ${expired ? 'text-rose-600' : 'text-slate-400'}`}>
+              {expired ? <><Clock className="w-2.5 h-2.5 inline" /> Access expired {fmtDate(share.until)}</> : <>Access valid until {fmtDate(share.until)}</>}
+            </p>
+          )}
+        </div>
+        <div className="shrink-0 flex items-center gap-1.5">
+          {canAccess ? (
+            <>
+              <button type="button" onClick={onView} className={`${btnGhost} text-xs`}>
+                <Eye className="w-3.5 h-3.5" />Preview
+              </button>
+              <button type="button" onClick={() => sw.notify(`Downloading "${doc.name}" — simulated file download`)} className={`${btnGhost} text-xs`}>
+                <Download className="w-3.5 h-3.5" />
+              </button>
+            </>
+          ) : (
+            <span className="inline-flex items-center gap-1 text-xs text-rose-500">
+              <EyeOff className="w-3.5 h-3.5" />No access
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Document Preview Dialog ───────────────────────────────────────
+const DocPreviewDialog: React.FC<{ doc: CompanyDocument; onClose: () => void }> = ({ doc, onClose }) => (
+  <ProfileDialog title={doc.name} subtitle={`${doc.category} · ${doc.sizeMb.toFixed(1)} MB`} onClose={onClose} size="md"
+    footer={<button type="button" onClick={onClose} className={`${btnGhost} text-sm`}>Close</button>}
+  >
+    <div className="px-5 py-4 space-y-3">
+      <div className="rounded-xl border-2 border-dashed border-slate-200 p-8 text-center">
+        <FileText className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+        <p className="text-sm font-semibold text-slate-700">{doc.fileName}</p>
+        <p className="text-xs text-slate-500 mt-1">Document preview — simulated</p>
+        <button type="button" className={`${btnSecondary} text-xs mt-3`} onClick={() => {}}>
+          <Download className="w-3.5 h-3.5" />Download
+        </button>
+      </div>
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <Field label="Uploaded By" value={doc.uploadedBy} />
+        <Field label="Uploaded" value={fmtDate(doc.uploadedAt)} />
+        {doc.expiry && <Field label="Expires" value={fmtDate(doc.expiry)} />}
+        <Field label="Version" value={`v${doc.versions.length}`} />
+      </div>
+      <DemoNote>This is a prototype document preview. Real file storage and secure download links require backend integration with access-controlled storage.</DemoNote>
+    </div>
+  </ProfileDialog>
+);
+
+// ─── Public Supplier Profile Modal ─────────────────────────────────
+const SupplierProfileModal: React.FC<{ supplierId: string; onClose: () => void }> = ({ supplierId, onClose }) => {
+  const supplier = useMemo(() => BUYER_SUPPLIERS.find((s) => s.id === supplierId), [supplierId]);
+  if (!supplier) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-white overflow-y-auto">
+      <div className="sticky top-0 z-10 bg-white border-b border-slate-200 px-4 py-2 flex items-center justify-between">
+        <button type="button" onClick={onClose} className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-600 hover:text-slate-900 cursor-pointer">
+          <ArrowLeft className="w-4 h-4" />Back to Vendor Register
+        </button>
+        <span className="text-xs text-slate-400">Public Supplier Profile</span>
+      </div>
+      <BuyerSupplierProfile
+        supplier={supplier}
+        matchQuery=""
+        initialTab={'overview' as ProfileTab}
+        saved={false}
+        networkContacts={[]}
+        onUpdateNetworkContacts={() => {}}
+        onBack={onClose}
+        onToggleSave={() => {}}
+        onContact={() => {}}
+        onOpenSupplier={() => {}}
+        onRequestContact={() => {}}
+        onNotify={() => {}}
+      />
+    </div>
+  );
+};
+
 // ─── Vendor Detail Modal ───────────────────────────────────────────
-const VendorDetailModal: React.FC<{ sw: SW; vendor: VendorRecord; onClose: () => void; onOpenSupplier: (id: string) => void }> = ({ sw, vendor, onClose, onOpenSupplier }) => {
+const VendorDetailModal: React.FC<{ sw: SW; vendor: VendorRecord; onClose: () => void; onOpenSupplierProfile: (id: string) => void }> = ({ sw, vendor, onClose, onOpenSupplierProfile }) => {
   const [note, setNote] = useState('');
   const [showApproval, setShowApproval] = useState(false);
+  const [previewDoc, setPreviewDoc] = useState<CompanyDocument | null>(null);
   const canManage = sw.can('contacts.manage');
 
   const linkedCompany = vendor.supplierCompanyId
@@ -52,9 +188,20 @@ const VendorDetailModal: React.FC<{ sw: SW; vendor: VendorRecord; onClose: () =>
     (v.hostCompany === vendor.supplierName || v.companyId === vendor.supplierCompanyId)
   );
 
-  // Find shared documents from this supplier
+  // Find documents from this supplier that are accessible to GEC
   const supplierDocs = vendor.supplierCompanyId
-    ? sw.store.documents.filter((d) => d.companyId === vendor.supplierCompanyId && d.shares.some((s) => s.company === sw.company.profile.tradingName))
+    ? sw.store.documents.filter((d) => d.companyId === vendor.supplierCompanyId && !d.archived)
+    : [];
+
+  // Categorize: shared with us, public, and private (inaccessible)
+  const sharedWithUs = supplierDocs.filter((d) => findValidShare(d, sw.company.profile.tradingName));
+  const publicDocs = supplierDocs.filter((d) => d.visibility === 'public' && !findValidShare(d, sw.company.profile.tradingName));
+  const privateDocs = supplierDocs.filter((d) => d.visibility === 'private' && !findValidShare(d, sw.company.profile.tradingName));
+  const expiredShared = supplierDocs.filter((d) => isShareExpired(d, sw.company.profile.tradingName) && !findValidShare(d, sw.company.profile.tradingName));
+
+  // Products from this supplier
+  const supplierProducts = vendor.supplierCompanyId
+    ? sw.store.products.filter((p) => p.companyId === vendor.supplierCompanyId && p.status === 'active')
     : [];
 
   return (
@@ -114,11 +261,32 @@ const VendorDetailModal: React.FC<{ sw: SW; vendor: VendorRecord; onClose: () =>
           {vendor.lastVisitDate && <Field label="Last Visit" value={fmtDate(vendor.lastVisitDate)} />}
         </div>
 
+        {/* View Public Profile */}
         {linkedCompany && (
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={() => onOpenSupplier(linkedCompany.id)} className={`${btnGhost} text-xs`}>
-              <ExternalLink className="w-3.5 h-3.5" />View SOKO Company Profile
+          <div className="flex items-center gap-2 rounded-xl bg-blue-50 border border-blue-200 px-3 py-2.5">
+            <ExternalLink className="w-4 h-4 text-blue-700 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-blue-900">SOKO Company Profile Available</p>
+              <p className="text-xs text-blue-700">View {vendor.supplierName}'s public profile, products, contacts and certifications.</p>
+            </div>
+            <button type="button" onClick={() => onOpenSupplierProfile(linkedCompany.id)} className={`${btnPrimary} text-xs whitespace-nowrap`}>
+              View Profile
             </button>
+          </div>
+        )}
+
+        {/* Products */}
+        {supplierProducts.length > 0 && (
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-2">Products ({supplierProducts.length})</p>
+            <div className="grid sm:grid-cols-2 gap-2">
+              {supplierProducts.slice(0, 6).map((p) => (
+                <div key={p.id} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                  <p className="font-medium text-slate-900 truncate">{p.name}</p>
+                  <p className="text-xs text-slate-500">{p.type} · {p.brand}</p>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -140,22 +308,64 @@ const VendorDetailModal: React.FC<{ sw: SW; vendor: VendorRecord; onClose: () =>
           </div>
         )}
 
-        {/* Shared Documents */}
+        {/* Documents */}
         {supplierDocs.length > 0 && (
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-2">Shared Documents ({supplierDocs.length})</p>
-            <div className="space-y-2">
-              {supplierDocs.map((d) => (
-                <div key={d.id} className="rounded-lg border border-slate-200 px-3 py-2 text-sm flex items-center justify-between">
-                  <span className="text-slate-800">{d.name}</span>
-                  <span className="text-xs text-slate-500">{d.category}</span>
-                </div>
-              ))}
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Documents from {vendor.supplierName}</p>
+              <span className="text-[10px] text-slate-400">{sharedWithUs.length} accessible · {publicDocs.length} public · {privateDocs.length} private</span>
             </div>
+
+            {/* Shared with GEC */}
+            {sharedWithUs.length > 0 && (
+              <div className="space-y-2 mb-2">
+                <p className="text-xs font-semibold text-emerald-700">Shared with {sw.company.profile.tradingName}</p>
+                {sharedWithUs.map((d) => (
+                  <SharedDocRow key={d.id} doc={d} sw={sw} onView={() => setPreviewDoc(d)} />
+                ))}
+              </div>
+            )}
+
+            {/* Public documents */}
+            {publicDocs.length > 0 && (
+              <div className="space-y-2 mb-2">
+                <p className="text-xs font-semibold text-blue-700">Public Documents</p>
+                {publicDocs.map((d) => (
+                  <SharedDocRow key={d.id} doc={d} sw={sw} onView={() => setPreviewDoc(d)} />
+                ))}
+              </div>
+            )}
+
+            {/* Expired shares */}
+            {expiredShared.length > 0 && (
+              <div className="space-y-2 mb-2">
+                <p className="text-xs font-semibold text-rose-600">Access Expired</p>
+                {expiredShared.map((d) => (
+                  <SharedDocRow key={d.id} doc={d} sw={sw} onView={() => {}} />
+                ))}
+              </div>
+            )}
+
+            {/* Private (inaccessible) */}
+            {privateDocs.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-slate-400 flex items-center gap-1"><Lock className="w-3 h-3" />Private — Not Shared with {sw.company.profile.tradingName}</p>
+                {privateDocs.map((d) => (
+                  <div key={d.id} className="rounded-lg border border-slate-100 bg-slate-50/50 px-3 py-2 text-sm flex items-center justify-between">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Lock className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+                      <span className="text-slate-400 truncate">{d.name}</span>
+                    </div>
+                    <span className="text-[10px] text-slate-400 shrink-0">{d.category}</span>
+                  </div>
+                ))}
+                <p className="text-[10px] text-slate-400">These documents are private to {vendor.supplierName}. Request access directly from the supplier.</p>
+              </div>
+            )}
           </div>
         )}
 
-        {/* Internal Notes */}
+        {/* Internal Notes — Contractor Only */}
         <div>
           <div className="flex items-center justify-between mb-2">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Internal Notes ({vendor.notes.length})</p>
@@ -196,6 +406,8 @@ const VendorDetailModal: React.FC<{ sw: SW; vendor: VendorRecord; onClose: () =>
           </div>
         )}
       </div>
+
+      {previewDoc && <DocPreviewDialog doc={previewDoc} onClose={() => setPreviewDoc(null)} />}
     </ProfileDialog>
   );
 };
@@ -283,6 +495,7 @@ export const VendorDirectory: React.FC<{ sw: SW }> = ({ sw }) => {
   const [search, setSearch] = useState('');
   const [openId, setOpenId] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [profileSupplierId, setProfileSupplierId] = useState<string | null>(null);
 
   const vendors = sw.store.vendorRecords.filter((v) => v.companyId === sw.company.id);
 
@@ -392,11 +605,12 @@ export const VendorDirectory: React.FC<{ sw: SW }> = ({ sw }) => {
       )}
 
       <div className="mt-4">
-        <DemoNote>SOKO Verification and internal vendor approval are independent. SOKO Verified does not imply GEC Dubai approval, and vice versa.</DemoNote>
+        <DemoNote>SOKO Verification and internal vendor approval are independent. SOKO Verified does not imply GEC Dubai approval, and vice versa. Document sharing is a prototype — real access-controlled storage requires backend integration.</DemoNote>
       </div>
 
-      {open && <VendorDetailModal sw={sw} vendor={open} onClose={() => setOpenId(null)} onOpenSupplier={(id) => { sw.go('sw-products'); }} />}
+      {open && <VendorDetailModal sw={sw} vendor={open} onClose={() => setOpenId(null)} onOpenSupplierProfile={(id) => { setOpenId(null); setProfileSupplierId(id); }} />}
       {showAdd && <AddVendorModal sw={sw} onClose={() => setShowAdd(false)} />}
+      {profileSupplierId && <SupplierProfileModal supplierId={profileSupplierId} onClose={() => setProfileSupplierId(null)} />}
     </div>
   );
 };

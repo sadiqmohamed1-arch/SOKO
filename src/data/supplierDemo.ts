@@ -1,7 +1,7 @@
 import { BuyerSupplier, IMG } from './buyerSuppliers';
-import { CompanyContact, CompanyDocument, CompanyKind, CompanyMembership, CompanyProduct, CompanyRecord, DocumentCategory, SupplierStore, AuditEntry, SupplierVisit, VisitFollowUp, VisitTask, VendorRecord, VendorNote } from './supplierTypes';
+import { CompanyContact, CompanyDocument, CompanyKind, CompanyMembership, CompanyProduct, CompanyRecord, DocumentCategory, SupplierStore, AuditEntry, SupplierVisit, VisitFollowUp, VisitTask, VendorRecord, VendorNote, DocumentVisibility } from './supplierTypes';
 
-export const SUPPLIER_STORE_VERSION = 5;
+export const SUPPLIER_STORE_VERSION = 6;
 export const DEMO_USER = { id: 'usr_me_01', name: 'Mohamed Sadiq', email: 'mohamed.sadiq@soko.demo', title: 'Director of Strategic Sourcing' };
 
 const day = 86400000;
@@ -189,6 +189,7 @@ const doc = (companyId: string, id: string, name: string, category: DocumentCate
   access: 'team',
   archived: false,
   forVerification: false,
+  visibility: 'private' as DocumentVisibility,
   shares: [],
   versions: [{ version: 1, fileName: `${name.replace(/[^\w]+/g, '-')}.pdf`, at: ago(uploadedDaysAgo), by: 'Khalid Al Mansoori' }],
   ...extra,
@@ -265,7 +266,10 @@ export const buildSupplierDemo = (directory: BuyerSupplier[]): SupplierStore => 
     ],
     products: [...productsFor(abc, false), ...productsFor(es, true)],
     documents: [
-      doc(ABC, 'license', 'Trade License 2025-2027', 'Trade Licenses', 1.2, 60, { expiry: abc.tradeLicense.expiry, forVerification: true, access: 'admins', uploadedBy: 'Ahmed Khan' }),
+      doc(ABC, 'license', 'Trade License 2025-2027', 'Trade Licenses', 1.2, 60, { expiry: abc.tradeLicense.expiry, forVerification: true, access: 'admins', uploadedBy: 'Ahmed Khan', visibility: 'private' as DocumentVisibility }),
+      doc(ABC, 'datasheet_mapeproof', 'Mapelastic Cementitious Coating – Technical Datasheet', 'Technical Datasheets', 1.8, 8, { uploadedBy: 'Ahmed Khan', visibility: 'shared' as DocumentVisibility, shares: [{ id: 'sh_abc_gec_1', company: 'GEC Dubai', at: ago(8), until: ahead(22), by: 'Ahmed Khan' }] }),
+      doc(ABC, 'icv_cert', 'ICV Certificate 2026', 'Company Registrations', 0.5, 3, { uploadedBy: 'Ahmed Khan', visibility: 'shared' as DocumentVisibility, shares: [{ id: 'sh_abc_gec_2', company: 'GEC Dubai', at: ago(3), until: ahead(27), by: 'Ahmed Khan' }] }),
+      doc(ABC, 'company_brochure', 'ABC Waterproofing Company Profile', 'Company Brochures', 4.2, 12, { uploadedBy: 'Ahmed Khan', visibility: 'public' as DocumentVisibility }),
       doc(ES, 'license', 'Trade License', 'Trade Licenses', 1.4, 300, {
         expiry: '2026-12-12',
         access: 'admins',

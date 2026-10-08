@@ -218,6 +218,8 @@ export interface DocumentShare {
   by: string;
 }
 
+export type DocumentVisibility = 'private' | 'public' | 'shared';
+
 export interface CompanyDocument {
   id: string;
   companyId: string;
@@ -232,6 +234,7 @@ export interface CompanyDocument {
   access: DocumentAccessLevel;
   archived: boolean;
   forVerification: boolean;
+  visibility: DocumentVisibility;
   shares: DocumentShare[];
   versions: { version: number; fileName: string; at: string; by: string }[];
 }
