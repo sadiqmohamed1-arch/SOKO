@@ -149,12 +149,14 @@ export const SubTabs = <T extends string>({ tabs, value, onChange }: { tabs: { i
         key={t.id}
         type="button"
         onClick={() => onChange(t.id)}
-        className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+        className={`shrink-0 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
           value === t.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900'
         }`}
       >
         {t.label}
-        {t.count !== undefined && <span className="ml-1.5 tabular-nums text-slate-400">{t.count}</span>}
+        {t.count !== undefined && (
+          <span className={`min-w-5 px-1.5 rounded-full text-[10px] leading-4 text-center tabular-nums ${value === t.id ? 'bg-blue-50 text-blue-700' : 'bg-slate-200 text-slate-600'}`}>{t.count}</span>
+        )}
       </button>
     ))}
   </div>

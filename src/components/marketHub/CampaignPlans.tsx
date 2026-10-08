@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
-import { Check, Coins, Crown, Lock } from 'lucide-react';
+import { Check, ChevronDown, Coins, Crown, Lock } from 'lucide-react';
 import { PLANS, UPGRADE_PATHS } from '../../data/marketHubCatalog';
-import { activateDemoPlan, creditAccount, ownerCampaigns } from '../../data/marketHubService';
+import { activateDemoPlan, creditAccount, launchesInLast7Days, ownerCampaigns } from '../../data/marketHubService';
 import { PlanId } from '../../data/marketHubTypes';
 import { ProfileDialog } from '../ProfileDialog';
 import { btnPrimary, btnSecondary } from '../NetworkShared';
-import { Hub, KpiCard } from './MarketHubShared';
+import { Hub } from './MarketHubShared';
 
-export const CampaignPlans: React.FC<{ hub: Hub }> = ({ hub }) => {
+export const CampaignPlans: React.FC<{ hub: Hub; showComparison?: boolean }> = ({ hub, showComparison = false }) => {
   const [preview, setPreview] = useState<PlanId | null>(null);
-  const { workspace: ws, plan } = hub.actor;
+  const [compare, setCompare] = useState(showComparison);
+  const { workspace: ws, plan, entitlements: ent } = hub.actor;
   const paths = UPGRADE_PATHS[ws.kind];
   const account = creditAccount(hub.store, hub.actor);
   const pendingCredits = ownerCampaigns(hub.store, hub.actor)
@@ -18,42 +19,87 @@ export const CampaignPlans: React.FC<{ hub: Hub }> = ({ hub }) => {
 
   if (!paths.length)
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 max-w-2xl">
-        <span className="w-10 h-10 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center">
-          <Lock className="w-5 h-5" />
-        </span>
-        <h2 className="mt-3 text-base font-semibold text-slate-900">{ws.kind === 'personal_buyer' ? 'Campaigns are published by company workspaces' : 'Platform workspace'}</h2>
-        <p className="mt-1 text-sm text-slate-600 leading-relaxed">
-          {ws.kind === 'personal_buyer'
-            ? `Your Personal Buyer workspace (${PLANS[plan].label}) can browse, post free opportunities and receive relevant campaigns. To publish sourcing or promotional campaigns, switch to a company workspace where you are an authorised campaign user. Personal accounts cannot act on behalf of a company.`
-            : 'SOKO administrators moderate campaigns and do not hold a subscription.'}
-        </p>
-        <ul className="mt-3 space-y-1 text-sm text-slate-700">
-          {PLANS[plan].features.map((f) => (
-            <li key={f} className="flex items-center gap-2">
-              <Check className="w-4 h-4 text-emerald-600" />
-              {f}
-            </li>
-          ))}
-        </ul>
-        {ws.kind === 'personal_buyer' && hub.switchWorkspace && (
-          <button type="button" onClick={() => hub.switchWorkspace!('contractor')} className={`${btnSecondary} mt-4`}>
-            Switch to Apex Industrial Mechanical GC (demo)
-          </button>
-        )}
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 grid gap-5 md:grid-cols-[1fr_1fr]">
+        <div>
+          <span className="w-10 h-10 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center">
+            <Lock className="w-5 h-5" />
+          </span>
+          <h2 className="mt-3 text-base font-semibold text-slate-900">{ws.kind === 'personal_buyer' ? 'Campaigns are published by company workspaces' : 'Platform workspace'}</h2>
+          <p className="mt-1 text-sm text-slate-600 leading-relaxed">
+            {ws.kind === 'personal_buyer'
+              ? 'Your Personal Buyer workspace can browse, post free opportunities and receive relevant campaigns. To publish sourcing or promotional campaigns, switch to a company workspace where you are an authorised campaign user. Personal accounts cannot act on behalf of a company.'
+              : 'SOKO administrators moderate campaigns and do not hold a subscription.'}
+          </p>
+          {ws.kind === 'personal_buyer' && hub.switchWorkspace && (
+            <button type="button" onClick={() => hub.switchWorkspace!('contractor')} className={`${btnSecondary} mt-4`}>
+              Switch to Apex Industrial Mechanical GC (demo)
+            </button>
+          )}
+        </div>
+        <div className="rounded-xl bg-slate-50 border border-slate-200 p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Current plan</p>
+          <p className="mt-0.5 text-sm font-semibold text-slate-900">{PLANS[plan].label}</p>
+          <ul className="mt-3 space-y-1.5 text-sm text-slate-700">
+            {PLANS[plan].features.map((f) => (
+              <li key={f} className="flex items-center gap-2">
+                <Check className="w-4 h-4 text-emerald-600" />
+                {f}
+              </li>
+            ))}
+          </ul>
+        </div>
       </div>
     );
 
-  return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KpiCard label="Current plan" value={<span className="text-base">{PLANS[plan].label}</span>} />
-        <KpiCard label="Available credits" value={account.available} hint="Demo credits" />
-        <KpiCard label="Credits used" value={account.used} hint="This month" />
-        <KpiCard label="Credits required" value={pendingCredits} hint="Drafts and campaigns awaiting launch" />
-      </div>
+  const launches = launchesInLast7Days(hub.store, ws.id);
+  const premiumNow = ent.monthlyCredits > 0;
 
-      <div className="grid gap-4 md:grid-cols-3">
+  return (
+    <div className="space-y-4">
+      <section className="rounded-2xl border border-slate-200 bg-white p-5">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span className={`w-10 h-10 rounded-xl flex items-center justify-center ${premiumNow ? 'bg-slate-900 text-gold-300' : 'bg-slate-100 text-slate-500'}`}>
+              <Crown className="w-5 h-5" />
+            </span>
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Current plan · {ws.companyName}</p>
+              <p className="text-base font-semibold text-slate-900">{PLANS[plan].label}</p>
+            </div>
+          </div>
+          <button type="button" onClick={() => setCompare((x) => !x)} aria-expanded={compare} className={premiumNow ? btnSecondary : btnPrimary}>
+            {premiumNow ? 'Change plan' : 'Upgrade Plan'}
+            <ChevronDown className={`w-4 h-4 transition-transform ${compare ? 'rotate-180' : ''}`} />
+          </button>
+        </div>
+        <dl className="mt-5 grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-slate-100">
+          <div>
+            <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Available credits</dt>
+            <dd className="mt-0.5 inline-flex items-center gap-1.5 text-xl font-semibold text-slate-900 tabular-nums">
+              <Coins className="w-4 h-4 text-gold-600" />
+              {account.available}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Credits used</dt>
+            <dd className="mt-0.5 text-xl font-semibold text-slate-900 tabular-nums">{account.used}</dd>
+            <dd className="text-[11px] text-slate-400">This month · {pendingCredits} reserved for drafts</dd>
+          </div>
+          <div>
+            <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Campaign limits</dt>
+            <dd className="mt-0.5 text-sm font-semibold text-slate-900">{ent.maxLaunchesPer7Days ? `${launches} of ${ent.maxLaunchesPer7Days} launches this week` : 'No campaign launches'}</dd>
+            <dd className="text-[11px] text-slate-400">{ent.monthlyCredits ? `${ent.monthlyCredits} credits included monthly` : 'Upgrade to publish campaigns'}</dd>
+          </div>
+          <div>
+            <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Campaign publishing</dt>
+            <dd className="mt-0.5 text-sm font-semibold text-slate-900">{ent.createSourcingCampaign ? 'Sourcing campaigns' : ent.createPromoCampaign ? 'Promotional campaigns' : 'Not included'}</dd>
+            <dd className="text-[11px] text-slate-400">{ent.campaignAnalytics ? 'Analytics included' : 'Inbox and responses only'}</dd>
+          </div>
+        </dl>
+      </section>
+
+      {compare && (
+      <div className="grid gap-4 md:grid-cols-3 animate-[fadeIn_0.2s_ease-out]">
         {paths.map((id) => {
           const p = PLANS[id];
           const current = id === plan;
@@ -87,6 +133,7 @@ export const CampaignPlans: React.FC<{ hub: Hub }> = ({ hub }) => {
           );
         })}
       </div>
+      )}
       <p className="text-[11px] text-slate-400">Prototype: plans and credits are simulated. No payment is taken.</p>
 
       {preview && (

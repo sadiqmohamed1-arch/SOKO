@@ -337,6 +337,34 @@ export const deleteDraft = (store: MarketHubStore, actor: Actor, id: string): Se
   return ok({ ...store, campaigns: store.campaigns.filter((x) => x.id !== id) }, undefined);
 };
 
+export const draftInputOf = (c: CampaignDraftInput): CampaignDraftInput => ({
+  kind: c.kind,
+  title: c.title,
+  category: c.category,
+  subcategory: c.subcategory,
+  description: c.description,
+  itemRequired: c.itemRequired,
+  quantity: c.quantity,
+  unit: c.unit,
+  deliveryLocation: c.deliveryLocation,
+  requiredDate: c.requiredDate,
+  attachmentName: c.attachmentName,
+  identity: c.identity,
+  promoType: c.promoType,
+  offerHighlight: c.offerHighlight,
+  responseDeadline: c.responseDeadline,
+  scheduledFor: c.scheduledFor,
+  supplierAudience: c.supplierAudience,
+  buyerAudience: c.buyerAudience,
+});
+
+export const duplicateCampaign = (store: MarketHubStore, actor: Actor, id: string): ServiceResult<string> => {
+  const c = ownedCampaign(store, actor, id);
+  if (!c) return fail('Campaign not found in this workspace.');
+  const deadline = new Date(Math.max(Date.now() + 14 * DAY, new Date(c.responseDeadline).getTime())).toISOString().slice(0, 10);
+  return saveCampaignDraft(store, actor, { ...draftInputOf(c), title: `${c.title} (copy)`, responseDeadline: deadline, scheduledFor: undefined });
+};
+
 /* ---------- Owner response management ---------- */
 
 export const updateResponse = (store: MarketHubStore, actor: Actor, id: string, responseId: string, action: 'shortlist' | 'connect'): ServiceResult => {
