@@ -954,7 +954,19 @@ function MainApp() {
               <Building2 className="w-8 h-8" />
             </div>
             <h2 className="text-2xl font-bold text-slate-900 mb-2">Contractor Workspace — Coming in Step 7B</h2>
-            <p className="text-slate-600 mb-6">This is a placeholder for the GEC Dubai contractor workspace. The full contractor experience (RFQ management, bid evaluation, vendor coordination, project dashboards) will be built in Step 7B.</p>
+            <p className="text-slate-600 mb-4">The upcoming Contractor Workspace will focus on:</p>
+            <ul className="text-left text-sm text-slate-600 mb-6 max-w-md mx-auto space-y-1">
+              <li>• Vendor Management & Supplier Directory</li>
+              <li>• Supplier Visits & Kiosk Activity</li>
+              <li>• Contacts & Relationships</li>
+              <li>• Product Discovery</li>
+              <li>• Supplier Documents & Compliance</li>
+              <li>• Market Hub</li>
+              <li>• Supplier Intelligence</li>
+              <li>• Team Management</li>
+              <li>• Corporate Analytics</li>
+            </ul>
+            <p className="text-xs text-slate-400">This is a simulated demo workspace. GEC Dubai does not imply company participation, endorsement or verified status.</p>
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 text-slate-600 text-sm">
               <span className="font-semibold">{activeCompany?.profile.tradingName}</span>
               <span className="text-slate-300">|</span>

@@ -81,7 +81,8 @@ export const SupplierWorkspaceView: React.FC<Props> = ({ tab, store, onStoreChan
     );
   }
 
-  const previewing = sw.membership.role === 'supplier_admin' && sw.role !== 'supplier_admin';
+  const isAdmin = sw.membership.role === 'supplier_admin' || sw.membership.role === 'contractor_admin';
+  const previewing = isAdmin && sw.role !== sw.membership.role;
 
   return (
     <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6">

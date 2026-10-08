@@ -258,7 +258,9 @@ export const respondToContact = (ctx: SupplierCtx, id: string, accept: boolean):
 export const removeSavedContact = (ctx: SupplierCtx, id: string): SupplierResult => {
   const d = deny(ctx, 'contacts.manage');
   if (d) return d;
-  return done({ ...ctx.store, contacts: ctx.store.contacts.filter((x) => !(x.id === id && x.companyId === ctx.companyId)) }, undefined);
+  const c = ctx.store.contacts.find((x) => x.id === id && x.companyId === ctx.companyId);
+  if (!c) return fail('Contact not found.');
+  return done(touch(ctx.store, ctx, `Removed saved contact ${c.name}`, 'contact', { contacts: ctx.store.contacts.filter((x) => x.id !== id) }), undefined);
 };
 
 export const addFollowUp = (ctx: SupplierCtx, visitId: string, note: string): SupplierResult => {

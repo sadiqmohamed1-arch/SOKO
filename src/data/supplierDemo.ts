@@ -1,7 +1,7 @@
 import { BuyerSupplier, IMG } from './buyerSuppliers';
 import { CompanyContact, CompanyDocument, CompanyKind, CompanyMembership, CompanyProduct, CompanyRecord, DocumentCategory, SupplierStore, AuditEntry, SupplierVisit, VisitFollowUp } from './supplierTypes';
 
-export const SUPPLIER_STORE_VERSION = 2;
+export const SUPPLIER_STORE_VERSION = 3;
 export const DEMO_USER = { id: 'usr_me_01', name: 'Mohamed Sadiq', email: 'mohamed.sadiq@soko.demo', title: 'Director of Strategic Sourcing' };
 
 const day = 86400000;
@@ -212,9 +212,10 @@ const contact = (companyId: string, id: string, kind: CompanyContact['kind'], na
   ...extra,
 });
 
-const visit = (companyId: string, id: string, days: number, time: string, representative: string, hostCompany: string, hostContact: string, location: string, purpose: SupplierVisit['purpose'], productsDiscussed: string[], status: SupplierVisit['status'], kioskBadge?: string): SupplierVisit => ({
+const visit = (companyId: string, id: string, days: number, time: string, representative: string, hostCompany: string, hostContact: string, location: string, purpose: SupplierVisit['purpose'], productsDiscussed: string[], status: SupplierVisit['status'], kioskBadge?: string, hostCompanyId?: string): SupplierVisit => ({
   id: `vst_${companyId === ES ? 'es' : companyId === ABC ? 'abc' : 'gec'}_${id}`,
   companyId,
+  hostCompanyId,
   date: ahead(days),
   time,
   representative,
@@ -242,7 +243,7 @@ export const buildSupplierDemo = (directory: BuyerSupplier[]): SupplierStore => 
       member(ABC, 'usr_ahmed_khan', 'Ahmed Khan', 'a.khan@abcwaterproofing.ae', 'Commercial Manager', 'supplier_admin', 'active', 180),
       member(ABC, 'usr_sarah_thomas_abc', 'Sarah Thomas', 's.thomas@abcwaterproofing.ae', 'Technical Sales Engineer', 'technical_manager', 'active', 150),
       member(ABC, 'usr_omar_abc', 'Omar Haddad', 'o.haddad@abcwaterproofing.ae', 'Sales Representative', 'sales_rep', 'active', 60),
-      member(ABC, 'inv_rajesh', 'Rajesh Nair', 'r.nair@abcwaterproofing.ae', 'Projects Coordinator', 'sales_rep', 'invited', 3),
+      // ABC Free tier: 3 seats — 3 active members, no invited (was 4/3 oversubscribed)
       // Emirates Steel — Sarah Thomas is admin
       member(ES, 'usr_sarah_thomas_es', 'Sarah Thomas', 's.thomas@emiratessteel.example', 'Sales Manager', 'supplier_admin', 'active', 420),
       member(ES, 'usr_khalid', 'Khalid Al Mansoori', 'k.mansoori@emiratessteel.example', 'Key Accounts Director', 'sales_manager', 'active', 600),
@@ -307,10 +308,11 @@ export const buildSupplierDemo = (directory: BuyerSupplier[]): SupplierStore => 
       visit(ES, '4', 4, '09:00 AM', 'Sarah Thomas', 'Al Habtoor Contracting', 'Mohammed Ali', 'Al Habtoor HQ, Dubai', 'Contract Negotiation', ['B500B Rebar'], 'scheduled'),
       visit(ABC, '1', -5, '10:30 AM', 'Ahmed Khan', 'Al Habtoor Contracting', 'Mohammed Ali', 'Al Habtoor HQ, Dubai', 'Sample Demonstration', ['SikaProof A+', 'Sika WT-200 P'], 'completed', 'SK-KIOSK-8199'),
       // ABC visits GEC Dubai — shared visit record; both sides can see it
-      visit(ABC, '2', 3, '01:00 PM', 'Ahmed Khan', 'GEC Dubai', 'Hassan Qureshi', 'GEC Dubai Office, Al Barsha', 'Vendor Onboarding', ['Mapelastic Cementitious Coating'], 'scheduled'),
+      visit(ABC, '2', 3, '01:00 PM', 'Ahmed Khan', 'GEC Dubai', 'Hassan Qureshi', 'GEC Dubai Office, Al Barsha', 'Vendor Onboarding', ['Mapelastic Cementitious Coating'], 'scheduled', undefined, GEC),
     ],
     followUps: [
       { visitId: 'vst_es_1', companyId: ES, side: 'supplier', note: 'Send revised price list for 16–25 mm and CARES certificate. Follow up Thursday.', at: ago(2), by: 'Sarah Thomas' } as VisitFollowUp,
+      { visitId: 'vst_abc_2', companyId: ABC, side: 'supplier', note: 'Prepare ICV certificate and project references for GEC vendor onboarding meeting.', at: ago(1), by: 'Ahmed Khan' } as VisitFollowUp,
       // Contractor-side note for the same GEC Dubai visit — private to GEC, not visible to ABC
       { visitId: 'vst_abc_2', companyId: GEC, side: 'contractor', note: 'Request ICV certificate and 3 project references before approving as an approved vendor.', at: ago(1), by: 'Mohamed Sadiq' } as VisitFollowUp,
     ],

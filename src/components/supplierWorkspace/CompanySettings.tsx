@@ -9,7 +9,7 @@ import { Card, PageHeader, SW } from './SupplierShared';
 
 export const CompanySettings: React.FC<{ sw: SW; onLeaveCompany: () => void }> = ({ sw, onLeaveCompany }) => {
   const [confirm, setConfirm] = useState<'leave' | 'reset' | null>(null);
-  const realAdmin = sw.membership.role === 'supplier_admin';
+  const realAdmin = sw.membership.role === 'supplier_admin' || sw.membership.role === 'contractor_admin';
   const preview = sw.store.previewRole[sw.company.id];
   const audit = sw.store.audit.filter((a) => a.companyId === sw.company.id).slice(0, 12);
   const p = sw.company.profile;

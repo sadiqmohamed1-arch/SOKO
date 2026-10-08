@@ -257,6 +257,7 @@ export interface CompanyContact {
 export interface SupplierVisit {
   id: string;
   companyId: string;
+  hostCompanyId?: string;
   date: string;
   time: string;
   representative: string;

@@ -69,11 +69,11 @@ export const SupplierDashboard: React.FC<{ sw: SW }> = ({ sw }) => {
       </section>
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-        <Kpi label="Profile Views" value={kpis.profileViews.toLocaleString()} hint="Last 4 weeks" icon={<Eye className="w-4 h-4" />} />
+        <Kpi label="Profile Views" value={kpis.profileViews.toLocaleString()} hint="Last 28 days" icon={<Eye className="w-4 h-4" />} />
         <Kpi label="Product Views" value={kpis.productViews.toLocaleString()} hint={`${active.length} active listings`} icon={<Package className="w-4 h-4" />} />
         <Kpi label="Buyer Connections" value={kpis.connections} hint={kpis.incoming ? `${kpis.incoming} new requests` : 'No pending requests'} icon={<Handshake className="w-4 h-4" />} />
         <Kpi label="Opportunities" value={market.relevantCount} hint="Open in your categories" icon={<Sparkles className="w-4 h-4" />} />
-        <Kpi label="Campaign Responses" value={market.inboxCount} hint="Received in your inbox" icon={<Megaphone className="w-4 h-4" />} />
+        <Kpi label="Campaign Responses" value={market.responses} hint="Total campaign responses" icon={<Megaphone className="w-4 h-4" />} />
         <Kpi label="Profile Completion" value={`${completion}%`} hint={missing.length ? `${missing.length} items to add` : 'Complete'} icon={<CheckCircle2 className="w-4 h-4" />} />
       </div>
 

@@ -47,7 +47,7 @@ const InviteDialog: React.FC<{ sw: SW; onClose: () => void }> = ({ sw, onClose }
         <label className="block">
           <span className={labelCls}>Role</span>
           <select value={role} onChange={(e) => setRole(e.target.value as CompanyRole)} className={inputCls}>
-            {SUPPLIER_ROLES.map((r) => <option key={r} value={r}>{roleMeta(r).label}</option>)}
+            {(sw.company.kind === 'contractor' ? CONTRACTOR_ROLES : SUPPLIER_ROLES).map((r) => <option key={r} value={r}>{roleMeta(r).label}</option>)}
           </select>
         </label>
         <p className="text-xs text-slate-500">{roleMeta(role).description}</p>
@@ -122,7 +122,7 @@ export const TeamManagement: React.FC<{ sw: SW }> = ({ sw }) => {
                       <td className="px-3 py-3">
                         {manage ? (
                           <select aria-label={`Role for ${m.name}`} value={m.role} onChange={(e) => sw.run(changeMemberRole(sw.ctx, m.id, e.target.value as CompanyRole), 'Role updated')} className={`${inputCls} py-1.5`}>
-                            {SUPPLIER_ROLES.map((r) => <option key={r} value={r}>{roleMeta(r).label}</option>)}
+                            {(sw.company.kind === 'contractor' ? CONTRACTOR_ROLES : SUPPLIER_ROLES).map((r) => <option key={r} value={r}>{roleMeta(r).label}</option>)}
                           </select>
                         ) : (
                           <span className="text-slate-700">{roleMeta(m.role).label}</span>

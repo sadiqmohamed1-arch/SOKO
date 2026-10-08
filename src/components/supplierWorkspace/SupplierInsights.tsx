@@ -19,7 +19,7 @@ export const SupplierInsights: React.FC<{ sw: SW }> = ({ sw }) => {
 
   const basics = (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-      <KpiCard label="Profile views (30 days)" value={kpis.profileViews.toLocaleString()} />
+      <KpiCard label="Profile views (28 days)" value={kpis.profileViews.toLocaleString()} />
       <KpiCard label="Product views" value={kpis.productViews.toLocaleString()} />
       <KpiCard label="Buyer connections" value={kpis.connections} />
       <KpiCard label="Profile completion" value={`${completion}%`} />
@@ -54,7 +54,7 @@ export const SupplierInsights: React.FC<{ sw: SW }> = ({ sw }) => {
   const cats = categoryEngagement(sw.products);
   const geo = geographicInterest(sw.company);
   const compliance = documentCompliance(sw.documents);
-  const incomplete = sw.products.filter((p) => completenessOf(p) < 80).length;
+  const incomplete = sw.products.filter((p) => completenessOf(p) < 60).length;
   const recs = [
     compliance.expired + compliance.reminder > 0 && `Renew ${compliance.expired + compliance.reminder} document${compliance.expired + compliance.reminder > 1 ? 's' : ''} that ${compliance.expired ? 'have expired or ' : ''}expire soon to stay prequalification-ready.`,
     incomplete > 0 && `Complete ${incomplete} product listing${incomplete > 1 ? 's' : ''} — complete listings get noticeably more views.`,

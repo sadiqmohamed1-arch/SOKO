@@ -18,7 +18,7 @@ const STATUS: Record<SupplierVisit['status'], { label: string; tone: 'blue' | 's
 
 const VisitDialog: React.FC<{ sw: SW; visit: SupplierVisit; onClose: () => void }> = ({ sw, visit, onClose }) => {
   const [note, setNote] = useState('');
-  const notes = sw.store.followUps.filter((f) => f.visitId === visit.id && f.companyId === sw.company.id);
+  const notes = sw.store.followUps.filter((f) => f.visitId === visit.id && f.companyId === sw.company.id && f.side === (sw.company.kind === 'contractor' ? 'contractor' : 'supplier'));
   const save = () => {
     if (sw.run(addFollowUp(sw.ctx, visit.id, note), 'Follow-up note saved')) setNote('');
   };
@@ -64,7 +64,7 @@ const VisitDialog: React.FC<{ sw: SW; visit: SupplierVisit; onClose: () => void 
 export const SupplierVisits: React.FC<{ sw: SW }> = ({ sw }) => {
   const [filter, setFilter] = useState<Filter>('all');
   const [openId, setOpenId] = useState<string | null>(null);
-  const visits = sw.store.visits.filter((v) => v.companyId === sw.company.id).sort((a, b) => b.date.localeCompare(a.date));
+  const visits = sw.store.visits.filter((v) => v.companyId === sw.company.id || v.hostCompanyId === sw.company.id).sort((a, b) => b.date.localeCompare(a.date));
   const upcoming = visits.filter((v) => v.status !== 'completed');
   const completed = visits.filter((v) => v.status === 'completed');
   const shown = filter === 'upcoming' ? upcoming : filter === 'completed' ? completed : visits;
@@ -77,7 +77,7 @@ export const SupplierVisits: React.FC<{ sw: SW }> = ({ sw }) => {
         <KpiCard label="Total visits" value={visits.length} />
         <KpiCard label="Upcoming / in progress" value={upcoming.length} />
         <KpiCard label="Completed" value={completed.length} />
-        <KpiCard label="Follow-up notes" value={sw.store.followUps.filter((f) => f.companyId === sw.company.id).length} />
+        <KpiCard label="Follow-up notes" value={sw.store.followUps.filter((f) => f.companyId === sw.company.id && f.side === (sw.company.kind === 'contractor' ? 'contractor' : 'supplier')).length} />
       </div>
 
       <div className="mb-3">
@@ -110,7 +110,7 @@ export const SupplierVisits: React.FC<{ sw: SW }> = ({ sw }) => {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {shown.map((v) => {
-                const n = sw.store.followUps.filter((f) => f.visitId === v.id && f.companyId === sw.company.id).length;
+                const n = sw.store.followUps.filter((f) => f.visitId === v.id && f.companyId === sw.company.id && f.side === (sw.company.kind === 'contractor' ? 'contractor' : 'supplier')).length;
                 return (
                   <tr key={v.id} onClick={() => setOpenId(v.id)} className="hover:bg-slate-50 cursor-pointer transition-colors">
                     <td className="px-4 py-3 whitespace-nowrap"><p className="font-medium text-slate-900">{fmtDate(v.date)}</p><p className="text-xs text-slate-500">{v.time}</p></td>
