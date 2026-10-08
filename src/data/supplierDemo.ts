@@ -1,7 +1,7 @@
 import { BuyerSupplier, IMG } from './buyerSuppliers';
 import { CompanyContact, CompanyDocument, CompanyKind, CompanyMembership, CompanyProduct, CompanyRecord, DocumentCategory, SupplierStore, AuditEntry, SupplierVisit, VisitFollowUp, VisitTask, VendorRecord, VendorNote, DocumentVisibility } from './supplierTypes';
 
-export const SUPPLIER_STORE_VERSION = 7;
+export const SUPPLIER_STORE_VERSION = 8;
 export const DEMO_USER = { id: 'usr_me_01', name: 'Mohamed Sadiq', email: 'mohamed.sadiq@soko.demo', title: 'Director of Strategic Sourcing' };
 
 const day = 86400000;
@@ -310,6 +310,7 @@ export const buildSupplierDemo = (directory: BuyerSupplier[]): SupplierStore => 
       contact(ES, 's2', 'saved', 'Elif Demir', 'Planning Manager', 'Bayan Towers Contracting', 'Steel & Rebar', 'Abu Dhabi', 22),
       contact(ES, 'i1', 'incoming', 'Tariq Hussain', 'Buyer', 'Al Ain Civil Works', 'Steel & Rebar', 'Abu Dhabi', 1, { message: 'We need 600 t of B500B for a bridge package in Q1 – please connect.' }),
       contact(ES, 'i2', 'incoming', 'Meera Pillai', 'Procurement Executive', 'Sahel Contracting', 'Steel & Rebar', 'Dubai', 2, { message: 'Interested in cut & bend capacity for a villa cluster.' }),
+      contact(GEC, 'cc1', 'corporate', 'Ahmed Khan', 'Commercial Manager', 'ABC Waterproofing LLC', 'Waterproofing', 'Dubai', 12, { email: 'a.khan@abcwaterproofing.ae', phone: '+971 50 214 7788', sourceCompanyId: ABC, sourceUserId: 'usr_ahmed_khan', savedBy: 'Mohamed Sadiq', savedById: 'usr_me_01' }),
     ],
     visits: [
       visit(ES, '1', -3, '10:00 AM', 'Sarah Thomas', 'Apex Industrial Mechanical GC', 'Sarah Jenkins', 'Apex GC Head Office, Dubai', 'Commercial Review', ['B500B Rebar', 'Cut & Bend Service'], 'completed', 'SK-KIOSK-8231', undefined, 'Sarah Thomas', 'usr_sarah_thomas_es'),

@@ -1,5 +1,5 @@
 import { companyById, documentsOf, findDuplicateCompanies, membersOf, storageAllocationMb, storageUsedMb } from './supplierStore';
-import { can, CompanyDocument, CompanyMembership, CompanyProduct, CompanyProfile, CompanyRecord, DocumentAccessLevel, DocumentCategory, Permission, SessionUser, SupplierResult, CompanyRole, SupplierStore, SupplierTier, TIER_CONFIG, AuditEntry, roleMeta, SupplierVisit, VisitFollowUp, VisitTask, VendorRecord, VendorApprovalStatus, VendorNote } from './supplierTypes';
+import { can, CompanyContact, CompanyDocument, CompanyMembership, CompanyProduct, CompanyProfile, CompanyRecord, DocumentAccessLevel, DocumentCategory, Permission, SessionUser, SupplierResult, CompanyRole, SupplierStore, SupplierTier, TIER_CONFIG, AuditEntry, roleMeta, SupplierVisit, VisitFollowUp, VisitTask, VendorRecord, VendorApprovalStatus, VendorNote } from './supplierTypes';
 
 export interface SupplierCtx {
   store: SupplierStore;
@@ -264,6 +264,38 @@ export const removeSavedContact = (ctx: SupplierCtx, id: string): SupplierResult
   if (!c) return fail('Contact not found.');
   return done(touch(ctx.store, ctx, `Removed saved contact ${c.name}`, 'contact', { contacts: ctx.store.contacts.filter((x) => x.id !== id) }), undefined);
 };
+
+export const saveCompanyContact = (ctx: SupplierCtx, input: { name: string; title: string; company: string; category: string; emirate: string; email?: string; phone?: string; sourceCompanyId?: string; sourceUserId?: string }): SupplierResult<CompanyContact> => {
+  const d = deny(ctx, 'contacts.manage');
+  if (d) return d;
+  if (!input.name.trim()) return fail('Contact name is required.');
+  const existing = ctx.store.contacts.find(
+    (x) => x.companyId === ctx.companyId && x.kind === 'corporate' && x.name.toLowerCase().trim() === input.name.toLowerCase().trim() && x.company.toLowerCase().trim() === input.company.toLowerCase().trim(),
+  );
+  if (existing) return fail(`${input.name} is already saved to your company contacts.`);
+  const id = uid('cc');
+  const c: CompanyContact = {
+    id, companyId: ctx.companyId, kind: 'corporate',
+    name: input.name.trim(), title: input.title, company: input.company,
+    category: input.category, emirate: input.emirate,
+    email: input.email, phone: input.phone,
+    consentToShare: true, at: now(),
+    sourceCompanyId: input.sourceCompanyId, sourceUserId: input.sourceUserId,
+    savedBy: ctx.user.name, savedById: ctx.user.id,
+  };
+  return done(touch(ctx.store, ctx, `Saved ${input.name} (${input.company}) to company contacts`, 'contact', { contacts: [c, ...ctx.store.contacts] }), c);
+};
+
+export const removeCompanyContact = (ctx: SupplierCtx, id: string): SupplierResult => {
+  const d = deny(ctx, 'contacts.manage');
+  if (d) return d;
+  const c = ctx.store.contacts.find((x) => x.id === id && x.companyId === ctx.companyId && x.kind === 'corporate');
+  if (!c) return fail('Company contact not found.');
+  return done(touch(ctx.store, ctx, `Removed company contact ${c.name}`, 'contact', { contacts: ctx.store.contacts.filter((x) => x.id !== id) }), undefined);
+};
+
+export const isSavedCorporateContact = (store: SupplierStore, companyId: string, sourceUserId: string): boolean =>
+  store.contacts.some((x) => x.companyId === companyId && x.kind === 'corporate' && x.sourceUserId === sourceUserId);
 
 export const addFollowUp = (ctx: SupplierCtx, visitId: string, note: string): SupplierResult => {
   const d = deny(ctx, 'visits.manage');

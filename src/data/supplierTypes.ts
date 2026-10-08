@@ -239,7 +239,7 @@ export interface CompanyDocument {
   versions: { version: number; fileName: string; at: string; by: string }[];
 }
 
-export type CompanyContactKind = 'connection' | 'saved' | 'incoming';
+export type CompanyContactKind = 'connection' | 'saved' | 'incoming' | 'corporate';
 
 export interface CompanyContact {
   id: string;
@@ -255,6 +255,10 @@ export interface CompanyContact {
   consentToShare: boolean;
   message?: string;
   at: string;
+  sourceCompanyId?: string;
+  sourceUserId?: string;
+  savedBy?: string;
+  savedById?: string;
 }
 
 export type VisitStatus = 'pending-confirmation' | 'scheduled' | 'checked-in' | 'in-meeting' | 'completed' | 'cancelled' | 'no-show' | 'declined';

@@ -5,7 +5,7 @@ import {
   CalendarPlus, X, ChevronRight, Search, ShieldCheck, ExternalLink,
 } from 'lucide-react';
 import { SupplierVisit, VisitFollowUp, VisitTask, VisitStatus, VisitPurpose, CompanyRecord } from '../../data/supplierTypes';
-import { addFollowUp, deleteFollowUp, createVisit, updateVisitStatus, addVisitTask, updateVisitTask, confirmVisit, declineVisit } from '../../data/supplierService';
+import { addFollowUp, deleteFollowUp, createVisit, updateVisitStatus, addVisitTask, updateVisitTask, confirmVisit, declineVisit, saveCompanyContact, isSavedCorporateContact } from '../../data/supplierService';
 import { StatusPill, btnPrimary, btnSecondary, btnGhost, inputCls, labelCls } from '../NetworkShared';
 import { ProfileDialog } from '../ProfileDialog';
 import { DemoNote, EmptyState, Field, KpiCard, SubTabs, fmtDate } from '../marketHub/MarketHubShared';
@@ -376,6 +376,7 @@ const CreateVisitModal: React.FC<{ sw: SW; onClose: () => void }> = ({ sw, onClo
   const [purpose, setPurpose] = useState<VisitPurpose>('Commercial Review');
   const [products, setProducts] = useState('');
   const [remarks, setRemarks] = useState('');
+  const [saveContact, setSaveContact] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -438,7 +439,22 @@ const CreateVisitModal: React.FC<{ sw: SW; onClose: () => void }> = ({ sw, onClo
     });
 
     if (r.ok) {
-      sw.setStore(r.store);
+      let store = r.store;
+      if (saveContact && selectedHost && hostContact) {
+        const contactMember = hostMembers.find((m) => m.name === hostContact);
+        if (contactMember && !isSavedCorporateContact(store, sw.company.id, contactMember.userId)) {
+          const sc = saveCompanyContact({ ...sw.ctx, store }, {
+            name: contactMember.name, title: contactMember.title,
+            company: selectedHost.profile.tradingName,
+            category: selectedHost.profile.categories[0] ?? '',
+            emirate: selectedHost.profile.emirate,
+            email: contactMember.email,
+            sourceCompanyId: selectedHost.id, sourceUserId: contactMember.userId,
+          });
+          if (sc.ok) store = sc.store;
+        }
+      }
+      sw.setStore(store);
       sw.notify(selectedHost
         ? `Visit request sent to ${selectedHost.profile.tradingName} — pending confirmation`
         : `Visit scheduled to ${hostQuery.trim()} (external/unlinked host)`
@@ -580,6 +596,17 @@ const CreateVisitModal: React.FC<{ sw: SW; onClose: () => void }> = ({ sw, onClo
           <label className={labelCls}>Additional Remarks</label>
           <textarea value={remarks} onChange={(e) => setRemarks(e.target.value)} rows={2} placeholder="Optional notes" className={inputCls} />
         </div>
+
+        {selectedHost && hostContact && hostMembers.some((m) => m.name === hostContact) && sw.company.kind === 'contractor' && (() => {
+          const contactMember = hostMembers.find((m) => m.name === hostContact)!;
+          const alreadySaved = isSavedCorporateContact(sw.store, sw.company.id, contactMember.userId);
+          return alreadySaved ? null : (
+            <label className="flex items-center gap-2 rounded-lg bg-blue-50 border border-blue-200 px-3 py-2.5 cursor-pointer">
+              <input type="checkbox" checked={saveContact} onChange={(e) => setSaveContact(e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+              <span className="text-sm text-blue-900 font-medium">Save {hostContact} to Company Contacts</span>
+            </label>
+          );
+        })()}
 
         <DemoNote>
           {selectedHost

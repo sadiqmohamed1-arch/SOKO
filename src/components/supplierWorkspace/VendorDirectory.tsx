@@ -5,7 +5,9 @@ import {
   FileText, Download, Eye, EyeOff, Clock, X,
 } from 'lucide-react';
 import { VendorRecord, VendorApprovalStatus, CompanyDocument, DocumentVisibility } from '../../data/supplierTypes';
-import { addVendor, updateVendorStatus, removeVendor, addVendorNote, deleteVendorNote } from '../../data/supplierService';
+import { addVendor, updateVendorStatus, removeVendor, addVendorNote, deleteVendorNote, saveCompanyContact, isSavedCorporateContact } from '../../data/supplierService';
+import { membersOf } from '../../data/supplierStore';
+import { Bookmark, BookmarkCheck } from 'lucide-react';
 import { StatusPill, btnPrimary, btnSecondary, btnGhost, inputCls, labelCls } from '../NetworkShared';
 import { ProfileDialog } from '../ProfileDialog';
 import { DemoNote, EmptyState, Field, KpiCard, SubTabs, fmtDate } from '../marketHub/MarketHubShared';
@@ -260,6 +262,40 @@ const VendorDetailModal: React.FC<{ sw: SW; vendor: VendorRecord; onClose: () =>
           <Field label="Added" value={`${fmtDate(vendor.addedAt)} by ${vendor.addedBy}`} />
           {vendor.lastVisitDate && <Field label="Last Visit" value={fmtDate(vendor.lastVisitDate)} />}
         </div>
+
+        {/* Save to Company Contacts — only for linked SOKO suppliers */}
+        {linkedCompany && vendor.contactPerson && sw.company.kind === 'contractor' && (() => {
+          const contactMember = membersOf(sw.store, linkedCompany.id).find((m) => m.status === 'active' && m.name === vendor.contactPerson);
+          const sourceUserId = contactMember?.userId;
+          const alreadySaved = sourceUserId ? isSavedCorporateContact(sw.store, sw.company.id, sourceUserId) : false;
+          if (alreadySaved) {
+            return (
+              <div className="flex items-center gap-2 rounded-xl bg-green-50 border border-green-200 px-3 py-2.5">
+                <BookmarkCheck className="w-4 h-4 text-green-700 shrink-0" />
+                <p className="text-sm font-semibold text-green-800">{vendor.contactPerson} is saved to your company contacts</p>
+              </div>
+            );
+          }
+          return canManage && contactMember ? (
+            <button
+              type="button"
+              onClick={() => {
+                const res = saveCompanyContact(sw.ctx, {
+                  name: contactMember.name, title: contactMember.title,
+                  company: linkedCompany.profile.tradingName,
+                  category: vendor.tradeCategory, emirate: linkedCompany.profile.emirate,
+                  email: contactMember.email, phone: vendor.contactPhone,
+                  sourceCompanyId: linkedCompany.id, sourceUserId: contactMember.userId,
+                });
+                if (res.ok) { sw.setStore(res.store); sw.notify(`Saved ${contactMember.name} to company contacts`); }
+                else sw.notify(res.error);
+              }}
+              className={`${btnSecondary} text-sm`}
+            >
+              <Bookmark className="w-4 h-4" /> Save {vendor.contactPerson} to Company Contacts
+            </button>
+          ) : null;
+        })()}
 
         {/* View Public Profile */}
         {linkedCompany && (
