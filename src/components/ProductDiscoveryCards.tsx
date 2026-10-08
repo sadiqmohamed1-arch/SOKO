@@ -30,67 +30,117 @@ interface ProductTypeCardProps {
   product: ProductType;
   reason?: string;
   brands: string[];
-  supplierCount: number;
+  suppliers: BuyerSupplier[];
   saved: boolean;
   onViewSuppliers: () => void;
   onToggleSaveSearch: () => void;
   onOpenBrand: (brand: string) => void;
+  onOpenSupplier: (supplier: BuyerSupplier) => void;
 }
 
-export const ProductTypeCard: React.FC<ProductTypeCardProps> = ({ product, reason, brands, supplierCount, saved, onViewSuppliers, onToggleSaveSearch, onOpenBrand }) => (
-  <article className={`${cardCls} flex flex-col`}>
-    <div className="flex items-start justify-between gap-3">
-      <div className="min-w-0">
-        <Label>Product type · {product.category}</Label>
-        <h3 className="mt-1 text-base font-semibold text-slate-900 leading-snug">{product.name}</h3>
+const PREVIEW_COUNT = 2;
+const compactPrimary = primaryBtn.replace('px-3.5 py-2', 'px-3 py-1.5');
+const compactSecondary = secondaryBtn.replace('px-3.5 py-2', 'px-3 py-1.5');
+
+export const ProductTypeCard: React.FC<ProductTypeCardProps> = ({
+  product,
+  reason,
+  brands,
+  suppliers,
+  saved,
+  onViewSuppliers,
+  onToggleSaveSearch,
+  onOpenBrand,
+  onOpenSupplier,
+}) => {
+  const count = suppliers.length;
+  return (
+    <article className={`${cardCls.replace('p-4 sm:p-5', 'p-4')} flex flex-col`}>
+      <Label>{product.category}</Label>
+      <h3 className="mt-0.5 text-base font-semibold text-slate-900 leading-snug">{product.name}</h3>
+      {reason && (
+        <div className="mt-1.5">
+          <MatchReason text={reason} />
+        </div>
+      )}
+      <div className="mt-2 flex flex-wrap gap-1" aria-label="Related keywords">
+        {product.keywords.map((k) => (
+          <span key={k} className="px-1.5 py-0.5 rounded bg-slate-100 text-[11px] text-slate-600">
+            {k}
+          </span>
+        ))}
       </div>
-    </div>
-    {reason && (
-      <div className="mt-2">
-        <MatchReason text={reason} />
-      </div>
-    )}
-    <dl className="mt-3 mb-4 space-y-2 text-sm">
-      <div>
-        <dt className="text-xs text-slate-500">Related keywords</dt>
-        <dd className="mt-1 flex flex-wrap gap-1">
-          {product.keywords.map((k) => (
-            <Chip key={k}>{k}</Chip>
-          ))}
-        </dd>
-      </div>
-      <div>
-        <dt className="text-xs text-slate-500">Brands</dt>
-        <dd className="mt-0.5 text-slate-800">
-          {brands.length === 0
-            ? <span className="text-slate-400">No brands declared yet</span>
-            : brands.map((b, i) => (
-                <React.Fragment key={b}>
-                  {i > 0 && <span className="text-slate-300">, </span>}
-                  <button type="button" onClick={() => onOpenBrand(b)} className="font-semibold text-slate-800 hover:text-blue-700 hover:underline cursor-pointer">
-                    {b}
-                  </button>
-                </React.Fragment>
-              ))}
-        </dd>
-      </div>
-    </dl>
-    <div className="mt-auto pt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100">
-      <p className="text-sm font-semibold text-slate-900">
-        {supplierCount} Matching {supplierCount === 1 ? 'Supplier' : 'Suppliers'}
+      <p className="mt-2 text-sm text-slate-500">
+        <span className="text-xs">Brands: </span>
+        {brands.length === 0 ? (
+          <span className="text-slate-400">None declared yet</span>
+        ) : (
+          brands.map((b, i) => (
+            <React.Fragment key={b}>
+              {i > 0 && <span className="text-slate-300">, </span>}
+              <button
+                type="button"
+                onClick={() => onOpenBrand(b)}
+                title={`Show suppliers that declared ${b}`}
+                className="font-semibold text-slate-800 hover:text-blue-700 hover:underline cursor-pointer"
+              >
+                {b}
+              </button>
+            </React.Fragment>
+          ))
+        )}
       </p>
-      <div className="flex gap-2">
-        <button type="button" onClick={onToggleSaveSearch} aria-pressed={saved} className={secondaryBtn}>
+
+      <div className="mt-3 mb-3 rounded-lg bg-slate-50 border border-slate-100 px-3 py-2">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[11px] font-semibold tracking-wider uppercase text-slate-500">Quick Supplier Preview</span>
+          <span className="text-xs font-semibold text-slate-900">
+            {count} Matching {count === 1 ? 'Supplier' : 'Suppliers'}
+          </span>
+        </div>
+        {count === 0 ? (
+          <p className="py-1.5 text-xs text-slate-400">No matching suppliers with the current filters.</p>
+        ) : (
+          <ul className="mt-1 divide-y divide-slate-200/70">
+            {suppliers.slice(0, PREVIEW_COUNT).map((s) => (
+              <li key={s.id}>
+                <button
+                  type="button"
+                  onClick={() => onOpenSupplier(s)}
+                  className="w-full flex items-center justify-between gap-2 py-1.5 text-left group cursor-pointer"
+                >
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold text-slate-800 group-hover:text-blue-700 truncate">{s.name}</span>
+                    <span className="flex items-center gap-1 text-xs text-slate-500">
+                      <MapPin className="w-3 h-3 shrink-0" />
+                      {supplierLocation(s)}
+                    </span>
+                  </span>
+                  <SupplierStatusBadge status={s.status} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {count > PREVIEW_COUNT && (
+          <button type="button" onClick={onViewSuppliers} className="mt-0.5 text-xs font-semibold text-blue-700 hover:text-blue-800 hover:underline cursor-pointer">
+            View All {count} Matching Suppliers
+          </button>
+        )}
+      </div>
+
+      <div className="mt-auto pt-3 flex flex-wrap items-center justify-end gap-2 border-t border-slate-100">
+        <button type="button" onClick={onToggleSaveSearch} aria-pressed={saved} className={compactSecondary}>
           {saved ? <BookmarkCheck className="w-4 h-4 text-blue-700" /> : <Bookmark className="w-4 h-4" />}
           {saved ? 'Saved' : 'Save Search'}
         </button>
-        <button type="button" onClick={onViewSuppliers} disabled={!supplierCount} className={`${primaryBtn} disabled:bg-slate-300 disabled:cursor-not-allowed`}>
+        <button type="button" onClick={onViewSuppliers} disabled={!count} className={`${compactPrimary} disabled:bg-slate-300 disabled:cursor-not-allowed`}>
           View Suppliers
         </button>
       </div>
-    </div>
-  </article>
-);
+    </article>
+  );
+};
 
 const brandInitials = (name: string) =>
   name
@@ -115,7 +165,11 @@ export const BrandCard: React.FC<BrandCardProps> = ({ brand, reason, supplierCou
       </span>
       <div className="min-w-0">
         <Label>Brand · {brand.category}</Label>
-        <h3 className="mt-0.5 text-base font-semibold text-slate-900 leading-snug">{brand.name}</h3>
+        <h3 className="mt-0.5 text-base font-semibold leading-snug">
+          <button type="button" onClick={onFindSuppliers} disabled={!supplierCount} className="text-slate-900 hover:text-blue-700 enabled:cursor-pointer text-left">
+            {brand.name}
+          </button>
+        </h3>
       </div>
     </div>
     {reason && (
@@ -162,11 +216,12 @@ interface MatchingSupplierCardProps {
   onContact: () => void;
   onViewCatalogue: () => void;
   onToggleSave: () => void;
+  onOpenBrand: (brand: string) => void;
 }
 
 const MAX_CAPABILITIES = 4;
 
-export const MatchingSupplierCard: React.FC<MatchingSupplierCardProps> = ({ supplier: s, reasons, focusBrand, saved, onView, onContact, onViewCatalogue, onToggleSave }) => {
+export const MatchingSupplierCard: React.FC<MatchingSupplierCardProps> = ({ supplier: s, reasons, focusBrand, saved, onView, onContact, onViewCatalogue, onToggleSave, onOpenBrand }) => {
   const catalogue = catalogueInfo(s);
   const catalogueLabel = catalogue.vault.length
     ? 'Available on SOKO'
@@ -206,7 +261,20 @@ export const MatchingSupplierCard: React.FC<MatchingSupplierCardProps> = ({ supp
       <dl className="mt-3 grid gap-x-6 gap-y-2.5 sm:grid-cols-2 text-sm">
         <div className="min-w-0">
           <dt className="text-xs text-slate-500">Brands</dt>
-          <dd className="mt-0.5 text-slate-800">{s.brands.length ? s.brands.join(', ') : <span className="text-slate-400">None declared</span>}</dd>
+          <dd className="mt-0.5 text-slate-800">
+            {s.brands.length ? (
+              s.brands.map((b, i) => (
+                <React.Fragment key={b}>
+                  {i > 0 && <span className="text-slate-300">, </span>}
+                  <button type="button" onClick={() => onOpenBrand(b)} className="hover:text-blue-700 hover:underline cursor-pointer">
+                    {b}
+                  </button>
+                </React.Fragment>
+              ))
+            ) : (
+              <span className="text-slate-400">None declared</span>
+            )}
+          </dd>
           {focusBrand && <dd className="mt-0.5 text-xs text-slate-500">{focusBrand}: {brandRelationship(s, focusBrand)}</dd>}
         </div>
         <div className="min-w-0">

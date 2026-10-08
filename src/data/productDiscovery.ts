@@ -148,6 +148,10 @@ const SYNONYMS: [string, string][] = [
   ['door hardware', 'ironmongery'],
   ['tanking', 'waterproofing'],
   ['curtain wall', 'facade'],
+  ['deformed bar', 'rebar'],
+  ['ready mixed', 'ready mix'],
+  ['ductwork', 'hvac'],
+  ['glass', 'glazing'],
 ];
 
 export interface QueryPlan {
@@ -258,16 +262,27 @@ export function productTypeSuppliers(pt: ProductType, pool: BuyerSupplier[] = BU
     .sort((a, b) => b.score - a.score || a.supplier.name.localeCompare(b.supplier.name));
 }
 
+const brandCoversProduct = (brand: string, pt: ProductType) => {
+  const entry = BRANDS.find((b) => b.name === brand);
+  if (!entry) return false;
+  const areas: Field = { kind: 'brand', label: brand, words: tokensOf(entry.relatedAreas.join(' ')) };
+  return entry.relatedAreas.includes(pt.category) || pt.terms.some((term) => phraseHit(areas, term));
+};
+
+// Product listings are optional, so declared brands count when the brand's known areas cover this product type.
 export const productTypeBrands = (pt: ProductType) =>
   Array.from(
     new Set(
-      productTypeSuppliers(pt).flatMap(({ supplier }) =>
-        supplier.products.filter((p) => pt.terms.some((term) => phraseHit({ kind: 'product', label: p.name, words: tokensOf(`${p.name} ${p.type}`) }, term)))
-          .map((p) => p.brand)
-          .filter((b) => b !== 'Unbranded')
-      )
+      productTypeSuppliers(pt).flatMap(({ supplier }) => [
+        ...supplier.products
+          .filter((p) => pt.terms.some((term) => phraseHit({ kind: 'product', label: p.name, words: tokensOf(`${p.name} ${p.type}`) }, term)))
+          .map((p) => p.brand),
+        ...supplier.brands.filter((b) => brandCoversProduct(b, pt)),
+      ])
     )
-  ).sort((a, b) => a.localeCompare(b));
+  )
+    .filter((b) => b !== 'Unbranded')
+    .sort((a, b) => a.localeCompare(b));
 
 export function brandSuppliers(brand: string, pool: BuyerSupplier[] = BUYER_SUPPLIERS): SupplierDiscoveryMatch[] {
   return pool
