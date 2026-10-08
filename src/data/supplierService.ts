@@ -286,22 +286,26 @@ export const deleteFollowUp = (ctx: SupplierCtx, followUpId: string): SupplierRe
   return done(touch(ctx.store, ctx, 'Deleted a visit follow-up note', 'visit', { followUps: ctx.store.followUps.filter((f) => f.id !== followUpId) }), undefined);
 };
 
-export const createVisit = (ctx: SupplierCtx, visit: { hostCompany: string; hostContact: string; representative: string; date: string; time: string; location: string; purpose: SupplierVisit['purpose']; productsDiscussed: string[]; remarks?: string }): SupplierResult<SupplierVisit> => {
+export const createVisit = (ctx: SupplierCtx, visit: { hostCompany: string; hostCompanyId?: string; hostContact: string; representative: string; date: string; time: string; location: string; purpose: SupplierVisit['purpose']; productsDiscussed: string[]; remarks?: string }): SupplierResult<SupplierVisit> => {
   const d = deny(ctx, 'visits.manage');
   if (d) return d;
   if (!visit.hostCompany.trim()) return fail('Host company is required.');
   if (!visit.date.trim()) return fail('Date is required.');
   if (!visit.representative.trim()) return fail('Representative is required.');
   const id = uid('vst');
+  const isLinked = !!visit.hostCompanyId;
   const newVisit: SupplierVisit = {
-    id, companyId: ctx.companyId, hostCompanyId: undefined,
+    id, companyId: ctx.companyId, hostCompanyId: visit.hostCompanyId,
     date: visit.date, time: visit.time, representative: visit.representative,
     hostCompany: visit.hostCompany, hostContact: visit.hostContact, location: visit.location,
     purpose: visit.purpose, productsDiscussed: visit.productsDiscussed,
-    status: 'scheduled', visitType: 'scheduled',
+    status: isLinked ? 'pending-confirmation' : 'scheduled', visitType: 'scheduled',
     createdById: ctx.user.id, createdByName: ctx.user.name, remarks: visit.remarks,
   };
-  return done(touch(ctx.store, ctx, `Scheduled visit to ${visit.hostCompany}`, 'visit', { visits: [newVisit, ...ctx.store.visits] }), newVisit);
+  const action = isLinked
+    ? `Scheduled visit to ${visit.hostCompany} — pending host confirmation`
+    : `Scheduled visit to ${visit.hostCompany} (external/unlinked host)`;
+  return done(touch(ctx.store, ctx, action, 'visit', { visits: [newVisit, ...ctx.store.visits] }), newVisit);
 };
 
 export const updateVisitStatus = (ctx: SupplierCtx, visitId: string, status: SupplierVisit['status']): SupplierResult => {
@@ -313,6 +317,26 @@ export const updateVisitStatus = (ctx: SupplierCtx, visitId: string, status: Sup
   if (status === 'checked-in' && !visit.checkInAt) patch.checkInAt = now();
   if (status === 'completed' && !visit.checkOutAt) patch.checkOutAt = now();
   return done(touch(ctx.store, ctx, `Updated visit status to ${status}`, 'visit', { visits: ctx.store.visits.map((v) => v.id === visitId ? { ...v, ...patch } : v) }), undefined);
+};
+
+export const confirmVisit = (ctx: SupplierCtx, visitId: string): SupplierResult => {
+  const d = deny(ctx, 'visits.manage');
+  if (d) return d;
+  const visit = ctx.store.visits.find((v) => v.id === visitId && v.hostCompanyId === ctx.companyId);
+  if (!visit) return fail('Visit not found.');
+  if (visit.status !== 'pending-confirmation') return fail('Only pending visits can be confirmed.');
+  const visitorCompany = companyById(ctx.store, visit.companyId);
+  return done(touch(ctx.store, ctx, `Confirmed visit from ${visitorCompany?.profile.tradingName ?? visit.representative}`, 'visit', { visits: ctx.store.visits.map((v) => v.id === visitId ? { ...v, status: 'scheduled', confirmedById: ctx.user.id, confirmedByName: ctx.user.name } : v) }), undefined);
+};
+
+export const declineVisit = (ctx: SupplierCtx, visitId: string, reason?: string): SupplierResult => {
+  const d = deny(ctx, 'visits.manage');
+  if (d) return d;
+  const visit = ctx.store.visits.find((v) => v.id === visitId && v.hostCompanyId === ctx.companyId);
+  if (!visit) return fail('Visit not found.');
+  if (visit.status !== 'pending-confirmation') return fail('Only pending visits can be declined.');
+  const visitorCompany = companyById(ctx.store, visit.companyId);
+  return done(touch(ctx.store, ctx, `Declined visit from ${visitorCompany?.profile.tradingName ?? visit.representative}`, 'visit', { visits: ctx.store.visits.map((v) => v.id === visitId ? { ...v, status: 'declined', declinedById: ctx.user.id, declinedByName: ctx.user.name, declinedReason: reason } : v) }), undefined);
 };
 
 export const addVisitTask = (ctx: SupplierCtx, visitId: string, task: { description: string; assignedTo: string; dueDate: string; priority: VisitTask['priority'] }): SupplierResult<VisitTask> => {

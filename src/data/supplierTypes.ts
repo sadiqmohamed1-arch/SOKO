@@ -257,7 +257,7 @@ export interface CompanyContact {
   at: string;
 }
 
-export type VisitStatus = 'scheduled' | 'checked-in' | 'in-meeting' | 'completed' | 'cancelled' | 'no-show';
+export type VisitStatus = 'pending-confirmation' | 'scheduled' | 'checked-in' | 'in-meeting' | 'completed' | 'cancelled' | 'no-show' | 'declined';
 export type VisitType = 'scheduled' | 'walk-in';
 export type VisitPurpose = 'Sample Demonstration' | 'Contract Negotiation' | 'RFQ Discussion' | 'Vendor Onboarding' | 'Facility Inspection' | 'Commercial Review' | 'Other';
 
@@ -282,6 +282,9 @@ export interface SupplierVisit {
   createdByName: string;
   confirmedById?: string;
   confirmedByName?: string;
+  declinedById?: string;
+  declinedByName?: string;
+  declinedReason?: string;
   remarks?: string;
 }
 

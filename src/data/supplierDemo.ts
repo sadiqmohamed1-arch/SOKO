@@ -1,7 +1,7 @@
 import { BuyerSupplier, IMG } from './buyerSuppliers';
 import { CompanyContact, CompanyDocument, CompanyKind, CompanyMembership, CompanyProduct, CompanyRecord, DocumentCategory, SupplierStore, AuditEntry, SupplierVisit, VisitFollowUp, VisitTask, VendorRecord, VendorNote, DocumentVisibility } from './supplierTypes';
 
-export const SUPPLIER_STORE_VERSION = 6;
+export const SUPPLIER_STORE_VERSION = 7;
 export const DEMO_USER = { id: 'usr_me_01', name: 'Mohamed Sadiq', email: 'mohamed.sadiq@soko.demo', title: 'Director of Strategic Sourcing' };
 
 const day = 86400000;
@@ -318,7 +318,7 @@ export const buildSupplierDemo = (directory: BuyerSupplier[]): SupplierStore => 
       visit(ES, '4', 4, '09:00 AM', 'Sarah Thomas', 'Al Habtoor Contracting', 'Mohammed Ali', 'Al Habtoor HQ, Dubai', 'Contract Negotiation', ['B500B Rebar'], 'scheduled', undefined, undefined, 'Sarah Thomas', 'usr_sarah_thomas_es', 'Discuss annual rebar supply terms and volume discounts.'),
       visit(ABC, '1', -5, '10:30 AM', 'Ahmed Khan', 'Al Habtoor Contracting', 'Mohammed Ali', 'Al Habtoor HQ, Dubai', 'Sample Demonstration', ['SikaProof A+', 'Sika WT-200 P'], 'completed', 'SK-KIOSK-8199', undefined, 'Ahmed Khan', 'usr_ahmed_khan'),
       // ABC visits GEC Dubai — shared visit record; both sides can see it
-      visit(ABC, '2', 3, '01:00 PM', 'Ahmed Khan', 'GEC Dubai', 'Hassan Qureshi', 'GEC Dubai Office, Al Barsha', 'Vendor Onboarding', ['Mapelastic Cementitious Coating'], 'scheduled', undefined, GEC, 'Ahmed Khan', 'usr_ahmed_khan', 'Initial vendor onboarding meeting with GEC procurement team.'),
+      visit(ABC, '2', 3, '01:00 PM', 'Ahmed Khan', 'GEC Dubai', 'Mohamed Sadiq', 'GEC Dubai Office, Al Barsha', 'Vendor Onboarding', ['Mapelastic Cementitious Coating'], 'pending-confirmation', undefined, GEC, 'Ahmed Khan', 'usr_ahmed_khan', 'Initial vendor onboarding meeting with GEC procurement team.'),
     ],
     followUps: [
       { id: 'fu_es_1', visitId: 'vst_es_1', companyId: ES, side: 'supplier', note: 'Send revised price list for 16–25 mm and CARES certificate. Follow up Thursday.', at: ago(2), by: 'Sarah Thomas', byId: 'usr_sarah_thomas_es' } as VisitFollowUp,
