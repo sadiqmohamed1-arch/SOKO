@@ -10,12 +10,14 @@ import {
   queryTokens,
   supplierLocation,
   supplierPlan,
+  SUPPLIER_SHARE_PARAM,
+  supplierSokoId,
 } from '../data/buyerSuppliers';
-import { DocumentPack, VaultDocument, buyerVault } from '../data/supplierVault';
+import { BuyerVault, VaultDocument, buyerVault } from '../data/supplierVault';
 import { ExternalSourceBadge, SupplierLogo, SupplierStatusBadge } from './SupplierTrust';
 import { ShareProfileDialog, SokoIdCard } from './SupplierIdentityCard';
 import { CompanyAtAGlance, KeyContacts, SimilarSuppliers, SokoInformation, WhatWeSupply, websiteHref } from './SupplierProfileSections';
-import { AllDocumentsDialog, DocumentDetailDialog, DocumentsSection, ExternalCatalogues, RequestPackDialog } from './SupplierDocuments';
+import { AllDocumentsDialog, DocumentDetailDialog, DocumentsSection, ExternalCatalogues, RequestPackDialog, downloadDemoDocument } from './SupplierDocuments';
 
 export type ProfileTab = 'overview' | 'products' | 'documents' | 'contacts' | 'intelligence';
 
@@ -156,7 +158,7 @@ const toNetworkContact = (s: BuyerSupplier, c: SupplierContact): CommunityContac
 };
 
 const actionBtn =
-  'inline-flex items-center justify-center gap-1.5 min-h-11 px-4 rounded-lg text-sm font-semibold transition-colors cursor-pointer';
+  'inline-flex items-center justify-center gap-1.5 min-h-10 px-4 rounded-lg text-sm font-semibold transition-colors cursor-pointer';
 
 export const BuyerSupplierProfile: React.FC<BuyerSupplierProfileProps> = ({
   supplier: s,
@@ -175,7 +177,7 @@ export const BuyerSupplierProfile: React.FC<BuyerSupplierProfileProps> = ({
   const vault = buyerVault(s);
   const isPro = supplierPlan(s) === 'pro';
   const [shareOpen, setShareOpen] = useState(false);
-  const [docsOpen, setDocsOpen] = useState<{ pack?: DocumentPack } | null>(null);
+  const [docsOpen, setDocsOpen] = useState<{ pack?: BuyerVault['packs'][number] } | null>(null);
   const [packsOpen, setPacksOpen] = useState(false);
   const [openDoc, setOpenDoc] = useState<VaultDocument | null>(null);
 
@@ -185,6 +187,17 @@ export const BuyerSupplierProfile: React.FC<BuyerSupplierProfileProps> = ({
     const t = window.setTimeout(() => document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
     return () => window.clearTimeout(t);
   }, [initialTab]);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    url.searchParams.set(SUPPLIER_SHARE_PARAM, supplierSokoId(s));
+    window.history.replaceState(window.history.state, '', url);
+    return () => {
+      const current = new URL(window.location.href);
+      current.searchParams.delete(SUPPLIER_SHARE_PARAM);
+      window.history.replaceState(window.history.state, '', current);
+    };
+  }, [s]);
 
   const isContactSaved = (c: SupplierContact) => networkContacts.some((n) => n.id === networkId(s, c) && n.connectionStatus === 'connected');
 
@@ -206,9 +219,12 @@ export const BuyerSupplierProfile: React.FC<BuyerSupplierProfileProps> = ({
   };
 
   const requestDocument = (label: string) => onNotify(`Request for ${label} sent to ${s.name}`);
-  const downloadDocument = (d: VaultDocument) => onNotify(`${d.name} is a demo file, so downloads are simulated in this prototype`);
+  const downloadDocument = (d: VaultDocument) => {
+    downloadDemoDocument(s, d);
+    onNotify(`Downloading ${d.name}`);
+  };
 
-  const docActions = { onOpen: setOpenDoc, onDownload: downloadDocument, onRequest: requestDocument };
+  const docActions = { onOpen: setOpenDoc, onDownload: downloadDocument };
   const idCard = <SokoIdCard supplier={s} onShare={() => setShareOpen(true)} onNotify={onNotify} />;
 
   return (
@@ -218,33 +234,48 @@ export const BuyerSupplierProfile: React.FC<BuyerSupplierProfileProps> = ({
         Back to suppliers
       </button>
 
-      <section className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6">
-        <div className="flex flex-col md:flex-row md:items-start gap-4 md:gap-6">
+      <section className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5">
+        <div className="flex flex-col lg:flex-row lg:items-start gap-4 lg:gap-6">
           <div className="flex items-start gap-4 min-w-0 flex-1">
             <SupplierLogo supplier={s} size="lg" />
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
                 <h1 className="text-xl sm:text-2xl font-semibold text-slate-900 leading-tight">{s.name}</h1>
+                <VerificationBadge supplier={s} />
+                {s.externalSourceFields && <ExternalSourceBadge />}
                 {isPro && (
                   <span className="inline-flex items-center rounded-md border border-gold-200 bg-gold-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-gold-700">
                     SOKO Pro
                   </span>
                 )}
               </div>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <VerificationBadge supplier={s} />
-                {s.externalSourceFields && <ExternalSourceBadge />}
-              </div>
-              <p className="mt-2 text-sm font-semibold text-slate-800">
+              <p className="mt-1.5 text-sm font-semibold text-slate-800">
                 {s.types.join(', ')} · {s.categories.join(', ')}
               </p>
-              <p className="mt-0.5 flex items-center gap-1 text-sm text-slate-600">
+              <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-sm text-slate-600">
                 <MapPin className="w-3.5 h-3.5 shrink-0" />
                 {supplierLocation(s)}
+                {s.website && (
+                  <>
+                    <span aria-hidden="true" className="text-slate-300">
+                      ·
+                    </span>
+                    <a
+                      href={websiteHref(s.website)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 font-semibold text-blue-700 hover:text-blue-800 hover:underline"
+                    >
+                      Visit Website
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  </>
+                )}
               </p>
+              <p className="mt-2 text-sm text-slate-600 leading-relaxed max-w-3xl line-clamp-3">{s.description}</p>
             </div>
           </div>
-          <div className="grid grid-cols-2 md:flex md:flex-col gap-2 md:w-48 shrink-0">
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap lg:flex-nowrap gap-2 shrink-0">
             {s.contacts.length > 0 && (
               <button type="button" onClick={onContact} className={`${actionBtn} col-span-2 bg-blue-700 hover:bg-blue-800 text-white`}>
                 <MessageSquare className="w-4 h-4" />
@@ -264,20 +295,8 @@ export const BuyerSupplierProfile: React.FC<BuyerSupplierProfileProps> = ({
               <Share2 className="w-4 h-4" />
               Share Profile
             </button>
-            {s.website && (
-              <a
-                href={websiteHref(s.website)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="col-span-2 inline-flex items-center justify-center gap-1.5 min-h-10 text-sm font-semibold text-blue-700 hover:text-blue-800"
-              >
-                Visit Website
-                <ExternalLink className="w-3.5 h-3.5" />
-              </a>
-            )}
           </div>
         </div>
-        <p className="mt-4 text-sm text-slate-600 leading-relaxed max-w-3xl line-clamp-3">{s.description}</p>
         <StatusNotice supplier={s} />
       </section>
 
@@ -288,7 +307,7 @@ export const BuyerSupplierProfile: React.FC<BuyerSupplierProfileProps> = ({
           <div className="lg:hidden">{idCard}</div>
           <CompanyAtAGlance supplier={s} />
           <WhatWeSupply supplier={s} />
-          <KeyContacts supplier={s} isSaved={isContactSaved} onToggleSave={toggleContact} onRequestContact={onRequestContact} />
+          <KeyContacts supplier={s} initiallyExpanded={initialTab === 'contacts'} isSaved={isContactSaved} onToggleSave={toggleContact} onRequestContact={onRequestContact} />
           {vault ? (
             <DocumentsSection vault={vault} onViewAll={() => setDocsOpen({})} onRequestPack={() => setPacksOpen(true)} {...docActions} />
           ) : (

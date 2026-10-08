@@ -945,13 +945,13 @@ export const supplierSokoId = (s: BuyerSupplier) => {
   return `SK-${10000 + hash}`;
 };
 
-const SHARE_PARAM = 'supplier';
+export const SUPPLIER_SHARE_PARAM = 'supplier';
 
 export const supplierShareUrl = (s: BuyerSupplier) =>
-  `${window.location.origin}${window.location.pathname}?${SHARE_PARAM}=${encodeURIComponent(supplierSokoId(s))}`;
+  `${window.location.origin}${window.location.pathname}?${SUPPLIER_SHARE_PARAM}=${encodeURIComponent(supplierSokoId(s))}`;
 
 export const supplierFromShareLink = (): BuyerSupplier | undefined => {
-  const id = new URLSearchParams(window.location.search).get(SHARE_PARAM);
+  const id = new URLSearchParams(window.location.search).get(SUPPLIER_SHARE_PARAM);
   return id ? BUYER_SUPPLIERS.find((s) => supplierSokoId(s) === id) : undefined;
 };
 

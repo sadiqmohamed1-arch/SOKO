@@ -86,6 +86,8 @@ const EMIRATES_STEEL_VAULT: SupplierVault = {
     doc({ id: 'es_insurance', name: 'Product Liability Insurance', type: 'Insurance', category: 'Commercial', issueDate: '2026-02-01', expiryDate: '2027-01-31', verification: 'supplier-provided', visibility: 'on-request', uploadedBy: 'Finance Team', lastUpdated: '2026-02-03', sizeMb: 0.7 }),
     doc({ id: 'es_catalogue', name: 'Steel Product Catalogue 2026', type: 'Product Catalogue', category: 'Catalogues & Technical', issueDate: '2026-01-10', verification: 'supplier-provided', visibility: 'public', uploadedBy: 'Marketing Team', lastUpdated: '2026-09-28', sizeMb: 18, featuredCatalogue: true }),
     doc({ id: 'es_techguide', name: 'Technical Product Guide', type: 'Technical Catalogue', category: 'Catalogues & Technical', issueDate: '2026-04-15', verification: 'supplier-provided', visibility: 'public', uploadedBy: 'Technical Services', lastUpdated: '2026-09-12', sizeMb: 9, featuredCatalogue: true }),
+    doc({ id: 'es_tds_rebar', name: 'B500B Rebar Technical Data Sheet', type: 'Technical Data Sheet', category: 'Catalogues & Technical', issueDate: '2026-02-20', verification: 'supplier-provided', visibility: 'public', uploadedBy: 'Technical Services', lastUpdated: '2026-08-30', sizeMb: 1.4 }),
+    doc({ id: 'es_mtc', name: 'Mill Test Certificate (Sample)', type: 'Test Report', category: 'Catalogues & Technical', issueDate: '2026-09-02', verification: 'supplier-provided', visibility: 'soko-users', uploadedBy: 'Quality Department', lastUpdated: '2026-09-02', sizeMb: 0.5 }),
     doc({ id: 'es_financials', name: 'Audited Financial Statements 2025', type: 'Other', category: 'Commercial', issueDate: '2026-04-30', verification: 'supplier-provided', visibility: 'private', uploadedBy: 'Finance Team', lastUpdated: '2026-05-02', sizeMb: 3.4 }),
   ],
   packs: [
@@ -114,7 +116,7 @@ const EMIRATES_STEEL_VAULT: SupplierVault = {
       id: 'pack_technical',
       name: 'Technical Pack',
       description: 'Technical guide and product certification for consultants and engineers.',
-      documentIds: ['es_techguide', 'es_cares', 'es_catalogue'],
+      documentIds: ['es_techguide', 'es_tds_rebar', 'es_mtc', 'es_cares', 'es_catalogue'],
       visibility: 'soko-users',
     },
   ],
@@ -124,14 +126,27 @@ const VAULTS: Record<string, SupplierVault> = {
   sup_emirates_steel: EMIRATES_STEEL_VAULT,
 };
 
-export const buyerVault = (s: BuyerSupplier): SupplierVault | null => {
+export const canOpenDocument = (d: VaultDocument) => d.visibility === 'public' || d.visibility === 'soko-users';
+
+export interface BuyerVault {
+  documents: VaultDocument[];
+  packs: (DocumentPack & { onRequestCount: number })[];
+}
+
+export const buyerVault = (s: BuyerSupplier): BuyerVault | null => {
   if (!PLAN_META[supplierPlan(s)].vault) return null;
   const vault = VAULTS[s.id];
   if (!vault) return null;
-  return { documents: vault.documents.filter((d) => d.visibility !== 'private'), packs: vault.packs };
+  const accessible = new Set(vault.documents.filter(canOpenDocument).map((d) => d.id));
+  return {
+    documents: vault.documents.filter((d) => accessible.has(d.id)),
+    packs: vault.packs.map((p) => ({
+      ...p,
+      documentIds: p.documentIds.filter((id) => accessible.has(id)),
+      onRequestCount: p.documentIds.filter((id) => !accessible.has(id)).length,
+    })),
+  };
 };
-
-export const canOpenDocument = (d: VaultDocument) => d.visibility === 'public' || d.visibility === 'soko-users';
 
 export type ExpiryState = 'current' | 'expiring' | 'expired' | 'no-expiry';
 
@@ -143,7 +158,5 @@ export const expiryState = (d: VaultDocument): ExpiryState => {
   if (days < 0) return 'expired';
   return days <= EXPIRING_WINDOW_DAYS ? 'expiring' : 'current';
 };
-
-export const documentsCurrent = (docs: VaultDocument[]) => docs.every((d) => expiryState(d) === 'current' || expiryState(d) === 'no-expiry');
 
 export const fileLabel = (d: VaultDocument) => `${d.fileType} · ${d.sizeMb >= 1 ? `${Math.round(d.sizeMb)} MB` : `${Math.round(d.sizeMb * 1000)} KB`}`;

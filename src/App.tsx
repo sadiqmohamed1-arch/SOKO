@@ -11,6 +11,7 @@ import { BuyerSuppliersView } from './components/BuyerSuppliersView';
 import { BusinessCardView } from './components/BusinessCardView';
 import { OpportunitiesView } from './components/OpportunitiesView';
 import { ContactsView } from './components/ContactsView';
+import { SUPPLIER_SHARE_PARAM } from './data/buyerSuppliers';
 import { OfficeKioskView } from './components/OfficeKioskView';
 import { JobsView } from './components/JobsView';
 import { AnalyticsView } from './components/AnalyticsView';
@@ -72,7 +73,7 @@ function MainApp() {
   const [authModalMode, setAuthModalMode] = useState<'login' | 'signup'>('login');
 
   // Navigation
-  const [activeTab, setActiveTab] = useState<string>(() => (new URLSearchParams(window.location.search).has('supplier') ? 'suppliers' : 'feed'));
+  const [activeTab, setActiveTab] = useState<string>(() => (new URLSearchParams(window.location.search).has(SUPPLIER_SHARE_PARAM) ? 'suppliers' : 'feed'));
   const [cardMode, setCardMode] = useState<'preview' | 'edit'>('preview');
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>('personal');
   const [globalSearch, setGlobalSearch] = useState<string>('');

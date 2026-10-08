@@ -20,29 +20,29 @@ export const SokoIdCard: React.FC<{ supplier: BuyerSupplier; onShare: () => void
   onShare,
   onNotify,
 }) => (
-  <section aria-label="SOKO Supplier ID" className="rounded-2xl bg-slate-900 text-white p-5 shadow-sm relative overflow-hidden">
+  <section aria-label="SOKO Supplier ID" className="rounded-2xl bg-slate-900 text-white p-4 shadow-sm relative overflow-hidden">
     <div className="absolute inset-0 blueprint-grid-dark opacity-60 pointer-events-none" />
-    <div className="relative flex items-start gap-4">
+    <div className="relative flex items-center gap-4">
       <div className="min-w-0 flex-1">
         <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">SOKO Supplier ID</p>
-        <p className="mt-1 font-mono text-2xl font-semibold tracking-wide">{supplierSokoId(s)}</p>
-        <p className="mt-2 text-sm text-slate-200 leading-snug">{s.name}</p>
-        <p className="text-xs text-slate-400">{STATUS_META[s.status].label}</p>
+        <p className="mt-0.5 font-mono text-xl font-semibold tracking-wide">{supplierSokoId(s)}</p>
+        <p className="mt-1 text-xs text-slate-300 leading-snug break-words">{s.name}</p>
+        <p className="text-[11px] text-slate-400">{STATUS_META[s.status].label}</p>
       </div>
       <button
         type="button"
         onClick={onShare}
         aria-label="Show profile QR code"
-        className="shrink-0 rounded-xl bg-white p-2 transition-transform hover:scale-[1.03] focus:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-400 cursor-pointer"
+        className="shrink-0 rounded-lg bg-white p-1.5 transition-transform hover:scale-[1.03] focus:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-400 cursor-pointer"
       >
-        <QRCodeSVG value={supplierShareUrl(s)} size={84} level="M" />
+        <QRCodeSVG value={supplierShareUrl(s)} size={88} level="M" marginSize={1} />
       </button>
     </div>
-    <div className="relative mt-4 grid grid-cols-2 gap-2">
+    <div className="relative mt-3 grid grid-cols-2 gap-2">
       <button
         type="button"
         onClick={onShare}
-        className="inline-flex items-center justify-center gap-1.5 min-h-11 rounded-lg bg-white text-slate-900 text-sm font-semibold hover:bg-slate-100 transition-colors cursor-pointer"
+        className="inline-flex items-center justify-center gap-1.5 min-h-10 rounded-lg bg-white text-slate-900 text-sm font-semibold hover:bg-slate-100 transition-colors cursor-pointer"
       >
         <Share2 className="w-4 h-4" />
         Share Profile
@@ -50,7 +50,7 @@ export const SokoIdCard: React.FC<{ supplier: BuyerSupplier; onShare: () => void
       <button
         type="button"
         onClick={() => copyProfileLink(s, onNotify)}
-        className="inline-flex items-center justify-center gap-1.5 min-h-11 rounded-lg border border-white/20 text-sm font-semibold text-white hover:bg-white/10 transition-colors cursor-pointer"
+        className="inline-flex items-center justify-center gap-1.5 min-h-10 rounded-lg border border-white/20 text-sm font-semibold text-white hover:bg-white/10 transition-colors cursor-pointer"
       >
         <Copy className="w-4 h-4" />
         Copy Link
@@ -84,7 +84,7 @@ export const ShareProfileDialog: React.FC<{ supplier: BuyerSupplier; onClose: ()
       <div className="px-5 py-5">
         <div className="flex flex-col items-center text-center">
           <div className="rounded-2xl border border-slate-200 p-3 bg-white">
-            <QRCodeSVG value={url} size={188} level="M" />
+            <QRCodeSVG value={url} size={188} level="M" marginSize={2} />
           </div>
           <p className="mt-3 font-mono text-lg font-semibold text-slate-900">{supplierSokoId(s)}</p>
           <p className="text-sm text-slate-600">{s.name}</p>

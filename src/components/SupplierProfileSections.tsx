@@ -1,5 +1,5 @@
-import React from 'react';
-import { Building2, Calendar, CheckCircle2, ExternalLink, Globe2, Layers, Lock, Mail, MapPin, MessageCircle, Phone, UserCheck, UserPlus } from 'lucide-react';
+import React, { useState } from 'react';
+import { Building2, Calendar, ChevronDown, ExternalLink, Globe2, Layers, Lock, Mail, MapPin, MessageCircle, Phone, UserCheck, UserPlus } from 'lucide-react';
 import {
   BuyerSupplier,
   STATUS_META,
@@ -10,7 +10,7 @@ import {
   supplierMarkets,
   supplierTypeLine,
 } from '../data/buyerSuppliers';
-import { SupplierVault, documentsCurrent } from '../data/supplierVault';
+import { BuyerVault } from '../data/supplierVault';
 import { SupplierLogo, SupplierStatusBadge } from './SupplierTrust';
 
 export const ProfileCard: React.FC<{ id?: string; title: string; action?: React.ReactNode; children: React.ReactNode; className?: string }> = ({
@@ -102,98 +102,127 @@ const initials = (name: string) =>
 
 interface KeyContactsProps {
   supplier: BuyerSupplier;
+  initiallyExpanded: boolean;
   isSaved: (c: SupplierContact) => boolean;
   onToggleSave: (c: SupplierContact) => void;
   onRequestContact: () => void;
 }
 
-export const KeyContacts: React.FC<KeyContactsProps> = ({ supplier: s, isSaved, onToggleSave, onRequestContact }) => (
-  <ProfileCard id="profile-contacts" title="Key Contacts" action={<span className="text-xs text-slate-500">{s.contacts.length} listed</span>}>
-    {s.contacts.length === 0 ? (
-      <p className="text-sm text-slate-600">
-        This supplier has not listed individual contacts yet.
-        {s.generalEmail && (
-          <>
-            {' '}
-            Reach the company at{' '}
-            <a href={`mailto:${s.generalEmail}`} className="font-semibold text-blue-700 hover:underline">
-              {s.generalEmail}
+const PRIMARY_CONTACTS = 2;
+
+const ContactRow: React.FC<{ contact: SupplierContact; saved: boolean; onToggleSave: () => void; onRequestContact: () => void }> = ({
+  contact: c,
+  saved,
+  onToggleSave,
+  onRequestContact,
+}) => {
+  const showPhone = c.visibility === 'public' && c.phone;
+  return (
+    <li className="py-4 first:pt-1 last:pb-1 flex flex-col xl:flex-row xl:items-center gap-3">
+      <div className="flex items-start gap-3 min-w-0 flex-1">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-800 text-white text-sm font-semibold">
+          {initials(c.name)}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-slate-900 leading-snug break-words">{c.name}</p>
+          <p className="text-xs text-slate-600 leading-snug break-words">{c.title}</p>
+          <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-500">
+            <MapPin className="w-3 h-3 shrink-0" />
+            {c.location}
+          </p>
+        </div>
+      </div>
+      {c.visibility === 'on-request' ? (
+        <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+          <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+            <Lock className="w-3 h-3" />
+            Details shared on request
+          </span>
+          <button type="button" onClick={onRequestContact} className={contactBtn}>
+            <MessageCircle className="w-4 h-4" />
+            Request Contact
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 xl:justify-end xl:shrink-0">
+          {showPhone && (
+            <>
+              <a href={`tel:${c.phone}`} className={contactBtn}>
+                <Phone className="w-4 h-4" />
+                Call
+              </a>
+              <a href={`https://wa.me/${c.phone!.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer" className={contactBtn}>
+                <MessageCircle className="w-4 h-4 text-emerald-600" />
+                WhatsApp
+              </a>
+            </>
+          )}
+          {c.email && (
+            <a href={`mailto:${c.email}`} className={contactBtn}>
+              <Mail className="w-4 h-4" />
+              Email
             </a>
-            .
-          </>
-        )}
+          )}
+          <button
+            type="button"
+            onClick={onToggleSave}
+            aria-pressed={saved}
+            className={saved ? `${contactBtn} border-blue-200 bg-blue-50 text-blue-700` : contactBtn}
+          >
+            {saved ? <UserCheck className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
+            {saved ? 'Saved' : 'Save Contact'}
+          </button>
+        </div>
+      )}
+    </li>
+  );
+};
+
+export const KeyContacts: React.FC<KeyContactsProps> = ({ supplier: s, initiallyExpanded, isSaved, onToggleSave, onRequestContact }) => {
+  const [expanded, setExpanded] = useState(initiallyExpanded);
+  const hidden = s.contacts.length - PRIMARY_CONTACTS;
+  const visible = expanded ? s.contacts : s.contacts.slice(0, PRIMARY_CONTACTS);
+  return (
+    <ProfileCard id="profile-contacts" title="Key Contacts" action={<span className="text-xs text-slate-500">{s.contacts.length} listed</span>}>
+      {s.contacts.length === 0 ? (
+        <p className="text-sm text-slate-600">
+          This supplier has not listed individual contacts yet.
+          {s.generalEmail && (
+            <>
+              {' '}
+              Reach the company at{' '}
+              <a href={`mailto:${s.generalEmail}`} className="font-semibold text-blue-700 hover:underline">
+                {s.generalEmail}
+              </a>
+              .
+            </>
+          )}
+        </p>
+      ) : (
+        <ul className="divide-y divide-slate-100 -my-1">
+          {visible.map((c) => (
+            <ContactRow key={c.id} contact={c} saved={isSaved(c)} onToggleSave={() => onToggleSave(c)} onRequestContact={onRequestContact} />
+          ))}
+        </ul>
+      )}
+      {hidden > 0 && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+          className="mt-4 w-full inline-flex items-center justify-center gap-1.5 min-h-10 rounded-lg border border-dashed border-slate-300 text-sm font-semibold text-blue-700 hover:border-blue-300 hover:bg-blue-50 transition-colors cursor-pointer"
+        >
+          {expanded ? 'Show Fewer Contacts' : `View All Contacts (${s.contacts.length})`}
+          <ChevronDown className={`w-4 h-4 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+        </button>
+      )}
+      <p className="mt-3 text-xs text-slate-500">
+        Saved contacts appear in My Network.
+        {visible.some((c) => c.visibility === 'network') && ' Some phone numbers are shared with connections only.'}
       </p>
-    ) : (
-      <ul className="divide-y divide-slate-100 -my-1">
-        {s.contacts.map((c) => {
-          const saved = isSaved(c);
-          const showPhone = c.visibility === 'public' && c.phone;
-          return (
-            <li key={c.id} className="py-4 first:pt-1 last:pb-1 flex flex-col md:flex-row md:items-center gap-3">
-              <div className="flex items-center gap-3 min-w-0 flex-1">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-800 text-white text-sm font-semibold">
-                  {initials(c.name)}
-                </span>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-slate-900 truncate">{c.name}</p>
-                  <p className="text-xs text-slate-500 truncate">
-                    {c.title} · {c.location}
-                  </p>
-                </div>
-              </div>
-              {c.visibility === 'on-request' ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="inline-flex items-center gap-1 text-xs text-slate-500">
-                    <Lock className="w-3 h-3" />
-                    Details shared on request
-                  </span>
-                  <button type="button" onClick={onRequestContact} className={contactBtn}>
-                    <MessageCircle className="w-4 h-4" />
-                    Request Contact
-                  </button>
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
-                  {showPhone && (
-                    <>
-                      <a href={`tel:${c.phone}`} className={contactBtn}>
-                        <Phone className="w-4 h-4" />
-                        Call
-                      </a>
-                      <a href={`https://wa.me/${c.phone!.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer" className={contactBtn}>
-                        <MessageCircle className="w-4 h-4 text-emerald-600" />
-                        WhatsApp
-                      </a>
-                    </>
-                  )}
-                  {c.email && (
-                    <a href={`mailto:${c.email}`} className={contactBtn}>
-                      <Mail className="w-4 h-4" />
-                      Email
-                    </a>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => onToggleSave(c)}
-                    aria-pressed={saved}
-                    className={saved ? `${contactBtn} border-blue-200 bg-blue-50 text-blue-700` : contactBtn}
-                  >
-                    {saved ? <UserCheck className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
-                    {saved ? 'Saved' : 'Save Contact'}
-                  </button>
-                </div>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-    )}
-    {s.contacts.some((c) => c.visibility === 'network') && (
-      <p className="mt-4 text-xs text-slate-500">Some phone numbers are shared with connections only.</p>
-    )}
-    <p className="mt-2 text-xs text-slate-500">Saved contacts appear in My Network.</p>
-  </ProfileCard>
-);
+    </ProfileCard>
+  );
+};
 
 const InfoRow: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
   <div className="flex items-center justify-between gap-3 py-2.5">
@@ -202,16 +231,9 @@ const InfoRow: React.FC<{ label: string; children: React.ReactNode }> = ({ label
   </div>
 );
 
-const documentsLabel = (s: BuyerSupplier, vault: SupplierVault | null) => {
+const documentsLabel = (s: BuyerSupplier, vault: BuyerVault | null) => {
   if (vault) {
-    return documentsCurrent(vault.documents) ? (
-      <span className="inline-flex items-center gap-1 text-emerald-700">
-        <CheckCircle2 className="w-3.5 h-3.5" />
-        Documents Current
-      </span>
-    ) : (
-      <span className="text-amber-700">Some documents expiring</span>
-    );
+    return vault.documents.length ? `${vault.documents.length} Documents Available` : <span className="text-slate-500">None shared yet</span>;
   }
   if (s.tradeLicense.status === 'verified') return 'Trade License Verified';
   if (s.tradeLicense.status === 'expired') return <span className="text-red-700">Trade License Expired</span>;
@@ -219,7 +241,7 @@ const documentsLabel = (s: BuyerSupplier, vault: SupplierVault | null) => {
   return <span className="text-slate-500">Not Submitted</span>;
 };
 
-export const SokoInformation: React.FC<{ supplier: BuyerSupplier; vault: SupplierVault | null }> = ({ supplier: s, vault }) => (
+export const SokoInformation: React.FC<{ supplier: BuyerSupplier; vault: BuyerVault | null }> = ({ supplier: s, vault }) => (
   <ProfileCard id="profile-soko-info" title="SOKO Information">
     <div className="rounded-xl bg-slate-50 px-3 py-3">
       <SupplierStatusBadge status={s.status} size="md" />
