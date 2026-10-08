@@ -174,7 +174,7 @@ export const BuyerNetworkView: React.FC<BuyerNetworkViewProps> = ({ contacts, on
         onUpdateContacts(applyConnection(contacts, c.id, action));
         const msg = {
           connect: `Connection request sent to ${c.name}`,
-          accept: `You are now connected with ${c.name}`,
+          accept: `${c.name} added to My Connections${c.isMaintained ? '' : ' — use Save Contact to keep them in My Contacts'}`,
           decline: 'Request declined',
           withdraw: 'Request withdrawn',
           remove: `Connection with ${c.name} removed`,
@@ -383,30 +383,36 @@ export const BuyerNetworkView: React.FC<BuyerNetworkViewProps> = ({ contacts, on
 
   return (
     <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 py-6">
-      <header className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+      <header className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold text-slate-900 leading-tight">My Network</h1>
           <p className="mt-1 text-sm text-slate-600">Your construction industry contacts, companies and professional connections in one place.</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => setForm({})} className={btnPrimary}>
+        <div className="flex items-center gap-2 shrink-0">
+          <button type="button" onClick={() => setForm({})} className={`${btnPrimary} !min-h-11 flex-1 sm:flex-none whitespace-nowrap`}>
             <UserPlus className="w-4 h-4" />
             Add Contact
           </button>
-          <button type="button" onClick={() => setShareMine(true)} className={btnSecondary}>
-            <QrCode className="w-4 h-4" />
-            <span className="sm:hidden">My QR</span>
-            <span className="hidden sm:inline">Share My Card</span>
-          </button>
-          <button type="button" onClick={() => setScan({})} className={btnSecondary}>
-            <ScanLine className="w-4 h-4" />
-            Scan QR
-          </button>
-          <button type="button" onClick={() => setImportOpen(true)} className={btnSecondary}>
-            <FileUp className="w-4 h-4" />
-            <span className="hidden sm:inline">Import Contacts</span>
-            <span className="sm:hidden">Import</span>
-          </button>
+          <div className="flex items-center rounded-lg border border-slate-200 bg-white divide-x divide-slate-200 overflow-hidden" role="group" aria-label="Card and import actions">
+            {[
+              { label: 'Share My Card', short: 'Share Card', icon: QrCode, go: () => setShareMine(true) },
+              { label: 'Scan QR', short: 'Scan QR', icon: ScanLine, go: () => setScan({}) },
+              { label: 'Import Contacts', short: 'Import', icon: FileUp, go: () => setImportOpen(true) },
+            ].map(({ label, short, icon: Icon, go }) => (
+              <button
+                key={label}
+                type="button"
+                onClick={go}
+                aria-label={label}
+                title={label}
+                className="inline-flex items-center justify-center gap-1.5 min-h-11 min-w-11 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors cursor-pointer whitespace-nowrap"
+              >
+                <Icon className="w-4 h-4 shrink-0" />
+                <span className="hidden sm:inline xl:hidden">{short}</span>
+                <span className="hidden xl:inline">{label}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </header>
 
@@ -510,6 +516,7 @@ export const BuyerNetworkView: React.FC<BuyerNetworkViewProps> = ({ contacts, on
               setQuery('');
               switchTab('contacts', { ...EMPTY_NETWORK_FILTERS, company });
             }}
+            onNotify={setToast}
           />
         )}
         {tab === 'cards' && (

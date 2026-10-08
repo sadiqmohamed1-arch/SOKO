@@ -44,15 +44,18 @@ export const NetworkCardsTab: React.FC<CardsTabProps> = ({ user, settings, conta
   };
 
   return (
-    <div className="grid lg:grid-cols-[minmax(0,420px)_1fr] gap-6 items-start">
-      <section aria-label="My digital business card">
+    <div className="grid lg:grid-cols-[minmax(0,400px)_1fr] gap-6 items-start">
+      <section aria-label="My digital business card" className="w-full max-w-md mx-auto lg:max-w-none">
         <div className="flex items-center justify-between gap-2 mb-2">
           <h2 className="text-sm font-semibold text-slate-900">My Digital Business Card</h2>
           <span className="text-[11px] font-mono text-slate-500">Personal ID · {card.sokoId}</span>
         </div>
         <ProfessionalCard card={card} onQrClick={onShareMyCard} />
-        <div className="mt-3 flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-0.5" role="group" aria-label="Preview card as">
-          <Eye className="w-4 h-4 text-slate-400 mx-2 shrink-0" />
+        <p id="preview-as-label" className="mt-3 mb-1 text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+          <Eye className="w-3.5 h-3.5 text-slate-400" />
+          Preview as
+        </p>
+        <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-0.5" role="group" aria-labelledby="preview-as-label">
           {VIEWERS.map((v) => (
             <button
               key={v.id}
@@ -65,7 +68,9 @@ export const NetworkCardsTab: React.FC<CardsTabProps> = ({ user, settings, conta
             </button>
           ))}
         </div>
-        <p className="mt-1.5 text-[11px] text-slate-500">{viewer === 'owner' ? 'Your full card. Preview what others see using the options above.' : `What ${VIEWERS.find((v) => v.id === viewer)?.label.toLowerCase()} viewers see.`}</p>
+        <p className="mt-1.5 text-[11px] text-slate-500">{viewer === 'owner'
+            ? 'Your full card. This preview only shows what others see — it does not change who can see your details.'
+            : `This is how your card looks to ${VIEWERS.find((v) => v.id === viewer)?.label.toLowerCase()} viewers. Change privacy in Edit Card Details.`}</p>
         <div className="mt-3 grid grid-cols-2 gap-2">
           <button type="button" onClick={onShareMyCard} className={btnPrimary}>
             <Share2 className="w-4 h-4" />
@@ -99,36 +104,28 @@ export const NetworkCardsTab: React.FC<CardsTabProps> = ({ user, settings, conta
 
       <div className="space-y-6 min-w-0">
         <section className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5">
-          <h2 className="text-sm font-semibold text-slate-900">Who can see each detail</h2>
-          <p className="mt-0.5 text-xs text-slate-500 flex items-center gap-1">
-            <Lock className="w-3 h-3" />
-            Private details never appear in your card link, QR code or link previews.
-          </p>
-          <ul className="mt-3 divide-y divide-slate-100">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900">Who can see each detail</h2>
+              <p className="mt-0.5 text-xs text-slate-500 flex items-center gap-1">
+                <Lock className="w-3 h-3 shrink-0" />
+                Your card link and QR code always follow these settings.
+              </p>
+            </div>
+            <button type="button" onClick={() => setEditing(true)} className={`${btnSecondary} !min-h-9 !px-3 !text-xs shrink-0`}>
+              <Pencil className="w-3.5 h-3.5" />
+              Change
+            </button>
+          </div>
+          <dl className="mt-3 grid sm:grid-cols-2 gap-x-6 divide-y divide-slate-100 sm:divide-y-0">
             {CARD_FIELDS.map((f) => (
-              <li key={f.id} className="py-2.5 flex items-center justify-between gap-3">
-                <label htmlFor={`vis-${f.id}`} className="text-sm text-slate-800">
-                  {f.label}
-                </label>
-                <select
-                  id={`vis-${f.id}`}
-                  value={settings.visibility[f.id]}
-                  onChange={(e) => {
-                    onUpdateSettings({ ...settings, visibility: { ...settings.visibility, [f.id]: e.target.value as CardAudience } });
-                    onNotify(`${f.label} visibility updated`);
-                  }}
-                  className={`${inputCls} !w-48 !min-h-9`}
-                >
-                  {CARD_AUDIENCES.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.label}
-                    </option>
-                  ))}
-                </select>
-              </li>
+              <div key={f.id} className="py-2 flex items-center justify-between gap-3 sm:border-b sm:border-slate-100">
+                <dt className="text-sm text-slate-700">{f.label}</dt>
+                <dd className="text-xs font-semibold text-slate-900">{CARD_AUDIENCES.find((a) => a.id === settings.visibility[f.id])?.label}</dd>
+              </div>
             ))}
-          </ul>
-          <p className="mt-2 text-[11px] text-slate-500">Joining a company workspace never changes these settings. Your personal ID stays with you if you change jobs.</p>
+          </dl>
+          <p className="mt-2 text-[11px] text-slate-500">Joining a company workspace never changes these settings. Your SOKO Professional ID stays with you if you change jobs.</p>
         </section>
 
         <section>
@@ -233,6 +230,34 @@ const EditCardDialog: React.FC<{
         {userField('email', 'Email', 'email')}
         {userField('website', 'Website', 'url')}
         {settingField('specialization', 'Specialization')}
+      </div>
+      <div className="px-5 pb-5">
+        <h3 className="text-sm font-semibold text-slate-900">Who can see each detail</h3>
+        <p className="mt-0.5 mb-2 text-xs text-slate-500 flex items-center gap-1">
+          <Lock className="w-3 h-3 shrink-0" />
+          Private details never appear in your card link, QR code or saved contact file.
+        </p>
+        <ul className="rounded-lg border border-slate-200 divide-y divide-slate-100">
+          {CARD_FIELDS.map((f) => (
+            <li key={f.id} className="px-3 py-2 flex items-center justify-between gap-3">
+              <label htmlFor={`vis-${f.id}`} className="text-sm text-slate-800">
+                {f.label}
+              </label>
+              <select
+                id={`vis-${f.id}`}
+                value={s.visibility[f.id]}
+                onChange={(e) => setS({ ...s, visibility: { ...s.visibility, [f.id]: e.target.value as CardAudience } })}
+                className={`${inputCls} !w-44 !min-h-9`}
+              >
+                {CARD_AUDIENCES.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.label}
+                  </option>
+                ))}
+              </select>
+            </li>
+          ))}
+        </ul>
       </div>
     </ProfileDialog>
   );

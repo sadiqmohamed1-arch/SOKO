@@ -118,53 +118,57 @@ export const ProfessionalCard: React.FC<{ card: CardView; showQr?: boolean; onQr
     { icon: Mail, value: card.email, label: 'Email' },
     { icon: Globe, value: card.website?.replace(/^https?:\/\//, ''), label: 'Website' },
   ].filter((r) => r.value);
+  const qr = showQr && card.sokoId;
   return (
     <article aria-label={`${card.name} business card`} className="relative overflow-hidden rounded-2xl bg-slate-900 text-white shadow-lg">
       <div className="absolute inset-0 blueprint-grid-dark opacity-50 pointer-events-none" />
       <div className="absolute inset-x-0 top-0 h-1 bg-gold-500" />
-      <div className="relative p-5">
+      <div className="relative p-4 sm:p-5">
         <div className="flex items-center justify-between gap-3">
           <span className="text-[11px] font-semibold tracking-[0.2em] text-gold-500">SOKO</span>
-          {card.sokoId && <span className="font-mono text-xs text-slate-300">{card.sokoId}</span>}
+          {card.sokoId && <span className="font-mono text-[11px] text-slate-300">{card.sokoId}</span>}
         </div>
-        <div className="mt-4 flex items-start gap-4">
-          <ContactAvatar name={card.name} url={card.avatarUrl} size="lg" />
+        <div className="mt-3 flex items-start gap-3 sm:gap-4">
           <div className="min-w-0 flex-1">
-            <h3 className="text-lg font-semibold leading-tight break-words">{card.name}</h3>
-            <p className="mt-1 text-sm text-slate-300 leading-snug">{card.title}</p>
-            <p className="text-sm font-semibold text-gold-500 leading-snug">{card.company}</p>
+            <div className="flex items-center gap-3">
+              <ContactAvatar name={card.name} url={card.avatarUrl} />
+              <div className="min-w-0">
+                <h3 className="text-base sm:text-lg font-semibold leading-tight break-words">{card.name}</h3>
+                <p className="text-xs sm:text-sm text-slate-300 leading-snug">{card.title}</p>
+              </div>
+            </div>
+            <p className="mt-2 text-sm font-semibold text-gold-500 leading-snug">{card.company}</p>
             {card.location && (
-              <p className="mt-1 text-xs text-slate-400 flex items-center gap-1">
-                <MapPin className="w-3 h-3" />
-                {card.location}
+              <p className="mt-0.5 text-xs text-slate-400 flex items-center gap-1">
+                <MapPin className="w-3 h-3 shrink-0" />
+                <span className="truncate">{card.location}</span>
               </p>
             )}
           </div>
-        </div>
-        {card.specialization && <p className="mt-3 text-xs text-slate-300 leading-relaxed border-l-2 border-gold-500/60 pl-2">{card.specialization}</p>}
-        <div className="mt-4 flex items-end justify-between gap-4">
-          <ul className="space-y-1.5 min-w-0 text-xs text-slate-200">
-            {rows.map(({ icon: Icon, value, label }) => (
-              <li key={label} className="flex items-center gap-2 min-w-0">
-                <Icon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                <span className="sr-only">{label}:</span>
-                <span className="truncate">{value}</span>
-              </li>
-            ))}
-            {!rows.length && <li className="text-slate-400">Contact details shared on request</li>}
-          </ul>
-          {showQr && card.sokoId && (
+          {qr && (
             <button
               type="button"
               onClick={onQrClick}
               disabled={!onQrClick}
               aria-label="Show card QR code"
-              className="shrink-0 rounded-lg bg-white p-1.5 transition-transform enabled:hover:scale-[1.03] enabled:cursor-pointer"
+              className="shrink-0 rounded-xl bg-white p-1.5 sm:p-2 shadow-md ring-2 ring-gold-500/70 transition-transform enabled:hover:scale-[1.03] enabled:cursor-pointer"
             >
-              <QRCodeSVG value={cardShareUrl(card.sokoId)} size={76} level="M" marginSize={1} />
+              <QRCodeSVG value={cardShareUrl(card.sokoId!)} size={96} level="M" marginSize={1} className="w-[88px] h-[88px] sm:w-[112px] sm:h-[112px]" />
+              <span className="block mt-1 text-center text-[10px] font-semibold tracking-wide text-slate-700">SCAN TO SAVE</span>
             </button>
           )}
         </div>
+        {card.specialization && <p className="mt-3 text-xs text-slate-300 leading-relaxed border-l-2 border-gold-500/60 pl-2 line-clamp-2">{card.specialization}</p>}
+        <ul className="mt-3 pt-3 border-t border-white/10 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-xs text-slate-200">
+          {rows.map(({ icon: Icon, value, label }) => (
+            <li key={label} className="flex items-center gap-2 min-w-0">
+              <Icon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span className="sr-only">{label}:</span>
+              <span className="truncate">{value}</span>
+            </li>
+          ))}
+          {!rows.length && <li className="text-slate-400">Contact details shared on request</li>}
+        </ul>
       </div>
     </article>
   );

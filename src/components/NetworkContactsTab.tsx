@@ -104,11 +104,27 @@ const ShareButton: React.FC<{ c: CommunityContact; h: NetworkHandlers }> = ({ c,
   </button>
 );
 
-const CompanyLine: React.FC<{ c: CommunityContact }> = ({ c }) => {
+const nameLink = 'text-left font-semibold text-slate-900 hover:text-blue-700 hover:underline underline-offset-2 cursor-pointer truncate max-w-full';
+
+const CompanyLine: React.FC<{ c: CommunityContact; onOpenCompany?: (supplierId: string) => void }> = ({ c, onOpenCompany }) => {
   const company = companyFor(c);
   return (
     <span className="flex items-center gap-1.5 min-w-0">
-      <span className="truncate">{c.company}</span>
+      {company && onOpenCompany ? (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenCompany(company.id);
+          }}
+          title="View Company / Supplier Profile"
+          className="truncate text-left hover:text-blue-700 hover:underline underline-offset-2 cursor-pointer"
+        >
+          {c.company}
+        </button>
+      ) : (
+        <span className="truncate">{c.company}</span>
+      )}
       {company?.status === 'verified' && <VerifiedCompanyBadge />}
     </span>
   );
@@ -118,18 +134,22 @@ export const ContactCard: React.FC<{ c: CommunityContact; h: NetworkHandlers; fo
   const status = relationshipStatus(c);
   return (
     <article className="bg-white rounded-xl border border-slate-200 hover:border-slate-300 hover:shadow-sm transition-all p-3.5">
-      <button type="button" onClick={() => h.onOpen(c)} className="w-full text-left flex items-start gap-3 cursor-pointer">
-        <ContactAvatar name={c.name} url={c.avatarUrl} />
+      <div className="flex items-start gap-3">
+        <button type="button" onClick={() => h.onOpen(c)} aria-label={`Open ${c.name}`} className="shrink-0 cursor-pointer rounded-full">
+          <ContactAvatar name={c.name} url={c.avatarUrl} />
+        </button>
         <span className="min-w-0 flex-1">
-          <span className="block text-sm font-semibold text-slate-900 truncate">{c.name}</span>
+          <button type="button" onClick={() => h.onOpen(c)} className={`block text-sm ${nameLink}`}>
+            {c.name}
+          </button>
           <span className="block text-xs text-slate-600 truncate">{c.title}</span>
           <span className="block text-xs font-semibold text-slate-800">
-            <CompanyLine c={c} />
+            <CompanyLine c={c} onOpenCompany={h.onOpenCompany} />
           </span>
           <span className="block text-xs text-slate-500 truncate">{[c.category, cityOf(c.location)].filter(Boolean).join(' · ')}</span>
         </span>
         <StatusPill tone={status.tone}>{status.label}</StatusPill>
-      </button>
+      </div>
       <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
         {footer ?? (
           <>
@@ -148,8 +168,8 @@ export const ContactCard: React.FC<{ c: CommunityContact; h: NetworkHandlers; fo
 const DiscoverableRow: React.FC<{ c: CommunityContact; h: NetworkHandlers }> = ({ c, h }) => (
   <li className="flex items-center gap-3 px-3 py-2.5">
     <ContactAvatar name={c.name} url={c.avatarUrl} size="sm" />
-    <button type="button" onClick={() => h.onOpen(c)} className="min-w-0 flex-1 text-left cursor-pointer">
-      <span className="block text-sm font-semibold text-slate-900 truncate">{c.name}</span>
+    <button type="button" onClick={() => h.onOpen(c)} className="group min-w-0 flex-1 text-left cursor-pointer">
+      <span className="block text-sm font-semibold text-slate-900 truncate group-hover:text-blue-700 group-hover:underline underline-offset-2">{c.name}</span>
       <span className="block text-xs text-slate-500 truncate">{[c.title, c.company, cityOf(c.location)].filter(Boolean).join(' · ')}</span>
     </button>
     <button type="button" onClick={() => h.onToggleSave(c)} className={`${btnSecondary} !min-h-9 !px-3 hidden sm:inline-flex`}>
@@ -253,14 +273,23 @@ export const NetworkContactsTab: React.FC<ContactsTabProps> = ({ contacts, query
                       <div className="flex items-center gap-3 min-w-0">
                         <ContactAvatar name={c.name} url={c.avatarUrl} size="sm" />
                         <div className="min-w-0">
-                          <p className="font-semibold text-slate-900 truncate max-w-[220px]">{c.name}</p>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              h.onOpen(c);
+                            }}
+                            className={`block max-w-[220px] ${nameLink}`}
+                          >
+                            {c.name}
+                          </button>
                           <p className="text-xs text-slate-500 truncate max-w-[220px]">{c.title}</p>
                         </div>
                       </div>
                     </td>
                     <td className="px-4 py-2.5 max-w-[240px]">
                       <span className="text-slate-900 text-sm">
-                        <CompanyLine c={c} />
+                        <CompanyLine c={c} onOpenCompany={h.onOpenCompany} />
                       </span>
                       <p className="text-xs text-slate-500 truncate">{c.category || relationshipOf(c)}</p>
                     </td>

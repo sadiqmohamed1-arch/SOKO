@@ -280,7 +280,7 @@ export const BuyerNavbar: React.FC<BuyerNavbarProps> = ({
 
               {[
                 { label: 'My Profile', icon: UserCircle2, action: onOpenProfile },
-                { label: 'Digital Business Card', icon: CreditCard, action: onOpenBusinessCard },
+                { label: 'My Digital Business Card', icon: CreditCard, action: onOpenBusinessCard },
                 { label: 'Account Settings', icon: Settings, action: () => setActiveTab('settings') },
               ].map((item) => {
                 const Icon = item.icon;
