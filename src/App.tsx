@@ -8,6 +8,7 @@ import { FeedView } from './components/FeedView';
 import { MessagingView } from './components/MessagingView';
 import { SupplierSearchView } from './components/SupplierSearchView';
 import { BuyerSuppliersView } from './components/BuyerSuppliersView';
+import { BuyerProductsView } from './components/BuyerProductsView';
 import { BusinessCardView } from './components/BusinessCardView';
 import { OpportunitiesView } from './components/OpportunitiesView';
 import { ContactsView } from './components/ContactsView';
@@ -931,7 +932,16 @@ function MainApp() {
           />
         )}
 
-        {activeTab === 'products' && (
+        {activeTab === 'products' && currentUser.role === 'buyer' && (
+          <BuyerProductsView
+            onNavigateToTab={(tab) => setActiveTab(tab)}
+            onStartMessageWith={handleStartMessageWith}
+            networkContacts={contacts}
+            onUpdateNetworkContacts={setContacts}
+          />
+        )}
+
+        {activeTab === 'products' && currentUser.role !== 'buyer' && (
           <ComingSoonView
             icon={Package}
             title="Products"
