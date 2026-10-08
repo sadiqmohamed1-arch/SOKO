@@ -1,7 +1,7 @@
 import { BuyerSupplier, IMG } from './buyerSuppliers';
-import { CompanyContact, CompanyDocument, CompanyKind, CompanyMembership, CompanyProduct, CompanyRecord, DocumentCategory, SupplierStore, AuditEntry, SupplierVisit, VisitFollowUp } from './supplierTypes';
+import { CompanyContact, CompanyDocument, CompanyKind, CompanyMembership, CompanyProduct, CompanyRecord, DocumentCategory, SupplierStore, AuditEntry, SupplierVisit, VisitFollowUp, VisitTask } from './supplierTypes';
 
-export const SUPPLIER_STORE_VERSION = 3;
+export const SUPPLIER_STORE_VERSION = 4;
 export const DEMO_USER = { id: 'usr_me_01', name: 'Mohamed Sadiq', email: 'mohamed.sadiq@soko.demo', title: 'Director of Strategic Sourcing' };
 
 const day = 86400000;
@@ -212,7 +212,7 @@ const contact = (companyId: string, id: string, kind: CompanyContact['kind'], na
   ...extra,
 });
 
-const visit = (companyId: string, id: string, days: number, time: string, representative: string, hostCompany: string, hostContact: string, location: string, purpose: SupplierVisit['purpose'], productsDiscussed: string[], status: SupplierVisit['status'], kioskBadge?: string, hostCompanyId?: string): SupplierVisit => ({
+const visit = (companyId: string, id: string, days: number, time: string, representative: string, hostCompany: string, hostContact: string, location: string, purpose: SupplierVisit['purpose'], productsDiscussed: string[], status: SupplierVisit['status'], kioskBadge: string | undefined, hostCompanyId: string | undefined, createdByName: string, createdById: string, remarks?: string): SupplierVisit => ({
   id: `vst_${companyId === ES ? 'es' : companyId === ABC ? 'abc' : 'gec'}_${id}`,
   companyId,
   hostCompanyId,
@@ -225,7 +225,13 @@ const visit = (companyId: string, id: string, days: number, time: string, repres
   purpose,
   productsDiscussed,
   status,
+  visitType: kioskBadge ? 'walk-in' : 'scheduled',
   kioskBadge,
+  checkInAt: status === 'completed' || status === 'checked-in' || status === 'in-meeting' ? ahead(days) + 'T' + time.replace(/\s/g, '') : undefined,
+  checkOutAt: status === 'completed' ? ahead(days) + 'T15:00:00' : undefined,
+  createdById,
+  createdByName,
+  remarks,
 });
 
 const audit = (companyId: string, n: number, actor: string, action: string, kind: AuditEntry['kind']): AuditEntry => ({ id: `aud_${companyId}_${n}`, companyId, at: ago(n), actor, action, kind });
@@ -302,19 +308,23 @@ export const buildSupplierDemo = (directory: BuyerSupplier[]): SupplierStore => 
       contact(ES, 'i2', 'incoming', 'Meera Pillai', 'Procurement Executive', 'Sahel Contracting', 'Steel & Rebar', 'Dubai', 2, { message: 'Interested in cut & bend capacity for a villa cluster.' }),
     ],
     visits: [
-      visit(ES, '1', -3, '10:00 AM', 'Sarah Thomas', 'Apex Industrial Mechanical GC', 'Sarah Jenkins', 'Apex GC Head Office, Dubai', 'Commercial Review', ['B500B Rebar', 'Cut & Bend Service'], 'completed', 'SK-KIOSK-8231'),
-      visit(ES, '2', -9, '02:30 PM', 'Omar Haddad', 'ALEC Engineering', 'Faris Al Nuaimi', 'ALEC Site Office, Abu Dhabi', 'Sample Demonstration', ['Heavy Sections HEB'], 'completed', 'SK-KIOSK-8170'),
-      visit(ES, '3', 0, '11:30 AM', 'Lina Farouk', 'Meridian Developments', 'Anita Desai', 'Meridian Tower, Business Bay', 'RFQ Discussion', ['B500B Rebar', 'Wire Rod'], 'in-meeting', 'SK-KIOSK-8302'),
-      visit(ES, '4', 4, '09:00 AM', 'Sarah Thomas', 'Al Habtoor Contracting', 'Mohammed Ali', 'Al Habtoor HQ, Dubai', 'Contract Negotiation', ['B500B Rebar'], 'scheduled'),
-      visit(ABC, '1', -5, '10:30 AM', 'Ahmed Khan', 'Al Habtoor Contracting', 'Mohammed Ali', 'Al Habtoor HQ, Dubai', 'Sample Demonstration', ['SikaProof A+', 'Sika WT-200 P'], 'completed', 'SK-KIOSK-8199'),
+      visit(ES, '1', -3, '10:00 AM', 'Sarah Thomas', 'Apex Industrial Mechanical GC', 'Sarah Jenkins', 'Apex GC Head Office, Dubai', 'Commercial Review', ['B500B Rebar', 'Cut & Bend Service'], 'completed', 'SK-KIOSK-8231', undefined, 'Sarah Thomas', 'usr_sarah_thomas_es'),
+      visit(ES, '2', -9, '02:30 PM', 'Omar Haddad', 'ALEC Engineering', 'Faris Al Nuaimi', 'ALEC Site Office, Abu Dhabi', 'Sample Demonstration', ['Heavy Sections HEB'], 'completed', 'SK-KIOSK-8170', undefined, 'Omar Haddad', 'usr_omar_es'),
+      visit(ES, '3', 0, '11:30 AM', 'Lina Farouk', 'Meridian Developments', 'Anita Desai', 'Meridian Tower, Business Bay', 'RFQ Discussion', ['B500B Rebar', 'Wire Rod'], 'in-meeting', 'SK-KIOSK-8302', undefined, 'Lina Farouk', 'usr_lina'),
+      visit(ES, '4', 4, '09:00 AM', 'Sarah Thomas', 'Al Habtoor Contracting', 'Mohammed Ali', 'Al Habtoor HQ, Dubai', 'Contract Negotiation', ['B500B Rebar'], 'scheduled', undefined, undefined, 'Sarah Thomas', 'usr_sarah_thomas_es', 'Discuss annual rebar supply terms and volume discounts.'),
+      visit(ABC, '1', -5, '10:30 AM', 'Ahmed Khan', 'Al Habtoor Contracting', 'Mohammed Ali', 'Al Habtoor HQ, Dubai', 'Sample Demonstration', ['SikaProof A+', 'Sika WT-200 P'], 'completed', 'SK-KIOSK-8199', undefined, 'Ahmed Khan', 'usr_ahmed_khan'),
       // ABC visits GEC Dubai — shared visit record; both sides can see it
-      visit(ABC, '2', 3, '01:00 PM', 'Ahmed Khan', 'GEC Dubai', 'Hassan Qureshi', 'GEC Dubai Office, Al Barsha', 'Vendor Onboarding', ['Mapelastic Cementitious Coating'], 'scheduled', undefined, GEC),
+      visit(ABC, '2', 3, '01:00 PM', 'Ahmed Khan', 'GEC Dubai', 'Hassan Qureshi', 'GEC Dubai Office, Al Barsha', 'Vendor Onboarding', ['Mapelastic Cementitious Coating'], 'scheduled', undefined, GEC, 'Ahmed Khan', 'usr_ahmed_khan', 'Initial vendor onboarding meeting with GEC procurement team.'),
     ],
     followUps: [
-      { visitId: 'vst_es_1', companyId: ES, side: 'supplier', note: 'Send revised price list for 16–25 mm and CARES certificate. Follow up Thursday.', at: ago(2), by: 'Sarah Thomas' } as VisitFollowUp,
-      { visitId: 'vst_abc_2', companyId: ABC, side: 'supplier', note: 'Prepare ICV certificate and project references for GEC vendor onboarding meeting.', at: ago(1), by: 'Ahmed Khan' } as VisitFollowUp,
+      { id: 'fu_es_1', visitId: 'vst_es_1', companyId: ES, side: 'supplier', note: 'Send revised price list for 16–25 mm and CARES certificate. Follow up Thursday.', at: ago(2), by: 'Sarah Thomas', byId: 'usr_sarah_thomas_es' } as VisitFollowUp,
+      { id: 'fu_abc_1', visitId: 'vst_abc_2', companyId: ABC, side: 'supplier', note: 'Prepare ICV certificate and project references for GEC vendor onboarding meeting.', at: ago(1), by: 'Ahmed Khan', byId: 'usr_ahmed_khan' } as VisitFollowUp,
       // Contractor-side note for the same GEC Dubai visit — private to GEC, not visible to ABC
-      { visitId: 'vst_abc_2', companyId: GEC, side: 'contractor', note: 'Request ICV certificate and 3 project references before approving as an approved vendor.', at: ago(1), by: 'Mohamed Sadiq' } as VisitFollowUp,
+      { id: 'fu_gec_1', visitId: 'vst_abc_2', companyId: GEC, side: 'contractor', note: 'Request ICV certificate and 3 project references before approving as an approved vendor.', at: ago(1), by: 'Mohamed Sadiq', byId: 'usr_me_01' } as VisitFollowUp,
+    ],
+    visitTasks: [
+      { id: 'tsk_es_1', visitId: 'vst_es_1', companyId: ES, side: 'supplier', description: 'Send revised price list for 16-25mm rebar', assignedTo: 'Sarah Thomas', dueDate: ahead(2), priority: 'high', status: 'pending', createdAt: ago(2), createdBy: 'Sarah Thomas' } as VisitTask,
+      { id: 'tsk_es_2', visitId: 'vst_es_4', companyId: ES, side: 'supplier', description: 'Prepare volume discount proposal for Al Habtoor', assignedTo: 'Khalid Al Mansoori', dueDate: ahead(3), priority: 'medium', status: 'pending', createdAt: ago(1), createdBy: 'Sarah Thomas' } as VisitTask,
     ],
     audit: [
       audit(ES, 1, 'Priya Menon', 'Uploaded "Tensile Test Report – Heat 24-1187"', 'document'),

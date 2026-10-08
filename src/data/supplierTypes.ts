@@ -254,6 +254,10 @@ export interface CompanyContact {
   at: string;
 }
 
+export type VisitStatus = 'scheduled' | 'checked-in' | 'in-meeting' | 'completed' | 'cancelled' | 'no-show';
+export type VisitType = 'scheduled' | 'walk-in';
+export type VisitPurpose = 'Sample Demonstration' | 'Contract Negotiation' | 'RFQ Discussion' | 'Vendor Onboarding' | 'Facility Inspection' | 'Commercial Review' | 'Other';
+
 export interface SupplierVisit {
   id: string;
   companyId: string;
@@ -264,19 +268,46 @@ export interface SupplierVisit {
   hostCompany: string;
   hostContact: string;
   location: string;
-  purpose: OfficeKioskVisit['purposeOfVisit'];
+  purpose: VisitPurpose;
   productsDiscussed: string[];
-  status: OfficeKioskVisit['visitorStatus'];
+  status: VisitStatus;
+  visitType: VisitType;
   kioskBadge?: string;
+  checkInAt?: string;
+  checkOutAt?: string;
+  createdById: string;
+  createdByName: string;
+  confirmedById?: string;
+  confirmedByName?: string;
+  remarks?: string;
 }
 
 export interface VisitFollowUp {
+  id: string;
   visitId: string;
   companyId: string;
   side: 'supplier' | 'contractor';
   note: string;
   at: string;
   by: string;
+  byId: string;
+}
+
+export type TaskPriority = 'low' | 'medium' | 'high';
+export type TaskStatus = 'pending' | 'in-progress' | 'completed';
+
+export interface VisitTask {
+  id: string;
+  visitId: string;
+  companyId: string;
+  side: 'supplier' | 'contractor';
+  description: string;
+  assignedTo: string;
+  dueDate: string;
+  priority: TaskPriority;
+  status: TaskStatus;
+  createdAt: string;
+  createdBy: string;
 }
 
 export interface AuditEntry {
@@ -297,6 +328,7 @@ export interface SupplierStore {
   contacts: CompanyContact[];
   visits: SupplierVisit[];
   followUps: VisitFollowUp[];
+  visitTasks: VisitTask[];
   audit: AuditEntry[];
   previewRole: Record<string, CompanyRole | undefined>;
 }

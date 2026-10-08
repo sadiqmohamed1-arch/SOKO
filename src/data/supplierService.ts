@@ -1,5 +1,5 @@
 import { companyById, documentsOf, findDuplicateCompanies, membersOf, storageAllocationMb, storageUsedMb } from './supplierStore';
-import { can, CompanyDocument, CompanyMembership, CompanyProduct, CompanyProfile, CompanyRecord, DocumentAccessLevel, DocumentCategory, Permission, SessionUser, SupplierResult, CompanyRole, SupplierStore, SupplierTier, TIER_CONFIG, AuditEntry, roleMeta } from './supplierTypes';
+import { can, CompanyDocument, CompanyMembership, CompanyProduct, CompanyProfile, CompanyRecord, DocumentAccessLevel, DocumentCategory, Permission, SessionUser, SupplierResult, CompanyRole, SupplierStore, SupplierTier, TIER_CONFIG, AuditEntry, roleMeta, SupplierVisit, VisitFollowUp, VisitTask } from './supplierTypes';
 
 export interface SupplierCtx {
   store: SupplierStore;
@@ -270,9 +270,69 @@ export const addFollowUp = (ctx: SupplierCtx, visitId: string, note: string): Su
   const company = companyById(ctx.store, ctx.companyId);
   const side: 'supplier' | 'contractor' = company?.kind === 'contractor' ? 'contractor' : 'supplier';
   return done(
-    touch(ctx.store, ctx, 'Added a visit follow-up note', 'visit', { followUps: [{ visitId, companyId: ctx.companyId, side, note: note.trim(), at: now(), by: ctx.user.name }, ...ctx.store.followUps] }),
+    touch(ctx.store, ctx, 'Added a visit follow-up note', 'visit', { followUps: [{ id: uid('fu'), visitId, companyId: ctx.companyId, side, note: note.trim(), at: now(), by: ctx.user.name, byId: ctx.user.id }, ...ctx.store.followUps] }),
     undefined,
   );
+};
+
+export const deleteFollowUp = (ctx: SupplierCtx, followUpId: string): SupplierResult => {
+  const d = deny(ctx, 'visits.manage');
+  if (d) return d;
+  const fu = ctx.store.followUps.find((f) => f.id === followUpId && f.companyId === ctx.companyId);
+  if (!fu) return fail('Note not found.');
+  if (fu.byId !== ctx.user.id) return fail('You can only delete your own notes.');
+  return done(touch(ctx.store, ctx, 'Deleted a visit follow-up note', 'visit', { followUps: ctx.store.followUps.filter((f) => f.id !== followUpId) }), undefined);
+};
+
+export const createVisit = (ctx: SupplierCtx, visit: { hostCompany: string; hostContact: string; representative: string; date: string; time: string; location: string; purpose: SupplierVisit['purpose']; productsDiscussed: string[]; remarks?: string }): SupplierResult<SupplierVisit> => {
+  const d = deny(ctx, 'visits.manage');
+  if (d) return d;
+  if (!visit.hostCompany.trim()) return fail('Host company is required.');
+  if (!visit.date.trim()) return fail('Date is required.');
+  if (!visit.representative.trim()) return fail('Representative is required.');
+  const id = uid('vst');
+  const newVisit: SupplierVisit = {
+    id, companyId: ctx.companyId, hostCompanyId: undefined,
+    date: visit.date, time: visit.time, representative: visit.representative,
+    hostCompany: visit.hostCompany, hostContact: visit.hostContact, location: visit.location,
+    purpose: visit.purpose, productsDiscussed: visit.productsDiscussed,
+    status: 'scheduled', visitType: 'scheduled',
+    createdById: ctx.user.id, createdByName: ctx.user.name, remarks: visit.remarks,
+  };
+  return done(touch(ctx.store, ctx, `Scheduled visit to ${visit.hostCompany}`, 'visit', { visits: [newVisit, ...ctx.store.visits] }), newVisit);
+};
+
+export const updateVisitStatus = (ctx: SupplierCtx, visitId: string, status: SupplierVisit['status']): SupplierResult => {
+  const d = deny(ctx, 'visits.manage');
+  if (d) return d;
+  const visit = ctx.store.visits.find((v) => v.id === visitId && (v.companyId === ctx.companyId || v.hostCompanyId === ctx.companyId));
+  if (!visit) return fail('Visit not found.');
+  const patch: Partial<SupplierVisit> = { status };
+  if (status === 'checked-in' && !visit.checkInAt) patch.checkInAt = now();
+  if (status === 'completed' && !visit.checkOutAt) patch.checkOutAt = now();
+  return done(touch(ctx.store, ctx, `Updated visit status to ${status}`, 'visit', { visits: ctx.store.visits.map((v) => v.id === visitId ? { ...v, ...patch } : v) }), undefined);
+};
+
+export const addVisitTask = (ctx: SupplierCtx, visitId: string, task: { description: string; assignedTo: string; dueDate: string; priority: VisitTask['priority'] }): SupplierResult<VisitTask> => {
+  const d = deny(ctx, 'visits.manage');
+  if (d) return d;
+  if (!task.description.trim()) return fail('Task description is required.');
+  const company = companyById(ctx.store, ctx.companyId);
+  const side: 'supplier' | 'contractor' = company?.kind === 'contractor' ? 'contractor' : 'supplier';
+  const id = uid('tsk');
+  const newTask: VisitTask = {
+    id, visitId, companyId: ctx.companyId, side,
+    description: task.description.trim(), assignedTo: task.assignedTo,
+    dueDate: task.dueDate, priority: task.priority, status: 'pending',
+    createdAt: now(), createdBy: ctx.user.name,
+  };
+  return done(touch(ctx.store, ctx, 'Created a visit follow-up task', 'visit', { visitTasks: [newTask, ...ctx.store.visitTasks] }), newTask);
+};
+
+export const updateVisitTask = (ctx: SupplierCtx, taskId: string, status: VisitTask['status']): SupplierResult => {
+  const d = deny(ctx, 'visits.manage');
+  if (d) return d;
+  return done(touch(ctx.store, ctx, 'Updated a visit task', 'visit', { visitTasks: ctx.store.visitTasks.map((t) => t.id === taskId ? { ...t, status } : t) }), undefined);
 };
 
 export const setTier = (ctx: SupplierCtx, tier: SupplierTier): SupplierResult<CompanyRecord> => {
