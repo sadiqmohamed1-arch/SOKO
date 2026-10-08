@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { SokoLogo } from './SokoLogo';
 import { Conversation, UserProfile, UserRole, Workspace } from '../types';
+import { DemoAccount } from '../data/supplierTypes';
 
 interface BuyerNavbarProps {
   activeTab: string;
@@ -41,6 +42,9 @@ interface BuyerNavbarProps {
   onOpenProfile: () => void;
   onOpenBusinessCard: () => void;
   onSwitchDemoRole: (role: UserRole) => void;
+  demoAccounts?: DemoAccount[];
+  activeDemoAccountId?: string;
+  onSwitchDemoAccount?: (account: DemoAccount) => void;
   isAuthenticated?: boolean;
   onLogout?: () => void;
   onOpenAuthModal?: (mode: 'login' | 'signup') => void;
@@ -88,6 +92,9 @@ export const BuyerNavbar: React.FC<BuyerNavbarProps> = ({
   onOpenProfile,
   onOpenBusinessCard,
   onSwitchDemoRole,
+  demoAccounts,
+  activeDemoAccountId,
+  onSwitchDemoAccount,
   isAuthenticated,
   onLogout,
   onOpenAuthModal,
@@ -406,20 +413,58 @@ export const BuyerNavbar: React.FC<BuyerNavbarProps> = ({
                 </button>
               )}
 
-              <div className="mt-2 pt-2 border-t border-dashed border-slate-200 px-2 pb-1 flex items-center justify-between gap-2">
-                <span className="text-[10px] text-slate-400">Demo: preview portal</span>
-                <select
-                  id="role-persona-select"
-                  value={currentUser.role}
-                  onChange={(e) => go(() => onSwitchDemoRole(e.target.value as UserRole))}
-                  className="text-[11px] px-1.5 py-1 rounded-md border border-slate-200 bg-slate-50 text-slate-600 cursor-pointer focus:outline-hidden"
-                >
-                  <option value="buyer">Buyer</option>
-                  <option value="supplier">Supplier</option>
-                  <option value="contractor">Contractor</option>
-                  <option value="admin">Super Admin</option>
-                </select>
-              </div>
+              {demoAccounts && onSwitchDemoAccount && (
+                <div className="mt-2 pt-2 border-t border-dashed border-slate-200 px-2 pb-1">
+                  <p className="text-[10px] text-slate-400 mb-1.5">Demo: switch account (admin only)</p>
+                  <div className="flex flex-col gap-1">
+                    {demoAccounts.map((acct) => (
+                      <button
+                        key={acct.id}
+                        type="button"
+                        onClick={() => go(() => onSwitchDemoAccount(acct))}
+                        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left text-xs transition-colors cursor-pointer ${activeDemoAccountId === acct.id ? 'bg-blue-50 ring-1 ring-blue-200 text-blue-900 font-semibold' : 'text-slate-600 hover:bg-slate-50'}`}
+                      >
+                        <img src={acct.avatarUrl} alt="" className="w-6 h-6 rounded-full object-cover shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate">{acct.label}</p>
+                          <p className="text-[10px] text-slate-400 truncate">{acct.description}</p>
+                        </div>
+                        {activeDemoAccountId === acct.id && <Check className="w-3.5 h-3.5 text-blue-600 shrink-0" />}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mt-1.5 flex items-center justify-between gap-2">
+                    <span className="text-[10px] text-slate-400">Legacy role preview</span>
+                    <select
+                      id="role-persona-select"
+                      value={currentUser.role}
+                      onChange={(e) => go(() => onSwitchDemoRole(e.target.value as UserRole))}
+                      className="text-[11px] px-1.5 py-1 rounded-md border border-slate-200 bg-slate-50 text-slate-600 cursor-pointer focus:outline-hidden"
+                    >
+                      <option value="buyer">Buyer</option>
+                      <option value="supplier">Supplier</option>
+                      <option value="contractor">Contractor</option>
+                      <option value="admin">Super Admin</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+              {(!demoAccounts || !onSwitchDemoAccount) && (
+                <div className="mt-2 pt-2 border-t border-dashed border-slate-200 px-2 pb-1 flex items-center justify-between gap-2">
+                  <span className="text-[10px] text-slate-400">Demo: preview portal</span>
+                  <select
+                    id="role-persona-select"
+                    value={currentUser.role}
+                    onChange={(e) => go(() => onSwitchDemoRole(e.target.value as UserRole))}
+                    className="text-[11px] px-1.5 py-1 rounded-md border border-slate-200 bg-slate-50 text-slate-600 cursor-pointer focus:outline-hidden"
+                  >
+                    <option value="buyer">Buyer</option>
+                    <option value="supplier">Supplier</option>
+                    <option value="contractor">Contractor</option>
+                    <option value="admin">Super Admin</option>
+                  </select>
+                </div>
+              )}
             </div>
           )}
         </div>

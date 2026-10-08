@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { ArrowLeft, ArrowRight, Building2, Check, CheckCircle2, Copy, MailCheck, Search, ShieldAlert, X } from 'lucide-react';
 import { BUYER_SUPPLIERS, supplierShareUrl } from '../../data/buyerSuppliers';
-import { CompanyProfile, CompanyRecord, ROLE_META, SessionUser, SupplierRole, SupplierStore, SUPPLIER_ROLES } from '../../data/supplierTypes';
+import { CompanyProfile, CompanyRecord, roleMeta, SessionUser, CompanyRole, SupplierStore, SUPPLIER_ROLES } from '../../data/supplierTypes';
 import { findDuplicateCompanies, profileChecklist, searchCompanies } from '../../data/supplierStore';
 import { registerCompany, requestAccess } from '../../data/supplierService';
 import { btnPrimary, btnSecondary, inputCls, labelCls } from '../NetworkShared';
@@ -34,7 +34,7 @@ export const SupplierOnboarding: React.FC<Props> = ({ store, user, onStoreChange
   const [codeSent, setCodeSent] = useState(false);
   const [q, setQ] = useState('');
   const [selected, setSelected] = useState<{ id: string; name: string; managed: boolean } | null>(null);
-  const [role, setRole] = useState<SupplierRole>('sales_rep');
+  const [role, setRole] = useState<CompanyRole>('sales_rep');
   const [note, setNote] = useState('');
   const [outcome, setOutcome] = useState<'requested' | 'claimed' | null>(null);
   const [profile, setProfile] = useState<CompanyProfile>(blankProfile);
@@ -161,8 +161,8 @@ export const SupplierOnboarding: React.FC<Props> = ({ store, user, onStoreChange
                     <div className="mt-3 grid sm:grid-cols-2 gap-3">
                       <label className="block">
                         <span className={labelCls}>Requested role</span>
-                        <select value={role} onChange={(e) => setRole(e.target.value as SupplierRole)} className={inputCls}>
-                          {SUPPLIER_ROLES.filter((r) => r !== 'supplier_admin').map((r) => <option key={r} value={r}>{ROLE_META[r].label}</option>)}
+                        <select value={role} onChange={(e) => setRole(e.target.value as CompanyRole)} className={inputCls}>
+                          {SUPPLIER_ROLES.filter((r) => r !== 'supplier_admin').map((r) => <option key={r} value={r}>{roleMeta(r).label}</option>)}
                         </select>
                       </label>
                       <label className="block">

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { companyById, companyUser, effectiveRole, loadSupplierStore, membershipsOfUser, saveSupplierStore, syncDirectory } from './data/supplierStore';
-import { ROLE_META, SupplierStore } from './data/supplierTypes';
+import { DEMO_ACCOUNTS, DemoAccount, roleMeta, SupplierStore } from './data/supplierTypes';
 import { leaveCompany, setTier } from './data/supplierService';
 import { marketWorkspaceFor, planToTier, syncMarketPlans } from './data/supplierMarket';
 import { SupplierWorkspaceView } from './components/supplierWorkspace/SupplierWorkspaceView';
@@ -11,7 +11,7 @@ import { Navbar } from './components/Navbar';
 import { BuyerNavbar } from './components/BuyerNavbar';
 import { ComingSoonView } from './components/ComingSoonView';
 import { BuyerHomeView } from './components/BuyerHomeView';
-import { Package, Settings } from 'lucide-react';
+import { Package, Settings, Building2 } from 'lucide-react';
 import { FeedView } from './components/FeedView';
 import { MessagingView } from './components/MessagingView';
 import { SupplierSearchView } from './components/SupplierSearchView';
@@ -126,7 +126,7 @@ function MainApp() {
     () => companyUser({ id: currentUser.id, name: currentUser.name, email: currentUser.email, title: currentUser.title }),
     [currentUser.id, currentUser.name, currentUser.email, currentUser.title],
   );
-  const companyMemberships = currentUser.role === 'buyer' ? membershipsOfUser(supplierStore, sessionUser.id) : [];
+  const companyMemberships = membershipsOfUser(supplierStore, sessionUser.id);
   const requestedCompanyId = activeWorkspaceId.startsWith('company:') ? activeWorkspaceId.slice(8) : null;
   const activeMembership = companyMemberships.find((m) => m.companyId === requestedCompanyId);
   const activeCompany = activeMembership ? companyById(supplierStore, activeMembership.companyId) : undefined;
@@ -387,6 +387,32 @@ function MainApp() {
       setActiveTab('feed');
     }
   }, [currentUser.role, activeTab]);
+
+  const [activeDemoAccountId, setActiveDemoAccountId] = useState<string>(() => localStorage.getItem('soko_demo_account') || 'demo_mohamed');
+
+  const switchDemoAccount = useCallback((account: DemoAccount) => {
+    localStorage.setItem('soko_demo_account', account.id);
+    setActiveDemoAccountId(account.id);
+    setCurrentUser((prev) => ({
+      ...prev,
+      id: account.userId,
+      name: account.name,
+      email: account.email,
+      title: account.title,
+      role: account.role,
+      company: account.company,
+      avatarUrl: account.avatarUrl,
+    }));
+    const m = membershipsOfUser(loadSupplierStore(), account.userId);
+    const firstCompany = m[0];
+    if (firstCompany) {
+      setActiveWorkspaceId(`company:${firstCompany.companyId}`);
+      setActiveTab('sw-dashboard');
+    } else {
+      setActiveWorkspaceId('personal');
+      setActiveTab('feed');
+    }
+  }, []);
 
   // Handle Persona / Role Switcher
   const handleRoleChange = (role: UserRole) => {
@@ -770,7 +796,7 @@ function MainApp() {
     ...companyMemberships.flatMap((m): Workspace[] => {
       const c = companyById(supplierStore, m.companyId);
       if (!c) return [];
-      return [{ id: `company:${c.id}`, kind: 'corporate', name: c.profile.tradingName, roleLabel: `Supplier · ${ROLE_META[m.role].label}${c.tier === 'premium' ? ' · Premium' : ''}` }];
+      return [{ id: `company:${c.id}`, kind: 'corporate', name: c.profile.tradingName, roleLabel: `${c.kind === 'contractor' ? 'Contractor' : 'Supplier'} · ${roleMeta(m.role).label}${c.tier === 'premium' ? ' · Premium' : ''}` }];
     }),
   ];
 
@@ -799,7 +825,7 @@ function MainApp() {
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans selection:bg-blue-600 selection:text-white">
       {/* Top Navbar */}
-      {currentUser.role === 'buyer' ? (
+      {currentUser.role !== 'admin' ? (
         <BuyerNavbar
           activeTab={activeTab}
           setActiveTab={(tab) => (tab === 'contacts' ? openNetwork('contacts') : setActiveTab(tab))}
@@ -816,6 +842,9 @@ function MainApp() {
           }}
           onOpenBusinessCard={() => openNetwork('cards')}
           onSwitchDemoRole={handleRoleChange}
+          demoAccounts={DEMO_ACCOUNTS}
+          activeDemoAccountId={activeDemoAccountId}
+          onSwitchDemoAccount={switchDemoAccount}
           isAuthenticated={isAuthenticated}
           onLogout={logout}
           onOpenAuthModal={(mode) => {
@@ -919,7 +948,22 @@ function MainApp() {
           />
         )}
 
-        {activeTab.startsWith('sw-') && activeCompanyId && (
+        {activeTab.startsWith('sw-') && activeCompanyId && activeCompany?.kind === 'contractor' && (
+          <div className="px-4 sm:px-6 py-16 max-w-2xl mx-auto text-center">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 mb-4">
+              <Building2 className="w-8 h-8" />
+            </div>
+            <h2 className="text-2xl font-bold text-slate-900 mb-2">Contractor Workspace — Coming in Step 7B</h2>
+            <p className="text-slate-600 mb-6">This is a placeholder for the GEC Dubai contractor workspace. The full contractor experience (RFQ management, bid evaluation, vendor coordination, project dashboards) will be built in Step 7B.</p>
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 text-slate-600 text-sm">
+              <span className="font-semibold">{activeCompany?.profile.tradingName}</span>
+              <span className="text-slate-300">|</span>
+              <span>{roleMeta(effectiveRole(supplierStore, activeMembership!)).label}</span>
+            </div>
+          </div>
+        )}
+
+        {activeTab.startsWith('sw-') && activeCompanyId && activeCompany?.kind !== 'contractor' && (
           <SupplierWorkspaceView
             key={activeCompanyId}
             tab={activeTab as SupplierTab}

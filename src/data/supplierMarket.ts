@@ -1,19 +1,23 @@
 import { actorForWorkspace, creditAccount, inboxFor, listOpportunities, loadMarketStore, ownerCampaigns, saveMarketStore } from './marketHubService';
 import { PLANS } from './marketHubCatalog';
 import { CampaignMetrics, MarketWorkspace, PlanId } from './marketHubTypes';
-import { CompanyRecord, SessionUser, SupplierRole, SupplierTier } from './supplierTypes';
+import { CompanyRecord, CompanyRole, SessionUser, SupplierTier } from './supplierTypes';
 
 export const marketWorkspaceId = (companyId: string) => `ws_${companyId}`;
 
-const MEMBER_ROLE: Record<SupplierRole, MarketWorkspace['memberRole']> = {
+const MEMBER_ROLE: Record<CompanyRole, MarketWorkspace['memberRole']> = {
   supplier_admin: 'owner',
   sales_manager: 'campaign_manager',
   sales_rep: 'member',
   technical_manager: 'member',
   viewer: 'member',
+  contractor_admin: 'owner',
+  procurement_manager: 'campaign_manager',
+  procurement_officer: 'member',
+  technical_reviewer: 'member',
 };
 
-export const marketWorkspaceFor = (c: CompanyRecord, role: SupplierRole, user: SessionUser): MarketWorkspace => ({
+export const marketWorkspaceFor = (c: CompanyRecord, role: CompanyRole, user: SessionUser): MarketWorkspace => ({
   id: marketWorkspaceId(c.id),
   kind: 'supplier',
   displayName: c.profile.tradingName,

@@ -1,11 +1,11 @@
 import { companyById, documentsOf, findDuplicateCompanies, membersOf, storageAllocationMb, storageUsedMb } from './supplierStore';
-import { can, CompanyDocument, CompanyMembership, CompanyProduct, CompanyProfile, CompanyRecord, DocumentAccessLevel, DocumentCategory, Permission, SessionUser, SupplierResult, SupplierRole, SupplierStore, SupplierTier, TIER_CONFIG, AuditEntry, ROLE_META } from './supplierTypes';
+import { can, CompanyDocument, CompanyMembership, CompanyProduct, CompanyProfile, CompanyRecord, DocumentAccessLevel, DocumentCategory, Permission, SessionUser, SupplierResult, CompanyRole, SupplierStore, SupplierTier, TIER_CONFIG, AuditEntry, roleMeta } from './supplierTypes';
 
 export interface SupplierCtx {
   store: SupplierStore;
   user: SessionUser;
   companyId: string;
-  role: SupplierRole;
+  role: CompanyRole;
 }
 
 const uid = (p: string) => `${p}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -14,7 +14,7 @@ const fail = (error: string) => ({ ok: false as const, error });
 const done = <T>(store: SupplierStore, value: T) => ({ ok: true as const, store, value });
 
 const deny = (ctx: SupplierCtx, p: Permission) =>
-  can(ctx.role, p) ? undefined : fail(`Your role (${ROLE_META[ctx.role].label}) does not allow this action.`);
+  can(ctx.role, p) ? undefined : fail(`Your role (${roleMeta(ctx.role).label}) does not allow this action.`);
 
 const log = (ctx: SupplierCtx, action: string, kind: AuditEntry['kind']): AuditEntry => ({ id: uid('aud'), companyId: ctx.companyId, at: now(), actor: ctx.user.name, action, kind });
 
@@ -209,9 +209,9 @@ export const simulateVerificationReview = (ctx: SupplierCtx, approve: boolean): 
 };
 
 const teamGate = (ctx: SupplierCtx) => deny(ctx, 'team.manage');
-const activeAdmins = (store: SupplierStore, companyId: string) => membersOf(store, companyId).filter((m) => m.role === 'supplier_admin' && m.status === 'active');
+const activeAdmins = (store: SupplierStore, companyId: string) => membersOf(store, companyId).filter((m) => (m.role === 'supplier_admin' || m.role === 'contractor_admin') && m.status === 'active');
 
-export const inviteMember = (ctx: SupplierCtx, name: string, email: string, role: SupplierRole, title: string): SupplierResult<CompanyMembership> => {
+export const inviteMember = (ctx: SupplierCtx, name: string, email: string, role: CompanyRole, title: string): SupplierResult<CompanyMembership> => {
   const g = teamGate(ctx);
   if (g) return g;
   if (!name.trim()) return fail('Enter the person\u2019s name.');
@@ -220,7 +220,7 @@ export const inviteMember = (ctx: SupplierCtx, name: string, email: string, role
   if (team.some((m) => m.email.toLowerCase() === email.toLowerCase())) return fail('This person is already a member or has a pending invitation.');
   if (team.filter((m) => m.status !== 'pending_approval').length >= TIER_CONFIG[company(ctx).tier].teamSeats) return fail('All team seats on your plan are in use.');
   const m: CompanyMembership = { id: uid('mem'), companyId: ctx.companyId, userId: uid('inv'), name: name.trim(), email: email.trim(), title: title.trim(), role, status: 'invited', at: now() };
-  return done(touch(ctx.store, ctx, `Invited ${m.name} as ${ROLE_META[role].label}`, 'team', { memberships: [...ctx.store.memberships, m] }), m);
+  return done(touch(ctx.store, ctx, `Invited ${m.name} as ${roleMeta(role).label}`, 'team', { memberships: [...ctx.store.memberships, m] }), m);
 };
 
 const editMember = (ctx: SupplierCtx, id: string, fn: (m: CompanyMembership) => CompanyMembership | null, action: (m: CompanyMembership) => string): SupplierResult => {
@@ -234,14 +234,14 @@ const editMember = (ctx: SupplierCtx, id: string, fn: (m: CompanyMembership) => 
   return done(touch(ctx.store, ctx, action(m), 'team', { memberships }), undefined);
 };
 
-export const changeMemberRole = (ctx: SupplierCtx, id: string, role: SupplierRole) =>
-  editMember(ctx, id, (m) => ({ ...m, role }), (m) => `Changed ${m.name}'s role to ${ROLE_META[role].label}`);
+export const changeMemberRole = (ctx: SupplierCtx, id: string, role: CompanyRole) =>
+  editMember(ctx, id, (m) => ({ ...m, role }), (m) => `Changed ${m.name}'s role to ${roleMeta(role).label}`);
 
 export const removeMember = (ctx: SupplierCtx, id: string) =>
   editMember(ctx, id, () => null, (m) => (m.status === 'invited' ? `Cancelled invitation for ${m.name}` : m.status === 'pending_approval' ? `Declined access request from ${m.name}` : `Removed ${m.name} from the team`));
 
 export const approveRequest = (ctx: SupplierCtx, id: string) =>
-  editMember(ctx, id, (m) => ({ ...m, status: 'active', at: now() }), (m) => `Approved access for ${m.name} as ${ROLE_META[m.role].label}`);
+  editMember(ctx, id, (m) => ({ ...m, status: 'active', at: now() }), (m) => `Approved access for ${m.name} as ${roleMeta(m.role).label}`);
 
 export const simulateInviteAccepted = (ctx: SupplierCtx, id: string) =>
   editMember(ctx, id, (m) => ({ ...m, status: 'active', at: now() }), (m) => `${m.name} accepted the invitation (simulated)`);
@@ -265,8 +265,10 @@ export const addFollowUp = (ctx: SupplierCtx, visitId: string, note: string): Su
   const d = deny(ctx, 'visits.manage');
   if (d) return d;
   if (!note.trim()) return fail('Write a follow-up note first.');
+  const company = companyById(ctx.store, ctx.companyId);
+  const side: 'supplier' | 'contractor' = company?.kind === 'contractor' ? 'contractor' : 'supplier';
   return done(
-    touch(ctx.store, ctx, 'Added a visit follow-up note', 'visit', { followUps: [{ visitId, companyId: ctx.companyId, note: note.trim(), at: now(), by: ctx.user.name }, ...ctx.store.followUps] }),
+    touch(ctx.store, ctx, 'Added a visit follow-up note', 'visit', { followUps: [{ visitId, companyId: ctx.companyId, side, note: note.trim(), at: now(), by: ctx.user.name }, ...ctx.store.followUps] }),
     undefined,
   );
 };
@@ -278,7 +280,7 @@ export const setTier = (ctx: SupplierCtx, tier: SupplierTier): SupplierResult<Co
   return done(touch(ctx.store, ctx, `Switched plan to ${TIER_CONFIG[tier].label} (simulated)`, 'plan', { companies: ctx.store.companies.map((x) => (x.id === updated.id ? updated : x)) }), updated);
 };
 
-export const setPreviewRole = (store: SupplierStore, companyId: string, role?: SupplierRole): SupplierStore => ({ ...store, previewRole: { ...store.previewRole, [companyId]: role } });
+export const setPreviewRole = (store: SupplierStore, companyId: string, role?: CompanyRole): SupplierStore => ({ ...store, previewRole: { ...store.previewRole, [companyId]: role } });
 
 export interface RegistrationInput {
   profile: CompanyProfile;
@@ -301,6 +303,7 @@ export const registerCompany = (store: SupplierStore, user: SessionUser, input: 
     id,
     sokoId: nextSokoId(store),
     profile: p,
+    kind: 'supplier',
     tier: 'free',
     demo: false,
     createdAt: now(),
@@ -325,7 +328,7 @@ export const registerCompany = (store: SupplierStore, user: SessionUser, input: 
   return done(next, company);
 };
 
-export const requestAccess = (store: SupplierStore, user: SessionUser, companyId: string, role: SupplierRole, note: string): SupplierResult<CompanyMembership> => {
+export const requestAccess = (store: SupplierStore, user: SessionUser, companyId: string, role: CompanyRole, note: string): SupplierResult<CompanyMembership> => {
   if (store.memberships.some((m) => m.companyId === companyId && m.userId === user.id)) return fail('You already have a membership or pending request for this company.');
   const m: CompanyMembership = { id: uid('mem'), companyId, userId: user.id, name: user.name, email: user.email, title: user.title, role, status: 'pending_approval', at: now(), note: note.trim() || undefined };
   return done({ ...store, memberships: [...store.memberships, m] }, m);

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Check, Minus, UserPlus } from 'lucide-react';
-import { Permission, ROLE_META, SUPPLIER_ROLES, SupplierRole, TIER_CONFIG } from '../../data/supplierTypes';
+import { Permission, CONTRACTOR_ROLE_META, CONTRACTOR_ROLES, roleMeta, SUPPLIER_ROLES, CompanyRole, TIER_CONFIG } from '../../data/supplierTypes';
 import { approveRequest, changeMemberRole, inviteMember, removeMember, simulateInviteAccepted } from '../../data/supplierService';
 import { ConfirmDialog, StatusPill, btnPrimary, btnSecondary, inputCls, labelCls } from '../NetworkShared';
 import { ProfileDialog } from '../ProfileDialog';
@@ -27,7 +27,7 @@ const InviteDialog: React.FC<{ sw: SW; onClose: () => void }> = ({ sw, onClose }
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [title, setTitle] = useState('');
-  const [role, setRole] = useState<SupplierRole>('sales_rep');
+  const [role, setRole] = useState<CompanyRole>('sales_rep');
   return (
     <ProfileDialog
       title="Invite a team member"
@@ -46,11 +46,11 @@ const InviteDialog: React.FC<{ sw: SW; onClose: () => void }> = ({ sw, onClose }
         <TextField label="Job title" value={title} onChange={setTitle} />
         <label className="block">
           <span className={labelCls}>Role</span>
-          <select value={role} onChange={(e) => setRole(e.target.value as SupplierRole)} className={inputCls}>
-            {SUPPLIER_ROLES.map((r) => <option key={r} value={r}>{ROLE_META[r].label}</option>)}
+          <select value={role} onChange={(e) => setRole(e.target.value as CompanyRole)} className={inputCls}>
+            {SUPPLIER_ROLES.map((r) => <option key={r} value={r}>{roleMeta(r).label}</option>)}
           </select>
         </label>
-        <p className="text-xs text-slate-500">{ROLE_META[role].description}</p>
+        <p className="text-xs text-slate-500">{roleMeta(role).description}</p>
       </div>
     </ProfileDialog>
   );
@@ -84,7 +84,7 @@ export const TeamManagement: React.FC<{ sw: SW }> = ({ sw }) => {
                   <li key={m.id} className="py-3 flex flex-col sm:flex-row sm:items-center gap-3">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-slate-900">{m.name} <span className="font-normal text-slate-500">· {m.email}</span></p>
-                      <p className="text-xs text-slate-500">Requested {ROLE_META[m.role].label} · {fmtDate(m.at)}</p>
+                      <p className="text-xs text-slate-500">Requested {roleMeta(m.role).label} · {fmtDate(m.at)}</p>
                       {m.note && <p className="mt-1 text-xs text-amber-800 bg-amber-50 rounded-md px-2 py-1 inline-block">{m.note}</p>}
                     </div>
                     {manage && (
@@ -121,11 +121,11 @@ export const TeamManagement: React.FC<{ sw: SW }> = ({ sw }) => {
                       </td>
                       <td className="px-3 py-3">
                         {manage ? (
-                          <select aria-label={`Role for ${m.name}`} value={m.role} onChange={(e) => sw.run(changeMemberRole(sw.ctx, m.id, e.target.value as SupplierRole), 'Role updated')} className={`${inputCls} py-1.5`}>
-                            {SUPPLIER_ROLES.map((r) => <option key={r} value={r}>{ROLE_META[r].label}</option>)}
+                          <select aria-label={`Role for ${m.name}`} value={m.role} onChange={(e) => sw.run(changeMemberRole(sw.ctx, m.id, e.target.value as CompanyRole), 'Role updated')} className={`${inputCls} py-1.5`}>
+                            {SUPPLIER_ROLES.map((r) => <option key={r} value={r}>{roleMeta(r).label}</option>)}
                           </select>
                         ) : (
-                          <span className="text-slate-700">{ROLE_META[m.role].label}</span>
+                          <span className="text-slate-700">{roleMeta(m.role).label}</span>
                         )}
                         {m.status === 'invited' && <div className="mt-1"><StatusPill tone="amber">Invitation pending</StatusPill></div>}
                       </td>
@@ -151,16 +151,16 @@ export const TeamManagement: React.FC<{ sw: SW }> = ({ sw }) => {
                 <thead>
                   <tr className="border-b border-slate-100 text-slate-500">
                     <th className="px-5 py-2 text-left font-semibold">Permission</th>
-                    {SUPPLIER_ROLES.map((r) => <th key={r} className="px-2 py-2 font-semibold text-center">{ROLE_META[r].label}</th>)}
+                    {SUPPLIER_ROLES.map((r) => <th key={r} className="px-2 py-2 font-semibold text-center">{roleMeta(r).label}</th>)}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {PERMISSION_LABELS.map(([p, label]) => (
                     <tr key={p}>
                       <td className="px-5 py-2 text-slate-700">{label}</td>
-                      {SUPPLIER_ROLES.map((r) => (
+                      {(sw.company.kind === 'contractor' ? CONTRACTOR_ROLES : SUPPLIER_ROLES).map((r) => (
                         <td key={r} className="px-2 py-2 text-center">
-                          {ROLE_META[r].permissions.includes(p) ? <Check className="w-4 h-4 text-blue-600 mx-auto" aria-label="Allowed" /> : <Minus className="w-4 h-4 text-slate-300 mx-auto" aria-label="Not allowed" />}
+                          {roleMeta(r).permissions.includes(p) ? <Check className="w-4 h-4 text-blue-600 mx-auto" aria-label="Allowed" /> : <Minus className="w-4 h-4 text-slate-300 mx-auto" aria-label="Not allowed" />}
                         </td>
                       ))}
                     </tr>
@@ -178,8 +178,8 @@ export const TeamManagement: React.FC<{ sw: SW }> = ({ sw }) => {
             <p className="mt-2 text-xs text-slate-500">{sw.premium ? 'Supplier Premium includes expanded team access.' : 'Upgrade to Supplier Premium for up to 25 seats.'}</p>
           </Card>
           <Card title="Your role">
-            <p className="text-sm font-semibold text-slate-900">{ROLE_META[sw.role].label}</p>
-            <p className="mt-1 text-xs text-slate-500">{ROLE_META[sw.role].description}</p>
+            <p className="text-sm font-semibold text-slate-900">{roleMeta(sw.role).label}</p>
+            <p className="mt-1 text-xs text-slate-500">{roleMeta(sw.role).description}</p>
           </Card>
           <DemoNote>Invitations and approvals are simulated. No emails are sent.</DemoNote>
         </aside>

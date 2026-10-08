@@ -1,6 +1,6 @@
 import { BUYER_SUPPLIERS, BuyerSupplier, SupplierProduct, SupplierType } from './buyerSuppliers';
 import { buildSupplierDemo, SUPPLIER_STORE_VERSION } from './supplierDemo';
-import { CompanyDocument, CompanyMembership, CompanyProduct, CompanyRecord, SessionUser, SupplierRole, SupplierStore, TIER_CONFIG } from './supplierTypes';
+import { CompanyDocument, CompanyMembership, CompanyProduct, CompanyRecord, CompanyRole, SessionUser, SupplierStore, TIER_CONFIG } from './supplierTypes';
 
 const STORAGE_KEY = 'soko_supplier_workspace_v1';
 
@@ -38,8 +38,8 @@ export const membershipsOfUser = (store: SupplierStore, userId: string) => store
 export const membershipFor = (store: SupplierStore, userId: string, companyId: string): CompanyMembership | undefined =>
   store.memberships.find((m) => m.userId === userId && m.companyId === companyId && m.status === 'active');
 
-export const effectiveRole = (store: SupplierStore, membership: CompanyMembership): SupplierRole =>
-  membership.role === 'supplier_admin' ? store.previewRole[membership.companyId] ?? membership.role : membership.role;
+export const effectiveRole = (store: SupplierStore, membership: CompanyMembership): CompanyRole =>
+  membership.role === 'supplier_admin' || membership.role === 'contractor_admin' ? store.previewRole[membership.companyId] ?? membership.role : membership.role;
 
 export const storageAllocationMb = (c: CompanyRecord) => c.storageMb ?? TIER_CONFIG[c.tier].storageMb;
 export const storageUsedMb = (docs: CompanyDocument[]) => Math.round(docs.reduce((n, d) => n + d.sizeMb, 0) * 10) / 10;

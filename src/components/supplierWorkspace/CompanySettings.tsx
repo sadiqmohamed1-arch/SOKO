@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Eye, History, LogOut, RotateCcw } from 'lucide-react';
-import { ROLE_META, SUPPLIER_ROLES, SupplierRole } from '../../data/supplierTypes';
+import { CONTRACTOR_ROLE_META, CONTRACTOR_ROLES, roleMeta, SUPPLIER_ROLES, CompanyRole } from '../../data/supplierTypes';
 import { setPreviewRole } from '../../data/supplierService';
 import { resetSupplierStore } from '../../data/supplierStore';
 import { ConfirmDialog, btnSecondary, inputCls, labelCls } from '../NetworkShared';
@@ -25,7 +25,7 @@ export const CompanySettings: React.FC<{ sw: SW; onLeaveCompany: () => void }> =
             <Field label="Legal name" value={p.legalName} />
             <Field label="Trade license" value={p.licenseNo} />
             <Field label="Emirate" value={p.emirate} />
-            <Field label="Your role" value={ROLE_META[sw.membership.role].label} />
+            <Field label="Your role" value={roleMeta(sw.membership.role).label} />
           </div>
         </Card>
 
@@ -37,17 +37,17 @@ export const CompanySettings: React.FC<{ sw: SW; onLeaveCompany: () => void }> =
               <select
                 value={preview ?? ''}
                 onChange={(e) => {
-                  const role = (e.target.value || undefined) as SupplierRole | undefined;
+                  const role = (e.target.value || undefined) as CompanyRole | undefined;
                   sw.setStore(setPreviewRole(sw.store, sw.company.id, role));
-                  sw.notify(role ? `Previewing as ${ROLE_META[role].label}` : 'Back to your own role');
+                  sw.notify(role ? `Previewing as ${roleMeta(role).label}` : 'Back to your own role');
                 }}
                 className={inputCls}
               >
-                <option value="">No preview (Supplier Admin)</option>
-                {SUPPLIER_ROLES.filter((r) => r !== 'supplier_admin').map((r) => <option key={r} value={r}>{ROLE_META[r].label}</option>)}
+                <option value="">No preview ({sw.company.kind === 'contractor' ? 'Company Admin' : 'Supplier Admin'})</option>
+                {(sw.company.kind === 'contractor' ? CONTRACTOR_ROLES : SUPPLIER_ROLES).filter((r) => r !== (sw.company.kind === 'contractor' ? 'contractor_admin' : 'supplier_admin')).map((r) => <option key={r} value={r}>{roleMeta(r).label}</option>)}
               </select>
             </label>
-            {preview && <p className="mt-2 text-xs text-slate-500 flex items-center gap-1"><Eye className="w-3.5 h-3.5" /> {ROLE_META[preview].description}</p>}
+            {preview && <p className="mt-2 text-xs text-slate-500 flex items-center gap-1"><Eye className="w-3.5 h-3.5" /> {roleMeta(preview).description}</p>}
           </Card>
         )}
 

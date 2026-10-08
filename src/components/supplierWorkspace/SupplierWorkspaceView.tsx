@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Info } from 'lucide-react';
 import { CommunityContact } from '../../types';
-import { can, ROLE_META, SessionUser, SupplierResult, SupplierStore } from '../../data/supplierTypes';
+import { can, roleMeta, SessionUser, SupplierResult, SupplierStore } from '../../data/supplierTypes';
 import { companyById, documentsOf, effectiveRole, membersOf, membershipFor, productsOf } from '../../data/supplierStore';
 import { marketWorkspaceFor } from '../../data/supplierMarket';
 import { Toast } from '../NetworkShared';
@@ -94,7 +94,7 @@ export const SupplierWorkspaceView: React.FC<Props> = ({ tab, store, onStoreChan
       {previewing && (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
           <span>
-            Previewing the workspace with <strong>{ROLE_META[sw.role].label}</strong> permissions.
+            Previewing the workspace with <strong>{roleMeta(sw.role).label}</strong> permissions.
           </span>
           <button type="button" onClick={() => onNavigate('sw-settings')} className="font-semibold underline underline-offset-2 cursor-pointer">
             Change in Company Settings

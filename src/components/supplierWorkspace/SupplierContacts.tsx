@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Lock, Mail, MessageSquare, Phone, Search, Users } from 'lucide-react';
-import { CompanyContact, ROLE_META } from '../../data/supplierTypes';
+import { CompanyContact, roleMeta } from '../../data/supplierTypes';
 import { removeSavedContact, respondToContact } from '../../data/supplierService';
 import { btnPrimary, btnSecondary, inputCls } from '../NetworkShared';
 import { DemoNote, EmptyState, SubTabs, daysAgo } from '../marketHub/MarketHubShared';
@@ -134,7 +134,7 @@ export const SupplierContacts: React.FC<{ sw: SW; onStartMessageWith: (userId: s
                   <p className="text-sm font-semibold text-slate-900 truncate">{m.name}</p>
                   <p className="text-xs text-slate-500 truncate">{m.title} · {m.email}</p>
                 </div>
-                <span className="text-xs font-medium text-slate-600 shrink-0">{ROLE_META[m.role].label}</span>
+                <span className="text-xs font-medium text-slate-600 shrink-0">{roleMeta(m.role).label}</span>
               </li>
             ))}
           </ul>

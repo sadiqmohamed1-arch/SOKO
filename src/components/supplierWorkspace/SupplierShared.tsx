@@ -1,6 +1,6 @@
 import React from 'react';
 import { Clock, Crown, Lock, ShieldAlert, ShieldCheck, ShieldQuestion } from 'lucide-react';
-import { CompanyDocument, CompanyMembership, CompanyProduct, CompanyRecord, Permission, SessionUser, SupplierResult, SupplierRole, SupplierStore } from '../../data/supplierTypes';
+import { CompanyDocument, CompanyMembership, CompanyProduct, CompanyRecord, CompanyRole, Permission, SessionUser, SupplierResult, SupplierStore } from '../../data/supplierTypes';
 import { SupplierCtx } from '../../data/supplierService';
 import { MarketWorkspace } from '../../data/marketHubTypes';
 
@@ -21,7 +21,7 @@ export interface SW {
   user: SessionUser;
   company: CompanyRecord;
   membership: CompanyMembership;
-  role: SupplierRole;
+  role: CompanyRole;
   ctx: SupplierCtx;
   products: CompanyProduct[];
   documents: CompanyDocument[];

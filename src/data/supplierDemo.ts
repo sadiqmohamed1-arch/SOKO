@@ -1,7 +1,7 @@
 import { BuyerSupplier, IMG } from './buyerSuppliers';
-import { CompanyContact, CompanyDocument, CompanyMembership, CompanyProduct, CompanyRecord, DocumentCategory, SupplierStore, AuditEntry, SupplierVisit } from './supplierTypes';
+import { CompanyContact, CompanyDocument, CompanyKind, CompanyMembership, CompanyProduct, CompanyRecord, DocumentCategory, SupplierStore, AuditEntry, SupplierVisit, VisitFollowUp } from './supplierTypes';
 
-export const SUPPLIER_STORE_VERSION = 1;
+export const SUPPLIER_STORE_VERSION = 2;
 export const DEMO_USER = { id: 'usr_me_01', name: 'Mohamed Sadiq', email: 'mohamed.sadiq@soko.demo', title: 'Director of Strategic Sourcing' };
 
 const day = 86400000;
@@ -23,13 +23,21 @@ const DETAILS: Record<string, { licenseNo: string; authority: string; address: s
     phone: '+971 2 551 1000',
     legal: 'Emirates Steel Industries PJSC',
   },
+  con_gec_dubai: {
+    licenseNo: 'DED-998877',
+    authority: 'Dubai Department of Economy & Tourism',
+    address: 'GEC Dubai Head Office, Al Barsha 1, Dubai',
+    phone: '+971 4 390 8421',
+    legal: 'GEC Dubai Contracting LLC',
+  },
 };
 
-export const companyFromDirectory = (s: BuyerSupplier, tier: CompanyRecord['tier']): CompanyRecord => {
+export const companyFromDirectory = (s: BuyerSupplier, tier: CompanyRecord['tier'], kind: CompanyKind = 'supplier'): CompanyRecord => {
   const d = DETAILS[s.id];
   return {
     id: s.id,
     sokoId: s.sokoId ?? s.id,
+    kind,
     tier,
     demo: true,
     createdAt: ago(400),
@@ -63,6 +71,42 @@ export const companyFromDirectory = (s: BuyerSupplier, tier: CompanyRecord['tier
     },
   };
 };
+
+const gecCompany = (): CompanyRecord => ({
+  id: 'con_gec_dubai',
+  sokoId: 'SK-10601',
+  kind: 'contractor',
+  tier: 'premium',
+  demo: true,
+  createdAt: ago(500),
+  updatedAt: ago(2),
+  verification: { status: 'verified', licenseFile: 'gec-trade-license.pdf', submittedAt: ago(450), reviewedAt: ago(440) },
+  profile: {
+    legalName: 'GEC Dubai Contracting LLC',
+    tradingName: 'GEC Dubai',
+    types: ['Contractor', 'Developer'],
+    licenseNo: 'DED-998877',
+    issuingAuthority: 'Dubai Department of Economy & Tourism',
+    licenseExpiry: '2027-06-30',
+    country: 'United Arab Emirates',
+    emirate: 'Dubai',
+    address: 'GEC Dubai Head Office, Al Barsha 1, Dubai',
+    website: 'https://gec-dubai.ae',
+    generalEmail: 'info@gec-dubai.ae',
+    phone: '+971 4 390 8421',
+    established: 1998,
+    description: 'GEC Dubai is a leading general contracting and development company specializing in residential, commercial and infrastructure projects across the UAE.',
+    categories: ['Structural & Civil', 'MEP', 'Finishes'],
+    subcategories: ['Concrete Works', 'Structural Steel', 'MEP Installation', 'Waterproofing'],
+    brands: [],
+    capabilities: ['Turnkey Construction', 'Design-Build', 'Project Management', 'MEP Installation'],
+    regionsServed: ['Dubai', 'Abu Dhabi', 'Sharjah'],
+    marketsServed: ['UAE'],
+    contacts: [],
+    certifications: [{ name: 'ISO 9001 Quality Management', issuer: 'Bureau Veritas', status: 'active' as const }, { name: 'ISO 45001 OH&S', issuer: 'Bureau Veritas', status: 'active' as const }],
+    logoTone: 'bg-slate-800',
+  },
+});
 
 const SPECS: Record<string, { label: string; value: string }[]> = {
   'Reinforcement Steel': [
@@ -152,6 +196,7 @@ const doc = (companyId: string, id: string, name: string, category: DocumentCate
 
 const ES = 'sup_emirates_steel';
 const ABC = 'sup_abc_waterproofing';
+const GEC = 'con_gec_dubai';
 
 const contact = (companyId: string, id: string, kind: CompanyContact['kind'], name: string, title: string, company: string, category: string, emirate: string, daysAgo: number, extra: Partial<CompanyContact> = {}): CompanyContact => ({
   id: `cc_${companyId}_${id}`,
@@ -168,7 +213,7 @@ const contact = (companyId: string, id: string, kind: CompanyContact['kind'], na
 });
 
 const visit = (companyId: string, id: string, days: number, time: string, representative: string, hostCompany: string, hostContact: string, location: string, purpose: SupplierVisit['purpose'], productsDiscussed: string[], status: SupplierVisit['status'], kioskBadge?: string): SupplierVisit => ({
-  id: `vst_${companyId === ES ? 'es' : 'abc'}_${id}`,
+  id: `vst_${companyId === ES ? 'es' : companyId === ABC ? 'abc' : 'gec'}_${id}`,
   companyId,
   date: ahead(days),
   time,
@@ -187,27 +232,33 @@ const audit = (companyId: string, n: number, actor: string, action: string, kind
 export const buildSupplierDemo = (directory: BuyerSupplier[]): SupplierStore => {
   const abc = directory.find((s) => s.id === ABC)!;
   const es = directory.find((s) => s.id === ES)!;
+  const gec = gecCompany();
   return {
     version: SUPPLIER_STORE_VERSION,
     previewRole: {},
-    companies: [companyFromDirectory(abc, 'free'), companyFromDirectory(es, 'premium')],
+    companies: [companyFromDirectory(abc, 'free'), companyFromDirectory(es, 'premium'), gec],
     memberships: [
-      member(ABC, DEMO_USER.id, DEMO_USER.name, DEMO_USER.email, 'Company Administrator', 'supplier_admin', 'active', 200),
-      member(ABC, 'usr_ahmed_khan', 'Ahmed Khan', 'a.khan@abcwaterproofing.ae', 'Commercial Manager', 'sales_manager', 'active', 180),
+      // ABC Waterproofing — Ahmed Khan is admin
+      member(ABC, 'usr_ahmed_khan', 'Ahmed Khan', 'a.khan@abcwaterproofing.ae', 'Commercial Manager', 'supplier_admin', 'active', 180),
       member(ABC, 'usr_sarah_thomas_abc', 'Sarah Thomas', 's.thomas@abcwaterproofing.ae', 'Technical Sales Engineer', 'technical_manager', 'active', 150),
+      member(ABC, 'usr_omar_abc', 'Omar Haddad', 'o.haddad@abcwaterproofing.ae', 'Sales Representative', 'sales_rep', 'active', 60),
       member(ABC, 'inv_rajesh', 'Rajesh Nair', 'r.nair@abcwaterproofing.ae', 'Projects Coordinator', 'sales_rep', 'invited', 3),
-      member(ES, DEMO_USER.id, DEMO_USER.name, DEMO_USER.email, 'Company Administrator', 'supplier_admin', 'active', 300),
-      member(ES, 'usr_khalid', 'Khalid Al Mansoori', 'k.mansoori@emiratessteel.example', 'Key Accounts Director', 'supplier_admin', 'active', 600),
-      member(ES, 'usr_sarah_thomas_es', 'Sarah Thomas', 's.thomas@emiratessteel.example', 'Sales Manager', 'sales_manager', 'active', 420),
+      // Emirates Steel — Sarah Thomas is admin
+      member(ES, 'usr_sarah_thomas_es', 'Sarah Thomas', 's.thomas@emiratessteel.example', 'Sales Manager', 'supplier_admin', 'active', 420),
+      member(ES, 'usr_khalid', 'Khalid Al Mansoori', 'k.mansoori@emiratessteel.example', 'Key Accounts Director', 'sales_manager', 'active', 600),
       member(ES, 'usr_priya', 'Priya Menon', 'p.menon@emiratessteel.example', 'Technical Services Engineer', 'technical_manager', 'active', 380),
-      member(ES, 'usr_omar', 'Omar Haddad', 'o.haddad@emiratessteel.example', 'Sales Representative', 'sales_rep', 'active', 90),
+      member(ES, 'usr_omar_es', 'Omar Haddad', 'o.haddad@emiratessteel.example', 'Sales Representative', 'sales_rep', 'active', 90),
       member(ES, 'usr_lina', 'Lina Farouk', 'l.farouk@emiratessteel.example', 'Sales Representative', 'sales_rep', 'active', 60),
       member(ES, 'inv_nadia', 'Nadia Joseph', 'n.joseph@emiratessteel.example', 'Commercial Analyst', 'viewer', 'invited', 2),
       member(ES, 'req_faisal', 'Faisal Rahman', 'faisal.rahman@gmail.com', 'Area Sales Executive', 'sales_rep', 'pending_approval', 1, 'Requested access from the SOKO company search. Uses a personal email domain.'),
+      // GEC Dubai — Mohamed Sadiq is procurement_manager (approved membership)
+      member(GEC, 'usr_me_01', 'Mohamed Sadiq', 'mohamed.sadiq@gec-dubai.ae', 'Procurement Manager / Authorized Buyer', 'procurement_manager', 'active', 200),
+      member(GEC, 'usr_hassan_q', 'Hassan Qureshi', 'h.qureshi@gec-dubai.ae', 'Project Engineer', 'procurement_officer', 'active', 150),
+      member(GEC, 'usr_fatima_n', 'Fatima Nasser', 'f.nasser@gec-dubai.ae', 'Technical Reviewer', 'technical_reviewer', 'active', 100),
     ],
     products: [...productsFor(abc, false), ...productsFor(es, true)],
     documents: [
-      doc(ABC, 'license', 'Trade License 2025-2027', 'Trade Licenses', 1.2, 60, { expiry: abc.tradeLicense.expiry, forVerification: true, access: 'admins', uploadedBy: DEMO_USER.name }),
+      doc(ABC, 'license', 'Trade License 2025-2027', 'Trade Licenses', 1.2, 60, { expiry: abc.tradeLicense.expiry, forVerification: true, access: 'admins', uploadedBy: 'Ahmed Khan' }),
       doc(ES, 'license', 'Trade License', 'Trade Licenses', 1.4, 300, {
         expiry: '2026-12-12',
         access: 'admins',
@@ -255,9 +306,14 @@ export const buildSupplierDemo = (directory: BuyerSupplier[]): SupplierStore => 
       visit(ES, '3', 0, '11:30 AM', 'Lina Farouk', 'Meridian Developments', 'Anita Desai', 'Meridian Tower, Business Bay', 'RFQ Discussion', ['B500B Rebar', 'Wire Rod'], 'in-meeting', 'SK-KIOSK-8302'),
       visit(ES, '4', 4, '09:00 AM', 'Sarah Thomas', 'Al Habtoor Contracting', 'Mohammed Ali', 'Al Habtoor HQ, Dubai', 'Contract Negotiation', ['B500B Rebar'], 'scheduled'),
       visit(ABC, '1', -5, '10:30 AM', 'Ahmed Khan', 'Al Habtoor Contracting', 'Mohammed Ali', 'Al Habtoor HQ, Dubai', 'Sample Demonstration', ['SikaProof A+', 'Sika WT-200 P'], 'completed', 'SK-KIOSK-8199'),
-      visit(ABC, '2', 3, '01:00 PM', 'Sarah Thomas', 'GEC Dubai', 'Hassan Qureshi', 'GEC Dubai Office, Al Barsha', 'Vendor Onboarding', ['Mapelastic Cementitious Coating'], 'scheduled'),
+      // ABC visits GEC Dubai — shared visit record; both sides can see it
+      visit(ABC, '2', 3, '01:00 PM', 'Ahmed Khan', 'GEC Dubai', 'Hassan Qureshi', 'GEC Dubai Office, Al Barsha', 'Vendor Onboarding', ['Mapelastic Cementitious Coating'], 'scheduled'),
     ],
-    followUps: [{ visitId: 'vst_es_1', companyId: ES, note: 'Send revised price list for 16–25 mm and CARES certificate. Follow up Thursday.', at: ago(2), by: 'Sarah Thomas' }],
+    followUps: [
+      { visitId: 'vst_es_1', companyId: ES, side: 'supplier', note: 'Send revised price list for 16–25 mm and CARES certificate. Follow up Thursday.', at: ago(2), by: 'Sarah Thomas' } as VisitFollowUp,
+      // Contractor-side note for the same GEC Dubai visit — private to GEC, not visible to ABC
+      { visitId: 'vst_abc_2', companyId: GEC, side: 'contractor', note: 'Request ICV certificate and 3 project references before approving as an approved vendor.', at: ago(1), by: 'Mohamed Sadiq' } as VisitFollowUp,
+    ],
     audit: [
       audit(ES, 1, 'Priya Menon', 'Uploaded "Tensile Test Report – Heat 24-1187"', 'document'),
       audit(ES, 2, 'Sarah Thomas', 'Shared "Company Brochure 2026" with Meridian Developments', 'document'),

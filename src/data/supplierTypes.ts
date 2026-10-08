@@ -3,6 +3,12 @@ import { OfficeKioskVisit } from '../types';
 
 export type SupplierRole = 'supplier_admin' | 'sales_manager' | 'sales_rep' | 'technical_manager' | 'viewer';
 
+export type CompanyKind = 'supplier' | 'contractor';
+
+export type ContractorRole = 'contractor_admin' | 'procurement_manager' | 'procurement_officer' | 'technical_reviewer' | 'viewer';
+
+export type CompanyRole = SupplierRole | ContractorRole;
+
 export type Permission =
   | 'profile.edit'
   | 'products.manage'
@@ -46,7 +52,44 @@ export const ROLE_META: Record<SupplierRole, { label: string; description: strin
 
 export const SUPPLIER_ROLES = Object.keys(ROLE_META) as SupplierRole[];
 
-export const can = (role: SupplierRole, p: Permission) => ROLE_META[role].permissions.includes(p);
+export const CONTRACTOR_ROLE_META: Record<ContractorRole, { label: string; description: string; permissions: Permission[] }> = {
+  contractor_admin: {
+    label: 'Company Admin',
+    description: 'Full control of the contractor workspace, team, vendor directory and settings.',
+    permissions: ['profile.edit', 'products.manage', 'documents.view', 'documents.manage', 'documents.share', 'contacts.manage', 'campaigns.manage', 'visits.manage', 'team.manage', 'plan.manage', 'records.delete'],
+  },
+  procurement_manager: {
+    label: 'Procurement Manager',
+    description: 'Manages vendors, suppliers, RFQs and procurement intelligence.',
+    permissions: ['profile.edit', 'products.manage', 'documents.view', 'documents.share', 'contacts.manage', 'campaigns.manage', 'visits.manage'],
+  },
+  procurement_officer: {
+    label: 'Procurement Officer',
+    description: 'Handles day-to-day supplier interactions and vendor records.',
+    permissions: ['products.manage', 'documents.view', 'contacts.manage', 'visits.manage'],
+  },
+  technical_reviewer: {
+    label: 'Technical Reviewer',
+    description: 'Reviews supplier compliance and technical documentation.',
+    permissions: ['documents.view', 'documents.manage'],
+  },
+  viewer: {
+    label: 'Viewer',
+    description: 'Read-only access to the contractor workspace.',
+    permissions: [],
+  },
+};
+
+export const CONTRACTOR_ROLES = Object.keys(CONTRACTOR_ROLE_META) as ContractorRole[];
+
+export const can = (role: CompanyRole, p: Permission): boolean => {
+  if (role in ROLE_META) return ROLE_META[role as SupplierRole].permissions.includes(p);
+  if (role in CONTRACTOR_ROLE_META) return CONTRACTOR_ROLE_META[role as ContractorRole].permissions.includes(p);
+  return false;
+};
+
+export const roleMeta = (role: CompanyRole) =>
+  role in ROLE_META ? ROLE_META[role as SupplierRole] : role in CONTRACTOR_ROLE_META ? CONTRACTOR_ROLE_META[role as ContractorRole] : { label: role, description: '', permissions: [] as Permission[] };
 
 export type SupplierTier = 'free' | 'premium';
 
@@ -95,6 +138,7 @@ export interface CompanyProfile {
 export interface CompanyRecord {
   id: string;
   sokoId: string;
+  kind: CompanyKind;
   profile: CompanyProfile;
   verification: CompanyVerification;
   tier: SupplierTier;
@@ -113,7 +157,7 @@ export interface CompanyMembership {
   name: string;
   email: string;
   title: string;
-  role: SupplierRole;
+  role: CompanyRole;
   status: MembershipStatus;
   at: string;
   note?: string;
@@ -160,7 +204,7 @@ export type DocumentCategory = (typeof DOCUMENT_CATEGORIES)[number];
 
 export type DocumentAccessLevel = 'admins' | 'team' | 'technical';
 
-export const ACCESS_META: Record<DocumentAccessLevel, { label: string; roles: SupplierRole[] }> = {
+export const ACCESS_META: Record<DocumentAccessLevel, { label: string; roles: CompanyRole[] }> = {
   admins: { label: 'Admins only', roles: ['supplier_admin'] },
   team: { label: 'All team members', roles: ['supplier_admin', 'sales_manager', 'sales_rep', 'technical_manager', 'viewer'] },
   technical: { label: 'Admins & technical', roles: ['supplier_admin', 'technical_manager', 'sales_manager'] },
@@ -228,6 +272,7 @@ export interface SupplierVisit {
 export interface VisitFollowUp {
   visitId: string;
   companyId: string;
+  side: 'supplier' | 'contractor';
   note: string;
   at: string;
   by: string;
@@ -252,7 +297,7 @@ export interface SupplierStore {
   visits: SupplierVisit[];
   followUps: VisitFollowUp[];
   audit: AuditEntry[];
-  previewRole: Record<string, SupplierRole | undefined>;
+  previewRole: Record<string, CompanyRole | undefined>;
 }
 
 export interface SessionUser {
@@ -263,3 +308,67 @@ export interface SessionUser {
 }
 
 export type SupplierResult<T = undefined> = { ok: true; store: SupplierStore; value: T } | { ok: false; error: string };
+
+export interface DemoAccount {
+  id: string;
+  userId: string;
+  name: string;
+  email: string;
+  title: string;
+  role: 'buyer' | 'supplier' | 'contractor';
+  company: string;
+  avatarUrl: string;
+  label: string;
+  description: string;
+}
+
+export const DEMO_ACCOUNTS: DemoAccount[] = [
+  {
+    id: 'demo_mohamed',
+    userId: 'usr_me_01',
+    name: 'Mohamed Sadiq',
+    email: 'mohamed.sadiq@soko.demo',
+    title: 'Director of Strategic Sourcing & EPC Contracts',
+    role: 'buyer',
+    company: 'GEC Dubai',
+    avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+    label: 'Mohamed Sadiq — Personal Buyer',
+    description: 'Personal Buyer Workspace',
+  },
+  {
+    id: 'demo_ahmed',
+    userId: 'usr_ahmed_khan',
+    name: 'Ahmed Khan',
+    email: 'a.khan@abcwaterproofing.ae',
+    title: 'Commercial Manager',
+    role: 'supplier',
+    company: 'ABC Waterproofing LLC',
+    avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+    label: 'Ahmed Khan — ABC Waterproofing — Supplier Free',
+    description: 'Supplier Free Workspace',
+  },
+  {
+    id: 'demo_sarah',
+    userId: 'usr_sarah_thomas_es',
+    name: 'Sarah Thomas',
+    email: 's.thomas@emiratessteel.example',
+    title: 'Sales Manager',
+    role: 'supplier',
+    company: 'Emirates Steel Industries',
+    avatarUrl: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150&auto=format&fit=crop&q=80',
+    label: 'Sarah Thomas — Emirates Steel — Supplier Premium',
+    description: 'Supplier Premium Workspace',
+  },
+  {
+    id: 'demo_mohamed_gec',
+    userId: 'usr_me_01',
+    name: 'Mohamed Sadiq',
+    email: 'mohamed.sadiq@gec-dubai.ae',
+    title: 'Procurement Manager / Authorized Buyer',
+    role: 'contractor',
+    company: 'GEC Dubai',
+    avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+    label: 'Mohamed Sadiq — GEC Dubai — Contractor (Step 7B)',
+    description: 'Contractor / Developer Workspace (placeholder)',
+  },
+];
