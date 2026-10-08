@@ -310,6 +310,38 @@ export interface VisitTask {
   createdBy: string;
 }
 
+
+export type VendorApprovalStatus = 'not-reviewed' | 'under-review' | 'approved' | 'conditionally-approved' | 'rejected' | 'suspended';
+
+export interface VendorNote {
+  id: string;
+  vendorId: string;
+  companyId: string;
+  note: string;
+  at: string;
+  by: string;
+  byId: string;
+}
+
+export interface VendorRecord {
+  id: string;
+  companyId: string;
+  supplierCompanyId?: string;
+  supplierName: string;
+  tradeCategory: string;
+  location: string;
+  sokoVerified: boolean;
+  approvalStatus: VendorApprovalStatus;
+  contactPerson: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  lastVisitDate?: string;
+  addedAt: string;
+  addedBy: string;
+  external: boolean;
+  notes: VendorNote[];
+}
+
 export interface AuditEntry {
   id: string;
   companyId: string;
@@ -330,6 +362,7 @@ export interface SupplierStore {
   followUps: VisitFollowUp[];
   visitTasks: VisitTask[];
   audit: AuditEntry[];
+  vendorRecords: VendorRecord[];
   previewRole: Record<string, CompanyRole | undefined>;
 }
 
@@ -402,6 +435,6 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
     company: 'GEC Dubai',
     avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
     label: 'Mohamed Sadiq — GEC Dubai — Contractor (Step 7B)',
-    description: 'Contractor / Developer Workspace (placeholder)',
+    description: 'Contractor / Developer Workspace',
   },
 ];

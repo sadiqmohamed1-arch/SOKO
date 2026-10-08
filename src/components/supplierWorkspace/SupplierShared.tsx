@@ -14,7 +14,8 @@ export type SupplierTab =
   | 'sw-insights'
   | 'sw-team'
   | 'sw-plan'
-  | 'sw-settings';
+  | 'sw-settings'
+  | 'sw-vendors';
 
 export interface SW {
   store: SupplierStore;

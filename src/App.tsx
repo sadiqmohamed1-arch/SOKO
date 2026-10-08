@@ -11,7 +11,7 @@ import { Navbar } from './components/Navbar';
 import { BuyerNavbar } from './components/BuyerNavbar';
 import { ComingSoonView } from './components/ComingSoonView';
 import { BuyerHomeView } from './components/BuyerHomeView';
-import { Package, Settings, Building2 } from 'lucide-react';
+import { Package, Settings } from 'lucide-react';
 import { FeedView } from './components/FeedView';
 import { MessagingView } from './components/MessagingView';
 import { SupplierSearchView } from './components/SupplierSearchView';
@@ -948,34 +948,7 @@ function MainApp() {
           />
         )}
 
-        {activeTab.startsWith('sw-') && activeCompanyId && activeCompany?.kind === 'contractor' && (
-          <div className="px-4 sm:px-6 py-16 max-w-2xl mx-auto text-center">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 mb-4">
-              <Building2 className="w-8 h-8" />
-            </div>
-            <h2 className="text-2xl font-bold text-slate-900 mb-2">Contractor Workspace — Coming in Step 7B</h2>
-            <p className="text-slate-600 mb-4">The upcoming Contractor Workspace will focus on:</p>
-            <ul className="text-left text-sm text-slate-600 mb-6 max-w-md mx-auto space-y-1">
-              <li>• Vendor Management & Supplier Directory</li>
-              <li>• Supplier Visits & Kiosk Activity</li>
-              <li>• Contacts & Relationships</li>
-              <li>• Product Discovery</li>
-              <li>• Supplier Documents & Compliance</li>
-              <li>• Market Hub</li>
-              <li>• Supplier Intelligence</li>
-              <li>• Team Management</li>
-              <li>• Corporate Analytics</li>
-            </ul>
-            <p className="text-xs text-slate-400">This is a simulated demo workspace. GEC Dubai does not imply company participation, endorsement or verified status.</p>
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 text-slate-600 text-sm">
-              <span className="font-semibold">{activeCompany?.profile.tradingName}</span>
-              <span className="text-slate-300">|</span>
-              <span>{roleMeta(effectiveRole(supplierStore, activeMembership!)).label}</span>
-            </div>
-          </div>
-        )}
-
-        {activeTab.startsWith('sw-') && activeCompanyId && activeCompany?.kind !== 'contractor' && (
+        {activeTab.startsWith('sw-') && activeCompanyId && (
           <SupplierWorkspaceView
             key={activeCompanyId}
             tab={activeTab as SupplierTab}

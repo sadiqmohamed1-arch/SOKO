@@ -1,5 +1,5 @@
 import { companyById, documentsOf, findDuplicateCompanies, membersOf, storageAllocationMb, storageUsedMb } from './supplierStore';
-import { can, CompanyDocument, CompanyMembership, CompanyProduct, CompanyProfile, CompanyRecord, DocumentAccessLevel, DocumentCategory, Permission, SessionUser, SupplierResult, CompanyRole, SupplierStore, SupplierTier, TIER_CONFIG, AuditEntry, roleMeta, SupplierVisit, VisitFollowUp, VisitTask } from './supplierTypes';
+import { can, CompanyDocument, CompanyMembership, CompanyProduct, CompanyProfile, CompanyRecord, DocumentAccessLevel, DocumentCategory, Permission, SessionUser, SupplierResult, CompanyRole, SupplierStore, SupplierTier, TIER_CONFIG, AuditEntry, roleMeta, SupplierVisit, VisitFollowUp, VisitTask, VendorRecord, VendorApprovalStatus, VendorNote } from './supplierTypes';
 
 export interface SupplierCtx {
   store: SupplierStore;
@@ -333,6 +333,70 @@ export const updateVisitTask = (ctx: SupplierCtx, taskId: string, status: VisitT
   const d = deny(ctx, 'visits.manage');
   if (d) return d;
   return done(touch(ctx.store, ctx, 'Updated a visit task', 'visit', { visitTasks: ctx.store.visitTasks.map((t) => t.id === taskId ? { ...t, status } : t) }), undefined);
+};
+
+
+// ─── Vendor Management ─────────────────────────────────────────────
+
+export const addVendor = (ctx: SupplierCtx, vendor: { supplierCompanyId?: string; supplierName: string; tradeCategory: string; location: string; sokoVerified: boolean; contactPerson: string; contactEmail?: string; contactPhone?: string; external: boolean }): SupplierResult<VendorRecord> => {
+  const d = deny(ctx, 'contacts.manage');
+  if (d) return d;
+  if (!vendor.supplierName.trim()) return fail('Supplier name is required.');
+  const id = uid('vnd');
+  const record: VendorRecord = {
+    id, companyId: ctx.companyId,
+    supplierCompanyId: vendor.supplierCompanyId,
+    supplierName: vendor.supplierName,
+    tradeCategory: vendor.tradeCategory,
+    location: vendor.location,
+    sokoVerified: vendor.sokoVerified,
+    approvalStatus: 'not-reviewed',
+    contactPerson: vendor.contactPerson,
+    contactEmail: vendor.contactEmail,
+    contactPhone: vendor.contactPhone,
+    addedAt: now(),
+    addedBy: ctx.user.name,
+    external: vendor.external,
+    notes: [],
+  };
+  return done(touch(ctx.store, ctx, `Added vendor ${vendor.supplierName}`, 'contact', { vendorRecords: [record, ...ctx.store.vendorRecords] }), record);
+};
+
+export const updateVendorStatus = (ctx: SupplierCtx, vendorId: string, status: VendorApprovalStatus): SupplierResult => {
+  const d = deny(ctx, 'contacts.manage');
+  if (d) return d;
+  const v = ctx.store.vendorRecords.find((r) => r.id === vendorId && r.companyId === ctx.companyId);
+  if (!v) return fail('Vendor not found.');
+  return done(touch(ctx.store, ctx, `Updated ${v.supplierName} approval status to ${status}`, 'contact', { vendorRecords: ctx.store.vendorRecords.map((r) => r.id === vendorId ? { ...r, approvalStatus: status } : r) }), undefined);
+};
+
+export const removeVendor = (ctx: SupplierCtx, vendorId: string): SupplierResult => {
+  const d = deny(ctx, 'contacts.manage');
+  if (d) return d;
+  const v = ctx.store.vendorRecords.find((r) => r.id === vendorId && r.companyId === ctx.companyId);
+  if (!v) return fail('Vendor not found.');
+  return done(touch(ctx.store, ctx, `Removed vendor ${v.supplierName} from register`, 'contact', { vendorRecords: ctx.store.vendorRecords.filter((r) => r.id !== vendorId) }), undefined);
+};
+
+export const addVendorNote = (ctx: SupplierCtx, vendorId: string, note: string): SupplierResult => {
+  const d = deny(ctx, 'contacts.manage');
+  if (d) return d;
+  if (!note.trim()) return fail('Note cannot be empty.');
+  const v = ctx.store.vendorRecords.find((r) => r.id === vendorId && r.companyId === ctx.companyId);
+  if (!v) return fail('Vendor not found.');
+  const newNote: VendorNote = { id: uid('vn'), vendorId, companyId: ctx.companyId, note: note.trim(), at: now(), by: ctx.user.name, byId: ctx.user.id };
+  return done(touch(ctx.store, ctx, `Added internal note for ${v.supplierName}`, 'contact', { vendorRecords: ctx.store.vendorRecords.map((r) => r.id === vendorId ? { ...r, notes: [newNote, ...r.notes] } : r) }), undefined);
+};
+
+export const deleteVendorNote = (ctx: SupplierCtx, vendorId: string, noteId: string): SupplierResult => {
+  const d = deny(ctx, 'contacts.manage');
+  if (d) return d;
+  const v = ctx.store.vendorRecords.find((r) => r.id === vendorId && r.companyId === ctx.companyId);
+  if (!v) return fail('Vendor not found.');
+  const n = v.notes.find((x) => x.id === noteId);
+  if (!n) return fail('Note not found.');
+  if (n.byId !== ctx.user.id) return fail('You can only delete your own notes.');
+  return done(touch(ctx.store, ctx, `Deleted a vendor note`, 'contact', { vendorRecords: ctx.store.vendorRecords.map((r) => r.id === vendorId ? { ...r, notes: r.notes.filter((x) => x.id !== noteId) } : r) }), undefined);
 };
 
 export const setTier = (ctx: SupplierCtx, tier: SupplierTier): SupplierResult<CompanyRecord> => {

@@ -74,6 +74,17 @@ const SUPPLIER_NAV_ITEMS = [
   { id: 'sw-insights', label: 'Insights', icon: ChartColumn },
 ];
 
+const CONTRACTOR_NAV_ITEMS = [
+  { id: 'sw-dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'sw-vendors', label: 'Vendors', icon: Users },
+  { id: 'sw-products', label: 'Products', icon: Package },
+  { id: 'sw-documents', label: 'Documents', icon: FolderLock },
+  { id: 'sw-visits', label: 'Visits', icon: CalendarCheck },
+  { id: 'sw-contacts', label: 'Contacts', icon: Contact },
+  { id: 'opportunities', label: 'Market Hub', icon: FolderKanban },
+  { id: 'sw-insights', label: 'Intelligence', icon: ChartColumn },
+];
+
 const COMPANY_MENU = [
   { id: 'sw-team', label: 'Team', icon: UsersRound },
   { id: 'sw-plan', label: 'Subscription', icon: Crown },
@@ -107,7 +118,8 @@ export const BuyerNavbar: React.FC<BuyerNavbarProps> = ({
   const corporateWorkspaces = workspaces.filter((w) => w.kind === 'corporate');
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) ?? personalWorkspace;
   const companyMode = activeWorkspace?.kind === 'corporate';
-  const navItems = companyMode ? SUPPLIER_NAV_ITEMS : NAV_ITEMS;
+  const isContractor = companyMode && activeWorkspace?.roleLabel?.startsWith('Contractor');
+  const navItems = companyMode ? (isContractor ? CONTRACTOR_NAV_ITEMS : SUPPLIER_NAV_ITEMS) : NAV_ITEMS;
 
   const unreadConversations = conversations.filter((c) => c.unreadCount > 0);
   const unreadTotal = unreadConversations.reduce((sum, c) => sum + c.unreadCount, 0);

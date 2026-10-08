@@ -1,7 +1,7 @@
 import { BuyerSupplier, IMG } from './buyerSuppliers';
-import { CompanyContact, CompanyDocument, CompanyKind, CompanyMembership, CompanyProduct, CompanyRecord, DocumentCategory, SupplierStore, AuditEntry, SupplierVisit, VisitFollowUp, VisitTask } from './supplierTypes';
+import { CompanyContact, CompanyDocument, CompanyKind, CompanyMembership, CompanyProduct, CompanyRecord, DocumentCategory, SupplierStore, AuditEntry, SupplierVisit, VisitFollowUp, VisitTask, VendorRecord, VendorNote } from './supplierTypes';
 
-export const SUPPLIER_STORE_VERSION = 4;
+export const SUPPLIER_STORE_VERSION = 5;
 export const DEMO_USER = { id: 'usr_me_01', name: 'Mohamed Sadiq', email: 'mohamed.sadiq@soko.demo', title: 'Director of Strategic Sourcing' };
 
 const day = 86400000;
@@ -259,7 +259,7 @@ export const buildSupplierDemo = (directory: BuyerSupplier[]): SupplierStore => 
       member(ES, 'inv_nadia', 'Nadia Joseph', 'n.joseph@emiratessteel.example', 'Commercial Analyst', 'viewer', 'invited', 2),
       member(ES, 'req_faisal', 'Faisal Rahman', 'faisal.rahman@gmail.com', 'Area Sales Executive', 'sales_rep', 'pending_approval', 1, 'Requested access from the SOKO company search. Uses a personal email domain.'),
       // GEC Dubai — Mohamed Sadiq is procurement_manager (approved membership)
-      member(GEC, 'usr_me_01', 'Mohamed Sadiq', 'mohamed.sadiq@gec-dubai.ae', 'Procurement Manager / Authorized Buyer', 'procurement_manager', 'active', 200),
+      member(GEC, 'usr_me_01', 'Mohamed Sadiq', 'mohamed.sadiq@gec-dubai.ae', 'Procurement Manager / Authorized Buyer', 'contractor_admin', 'active', 200),
       member(GEC, 'usr_hassan_q', 'Hassan Qureshi', 'h.qureshi@gec-dubai.ae', 'Project Engineer', 'procurement_officer', 'active', 150),
       member(GEC, 'usr_fatima_n', 'Fatima Nasser', 'f.nasser@gec-dubai.ae', 'Technical Reviewer', 'technical_reviewer', 'active', 100),
     ],
@@ -326,6 +326,18 @@ export const buildSupplierDemo = (directory: BuyerSupplier[]): SupplierStore => 
       { id: 'tsk_es_1', visitId: 'vst_es_1', companyId: ES, side: 'supplier', description: 'Send revised price list for 16-25mm rebar', assignedTo: 'Sarah Thomas', dueDate: ahead(2), priority: 'high', status: 'pending', createdAt: ago(2), createdBy: 'Sarah Thomas' } as VisitTask,
       { id: 'tsk_es_2', visitId: 'vst_es_4', companyId: ES, side: 'supplier', description: 'Prepare volume discount proposal for Al Habtoor', assignedTo: 'Khalid Al Mansoori', dueDate: ahead(3), priority: 'medium', status: 'pending', createdAt: ago(1), createdBy: 'Sarah Thomas' } as VisitTask,
     ],
+    vendorRecords: [
+      { id: 'vnd_gec_1', companyId: GEC, supplierCompanyId: ABC, supplierName: 'ABC Waterproofing LLC', tradeCategory: 'Waterproofing', location: 'Dubai', sokoVerified: true, approvalStatus: 'under-review', contactPerson: 'Ahmed Khan', contactEmail: 'a.khan@abcwaterproofing.ae', contactPhone: '+971 50 214 7788', lastVisitDate: ahead(3), addedAt: ago(15), addedBy: 'Mohamed Sadiq', external: false, notes: [
+        { id: 'vn_1', vendorId: 'vnd_gec_1', companyId: GEC, note: 'Initial review in progress. Requested ICV certificate and 3 project references.', at: ago(10), by: 'Mohamed Sadiq', byId: 'usr_me_01' } as VendorNote,
+      ] } as VendorRecord,
+      { id: 'vnd_gec_2', companyId: GEC, supplierCompanyId: ES, supplierName: 'Emirates Steel Industries', tradeCategory: 'Steel & Rebar', location: 'Abu Dhabi', sokoVerified: true, approvalStatus: 'approved', contactPerson: 'Sarah Thomas', contactEmail: 's.thomas@emiratessteel.example', contactPhone: '+971 55 902 4411', lastVisitDate: ahead(-3), addedAt: ago(120), addedBy: 'Mohamed Sadiq', external: false, notes: [
+        { id: 'vn_2', vendorId: 'vnd_gec_2', companyId: GEC, note: 'Approved vendor for structural steel and rebar. Annual contract review due Q1 2027.', at: ago(90), by: 'Mohamed Sadiq', byId: 'usr_me_01' } as VendorNote,
+      ] } as VendorRecord,
+      { id: 'vnd_gec_3', companyId: GEC, supplierName: 'Al Falaj Ready Mix', tradeCategory: 'Concrete & Ready Mix', location: 'Sharjah', sokoVerified: false, approvalStatus: 'not-reviewed', contactPerson: 'Saeed Al Falaj', contactPhone: '+971 6 555 1234', addedAt: ago(5), addedBy: 'Hassan Qureshi', external: true, notes: [] } as VendorRecord,
+      { id: 'vnd_gec_4', companyId: GEC, supplierName: 'Meridian Fire Doors LLC', tradeCategory: 'Fire Protection', location: 'Dubai', sokoVerified: false, approvalStatus: 'conditionally-approved', contactPerson: 'Grace Wong', contactEmail: 'g.wong@meridianfd.ae', addedAt: ago(30), addedBy: 'Mohamed Sadiq', external: true, notes: [
+        { id: 'vn_3', vendorId: 'vnd_gec_4', companyId: GEC, note: 'Conditionally approved pending UL certification submission.', at: ago(28), by: 'Mohamed Sadiq', byId: 'usr_me_01' } as VendorNote,
+      ] } as VendorRecord,
+    ],
     audit: [
       audit(ES, 1, 'Priya Menon', 'Uploaded "Tensile Test Report – Heat 24-1187"', 'document'),
       audit(ES, 2, 'Sarah Thomas', 'Shared "Company Brochure 2026" with Meridian Developments', 'document'),
@@ -333,6 +345,8 @@ export const buildSupplierDemo = (directory: BuyerSupplier[]): SupplierStore => 
       audit(ES, 6, 'Priya Menon', 'Updated specifications for B500B Rebar', 'product'),
       audit(ABC, 3, 'Ahmed Khan', 'Updated company description', 'profile'),
       audit(ABC, 5, 'Sarah Thomas', 'Added product "Mapeband Easy" as draft', 'product'),
+      audit(GEC, 1, 'Mohamed Sadiq', 'Added vendor "ABC Waterproofing LLC" to vendor register', 'contact'),
+      audit(GEC, 2, 'Mohamed Sadiq', 'Updated "Emirates Steel Industries" vendor approval to Approved', 'contact'),
     ],
   };
 };

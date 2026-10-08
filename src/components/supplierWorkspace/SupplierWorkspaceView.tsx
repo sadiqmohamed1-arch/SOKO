@@ -16,6 +16,8 @@ import { SupplierInsights } from './SupplierInsights';
 import { TeamManagement } from './TeamManagement';
 import { SupplierPlans } from './SupplierPlans';
 import { CompanySettings } from './CompanySettings';
+import { VendorDirectory } from './VendorDirectory';
+import { ContractorDashboard } from './ContractorDashboard';
 
 interface Props {
   tab: SupplierTab;
@@ -103,13 +105,14 @@ export const SupplierWorkspaceView: React.FC<Props> = ({ tab, store, onStoreChan
         </div>
       )}
 
-      {tab === 'sw-dashboard' && <SupplierDashboard sw={sw} />}
+      {tab === 'sw-dashboard' && (sw.company.kind === 'contractor' ? <ContractorDashboard sw={sw} /> : <SupplierDashboard sw={sw} />)}
       {tab === 'sw-profile' && <CompanyProfileManager sw={sw} networkContacts={networkContacts} onUpdateNetworkContacts={onUpdateNetworkContacts} onStartMessageWith={onStartMessageWith} />}
       {tab === 'sw-products' && <SupplierProducts sw={sw} />}
       {tab === 'sw-documents' && <DocumentCenter sw={sw} />}
       {tab === 'sw-contacts' && <SupplierContacts sw={sw} onStartMessageWith={onStartMessageWith} />}
       {tab === 'sw-visits' && <SupplierVisits sw={sw} />}
       {tab === 'sw-insights' && <SupplierInsights sw={sw} />}
+      {tab === 'sw-vendors' && <VendorDirectory sw={sw} />}
       {tab === 'sw-team' && <TeamManagement sw={sw} />}
       {tab === 'sw-plan' && <SupplierPlans sw={sw} />}
       {tab === 'sw-settings' && <CompanySettings sw={sw} onLeaveCompany={onLeaveCompany} />}
