@@ -10,7 +10,7 @@ import { SupplierSearchView } from './components/SupplierSearchView';
 import { BuyerSuppliersView } from './components/BuyerSuppliersView';
 import { BuyerProductsView } from './components/BuyerProductsView';
 import { BusinessCardView } from './components/BusinessCardView';
-import { OpportunitiesView } from './components/OpportunitiesView';
+import { MarketHubView } from './components/marketHub/MarketHubView';
 import { ContactsView } from './components/ContactsView';
 import { SUPPLIER_SHARE_PARAM } from './data/buyerSuppliers';
 import { CARD_SHARE_PARAM, NetworkTab, seedNetworkDemo } from './data/myNetwork';
@@ -86,6 +86,7 @@ function MainApp() {
     setNetworkEntry((prev) => ({ tab, nonce: prev.nonce + 1 }));
     setActiveTab('contacts');
   };
+  const [sokoAiQuery, setSokoAiQuery] = useState({ text: '', nonce: 0 });
   const [cardMode, setCardMode] = useState<'preview' | 'edit'>('preview');
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>('personal');
   const [globalSearch, setGlobalSearch] = useState<string>('');
@@ -791,6 +792,8 @@ function MainApp() {
 
         {activeTab === 'soko-ai' && (
           <SokoAiSearchView
+            key={sokoAiQuery.nonce}
+            initialQuery={sokoAiQuery.text}
             currentUser={currentUser}
             onNavigateToTab={(tab) => setActiveTab(tab)}
             onStartMessageWith={handleStartMessageWith}
@@ -833,16 +836,14 @@ function MainApp() {
         )}
 
         {activeTab === 'opportunities' && (
-          <OpportunitiesView
-            opportunities={opportunities}
-            onUpdateOpportunities={setOpportunities}
+          <MarketHubView
             currentUser={currentUser}
-            onOpenCreateOpportunity={() => {
-              setCreatePostType('rfq');
-              setCreatePostOpen(true);
+            onNavigateToTab={(tab) => setActiveTab(tab)}
+            onAskSokoAi={(q) => {
+              setSokoAiQuery({ text: q, nonce: Date.now() });
+              setActiveTab('soko-ai');
             }}
-            onOpenSubmitProposal={(opp) => setSelectedOpportunityForBid(opp)}
-            onStartMessageWith={handleStartMessageWith}
+            onSwitchRole={handleRoleChange}
           />
         )}
 

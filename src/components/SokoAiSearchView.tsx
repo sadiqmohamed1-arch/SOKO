@@ -34,14 +34,16 @@ interface SokoAiSearchViewProps {
   currentUser: UserProfile;
   onNavigateToTab: (tab: string) => void;
   onStartMessageWith?: (recipientName: string, recipientCompany: string) => void;
+  initialQuery?: string;
 }
 
 export const SokoAiSearchView: React.FC<SokoAiSearchViewProps> = ({
   currentUser,
   onNavigateToTab,
   onStartMessageWith,
+  initialQuery = '',
 }) => {
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [results, setResults] = useState<SokoAiCompany[]>(SOKO_AI_COMPANIES_DB);
