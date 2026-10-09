@@ -9,8 +9,10 @@ import { fmtDate } from '../marketHub/MarketHubShared';
 import { AuditEntry, VendorApprovalStatus, VendorDocStatus } from '../../data/supplierTypes';
 import {
   SokoPanel, SokoPanelLink, SokoEyebrow, SokoStatusIndicator, SokoProgress, SokoTabs, SokoTimelineItem,
-  SokoProductCard, SokoEmptyState, SokoAvatar, sokoTone, type MetricTone, type SokoStatusTone,
+  SokoProductCard, SokoEmptyState, SokoAvatar, sokoTone, sokoTokens, type MetricTone, type SokoStatusTone,
 } from '../sokoDesignSystem/SokoComponents';
+
+const sokoEyebrowClass = sokoTokens.eyebrow;
 import { SokoSegmentBar, SokoCoverageRow, SokoWaffle, SokoColumnChart, SokoMiniCalendar } from '../sokoDesignSystem/SokoCharts';
 import { ActionGroup, ActionKind, ContractorDashboardData, PIPELINE_ORDER, daysFrom } from './contractorDashboardData';
 
@@ -71,11 +73,11 @@ const ago = (today: Date, iso: string) => {
 };
 
 export const VendorPipelinePanel: React.FC<P> = ({ sw, data }) => {
-  const { vendors, statusCount, vendorProgress } = data;
+  const { vendors, statusCount, vendorProgress, avgPendingWait, today } = data;
   return (
     <SokoPanel
       title="Vendor approval pipeline"
-      subtitle={`${plural(vendors.length, 'vendor')} across ${PIPELINE_ORDER.length} internal approval stages`}
+      subtitle={`${plural(vendors.length, 'vendor')} across ${PIPELINE_ORDER.length} GEC approval stages${avgPendingWait !== null ? ` · pending avg. ${plural(avgPendingWait, 'day')} since added` : ''}`}
       icon={GitPullRequestArrow}
       action={<SokoPanelLink label="Vendor register" onClick={() => sw.go('sw-vendors')} />}
       flush
@@ -95,7 +97,7 @@ export const VendorPipelinePanel: React.FC<P> = ({ sw, data }) => {
           ))}
         </div>
       </div>
-      <div className="mt-5 border-t border-slate-100">
+      <div className="mt-4 border-t border-slate-100">
         <div className="px-5 py-2.5 flex items-center justify-between bg-slate-50/60 border-b border-slate-100">
           <p className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-slate-500">In progress</p>
           <p className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-slate-500">Documents accepted</p>
@@ -107,13 +109,11 @@ export const VendorPipelinePanel: React.FC<P> = ({ sw, data }) => {
             {vendorProgress.map(({ vendor: v, accepted, requested }) => (
               <li key={v.id}>
                 <button type="button" onClick={() => sw.go('sw-vendors')}
-                  className="w-full px-5 py-3 flex items-center gap-3 text-left hover:bg-slate-50 transition-colors cursor-pointer focus-visible:outline-none focus-visible:bg-blue-50">
-                  <span className="w-8 h-8 rounded-lg bg-slate-100 border border-slate-200 text-[10.5px] font-semibold text-slate-600 flex items-center justify-center shrink-0">
-                    {v.supplierName.split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase()}
-                  </span>
+                  className="w-full px-5 py-2.5 flex items-center gap-3 text-left hover:bg-slate-50 transition-colors cursor-pointer focus-visible:outline-none focus-visible:bg-blue-50">
+                  <SokoAvatar name={v.supplierName} />
                   <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-medium text-slate-900 truncate">{v.supplierName}</span>
-                    <span className="block text-[11px] text-slate-500 truncate">{v.tradeCategory} · Added {fmtDate(v.addedAt)}</span>
+                    <span className="block text-sm font-medium text-slate-900 truncate" title={v.supplierName}>{v.supplierName}</span>
+                    <span className="block text-[11px] text-slate-500 truncate">{v.tradeCategory} · Added {fmtDate(v.addedAt)} ({ago(today, v.addedAt)})</span>
                   </span>
                   <span className="hidden sm:inline-flex"><SokoStatusIndicator label={APPROVAL_META[v.approvalStatus].label} tone={APPROVAL_META[v.approvalStatus].status} /></span>
                   {requested > 0 ? (
@@ -135,11 +135,23 @@ export const VendorPipelinePanel: React.FC<P> = ({ sw, data }) => {
 };
 
 export const VendorIntelligencePanel: React.FC<P> = ({ sw, data }) => {
-  const { vendors, categories, singleSource, linkedVendors } = data;
+  const { vendors, categories, singleSource, linkedVendors, verificationMatrix: m, verifiedPending, externalVendors } = data;
+  const cells: { key: string; label: string; list: typeof vendors; tone: string }[] = [
+    { key: 'va', label: 'Verified · Approved', list: m.verifiedApproved, tone: 'bg-blue-600 text-white border-blue-600' },
+    { key: 'vn', label: 'Verified · Not approved', list: m.verifiedNotApproved, tone: 'bg-blue-50 text-blue-900 border-blue-200' },
+    { key: 'ua', label: 'Unverified · Approved', list: m.unverifiedApproved, tone: 'bg-amber-50 text-amber-900 border-amber-200' },
+    { key: 'un', label: 'Unverified · Not approved', list: m.unverifiedNotApproved, tone: 'bg-slate-50 text-slate-700 border-slate-200' },
+  ];
+  const signals: { text: React.ReactNode; tone: 'info' | 'warning' | 'neutral' }[] = [];
+  if (verifiedPending.length > 0) signals.push({ tone: 'info', text: <><span className="font-semibold">{verifiedPending.map((v) => v.supplierName).join(', ')}</span> {verifiedPending.length === 1 ? 'is' : 'are'} SOKO-verified and still pending your approval.</> });
+  if (m.unverifiedApproved.length > 0) signals.push({ tone: 'warning', text: <><span className="font-semibold">{plural(m.unverifiedApproved.length, 'approved vendor')}</span> {m.unverifiedApproved.length === 1 ? 'has' : 'have'} no SOKO verification. Your approval is the only check on record.</> });
+  if (singleSource.length > 0) signals.push({ tone: 'warning', text: <><span className="font-semibold">Single-source trades:</span> {singleSource.join(', ')}.</> });
+  if (externalVendors.length > 0) signals.push({ tone: 'neutral', text: <><span className="font-semibold">{plural(externalVendors.length, 'vendor')}</span> {externalVendors.length === 1 ? 'is' : 'are'} not on SOKO, so profile and product data come only from your records.</> });
+  const signalStyle = { info: 'border-blue-200 bg-blue-50/60 text-blue-900', warning: 'border-amber-200 bg-amber-50/70 text-amber-900', neutral: 'border-slate-200 bg-slate-50 text-slate-700' };
   return (
     <SokoPanel
       title="Vendor intelligence"
-      subtitle="Trade coverage and SOKO network composition"
+      subtitle={`Trade coverage, SOKO verification and GEC approval · ${linkedVendors.length} on SOKO, ${vendors.length - linkedVendors.length} external`}
       icon={Sparkles}
       action={<SokoPanelLink label="Open intelligence" onClick={() => sw.go('sw-insights')} />}
       flush
@@ -150,36 +162,62 @@ export const VendorIntelligencePanel: React.FC<P> = ({ sw, data }) => {
         <div className="grid md:grid-cols-2 border-t border-slate-100 md:divide-x divide-slate-100">
           <div className="px-5 py-4">
             <SokoEyebrow aside="Share of all vendors">Category coverage</SokoEyebrow>
-            <ul className="mt-3 space-y-2.5">
+            <ul className="mt-3 flex flex-col gap-2">
               {categories.map(([cat, n], i) => (
                 <SokoCoverageRow key={cat} label={cat} value={n} total={vendors.length} unit={['vendor', 'vendors']} tone={i === 0 ? 'blue' : 'blueMid'} />
               ))}
             </ul>
-            {singleSource.length > 0 && (
-              <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900 leading-relaxed">
-                <span className="font-semibold">Concentration signal:</span> {singleSource.join(', ')} {singleSource.length === 1 ? 'relies' : 'rely'} on a single vendor in your register.
-              </p>
+            {signals.length > 0 && (
+              <>
+                <p className={`mt-4 ${sokoEyebrowClass}`}>Signals</p>
+                <ul className="mt-2 flex flex-col gap-1.5">
+                  {signals.map((s, i) => (
+                    <li key={i} className={`rounded-lg border px-3 py-2 text-xs leading-relaxed ${signalStyle[s.tone]}`}>{s.text}</li>
+                  ))}
+                </ul>
+              </>
             )}
           </div>
           <div className="px-5 py-4 border-t md:border-t-0 border-slate-100">
-            <SokoEyebrow aside={`${linkedVendors.length} on SOKO · ${vendors.length - linkedVendors.length} external`}>SOKO network</SokoEyebrow>
-            <ol className="mt-2 divide-y divide-slate-100">
-              {vendors.slice(0, 5).map((v, i) => (
-                <li key={v.id} className="flex items-center gap-3 py-2.5">
-                  <span className="font-mono text-[11px] text-slate-400 w-3">{i + 1}</span>
+            <SokoEyebrow aside="Vendors in register">Verification × approval</SokoEyebrow>
+            <div className="mt-3 grid grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)] gap-1.5 text-[11px]">
+              <span />
+              <span className="text-center font-medium text-slate-500">GEC approved</span>
+              <span className="text-center font-medium text-slate-500">Not approved</span>
+              {[['SOKO verified', cells[0], cells[1]], ['Not verified', cells[2], cells[3]]].map(([rowLabel, a, b]) => (
+                <React.Fragment key={rowLabel as string}>
+                  <span className="self-center pr-1 font-medium text-slate-500 whitespace-nowrap">{rowLabel as string}</span>
+                  {[a, b].map((c) => {
+                    const cell = c as typeof cells[number];
+                    return (
+                      <button key={cell.key} type="button" onClick={() => sw.go('sw-vendors')} aria-label={`${cell.label}: ${plural(cell.list.length, 'vendor')}`}
+                        className={`${sokoTokens.focus} min-w-0 rounded-lg border px-3 py-2 text-left hover:brightness-95 transition cursor-pointer ${cell.tone}`}>
+                        <span className="block text-xl font-semibold tabular-nums leading-tight">{cell.list.length}</span>
+                        <span className="block truncate opacity-80" title={cell.list.map((v) => v.supplierName).join(', ')}>
+                          {cell.list.length ? cell.list.map((v) => v.supplierName).join(', ') : 'None'}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </React.Fragment>
+              ))}
+            </div>
+            <ul className="mt-3 divide-y divide-slate-100">
+              {vendors.slice(0, 4).map((v) => (
+                <li key={v.id} className="flex items-center gap-3 py-2">
                   <SokoAvatar name={v.supplierName} />
                   <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-1 text-sm font-medium text-slate-900">
-                      <span className="truncate">{v.supplierName}</span>
+                    <span className="flex items-center gap-1 text-[13px] font-medium text-slate-900">
+                      <span className="truncate" title={v.supplierName}>{v.supplierName}</span>
                       {v.sokoVerified && <BadgeCheck className="w-3.5 h-3.5 text-blue-600 shrink-0" aria-label="Verified on SOKO" />}
                     </span>
-                    <span className="block text-[11px] text-slate-500 truncate">{v.tradeCategory}</span>
+                    <span className="block text-[11px] text-slate-500 truncate">{v.tradeCategory} · {v.external ? 'External' : 'On SOKO'}</span>
                   </span>
-                  <span className={`text-[11px] font-medium ${v.external ? 'text-slate-500' : 'text-blue-700'}`}>{v.external ? 'External' : 'On SOKO'}</span>
+                  <SokoStatusIndicator label={APPROVAL_META[v.approvalStatus].label} tone={APPROVAL_META[v.approvalStatus].status} />
                 </li>
               ))}
-            </ol>
-            <p className="mt-2 text-[11px] text-slate-400">The check mark shows SOKO verification. It is separate from your internal approval.</p>
+            </ul>
+            <p className="mt-2 text-[11px] text-slate-500 leading-relaxed">SOKO verification is issued by the platform. GEC approval is your team&apos;s internal decision. One does not imply the other.</p>
           </div>
         </div>
       )}
@@ -201,25 +239,29 @@ export const ActionCenterPanel: React.FC<P> = ({ sw, data }) => {
       subtitle={`${actions.length} open · ${urgent} due soon`}
       icon={ListChecks}
       action={<span className="mr-1.5 min-w-6 h-6 px-1.5 rounded-full bg-blue-600 text-white text-xs font-semibold flex items-center justify-center tabular-nums">{actions.length}</span>}
-      className="h-full"
+      className="h-full lg:absolute lg:inset-0"
+      flush
     >
+      <div className="flex h-full min-h-0 flex-col">
+      <div className="px-5">
       <SokoTabs<ActionFilter> label="Filter actions" active={filter} onChange={setFilter} tabs={[
         { id: 'all', label: 'All' },
         { id: 'approvals', label: 'Approvals', count: count('approvals') },
         { id: 'compliance', label: 'Compliance', count: count('compliance') },
         { id: 'visits', label: 'Visits', count: count('visits') },
       ]} />
+      </div>
       {shown.length === 0 ? (
-        <SokoEmptyState icon={Inbox} title="Nothing waiting here" description="New approvals, document reviews and visits will appear as they come in." />
+        <div className="px-5 pb-5"><SokoEmptyState icon={Inbox} title="Nothing waiting here" description="New approvals, document reviews and visits will appear as they come in." /></div>
       ) : (
-        <ul className="mt-3 divide-y divide-slate-100">
+        <ul className="mt-2 flex-1 min-h-0 overflow-y-auto px-3 pb-3 divide-y divide-slate-100" aria-label="Open actions">
           {shown.map((a) => {
             const meta = ACTION_ICON[a.kind];
             const Icon = meta.icon;
             return (
               <li key={a.id}>
                 <button type="button" onClick={() => sw.go(a.tab)}
-                  className="w-full flex items-start gap-3 py-3 text-left rounded-lg hover:bg-slate-50 -mx-2 px-2 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+                  className="w-full flex items-start gap-3 py-2.5 px-2 text-left rounded-lg hover:bg-slate-50 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
                   <span className="relative mt-0.5 w-7 h-7 rounded-lg border border-slate-200 bg-white text-slate-500 flex items-center justify-center shrink-0">
                     <Icon className="w-3.5 h-3.5" />
                     <span className={`absolute -top-0.5 -left-0.5 w-2 h-2 rounded-full ring-2 ring-white ${meta.dot}`} />
@@ -228,13 +270,14 @@ export const ActionCenterPanel: React.FC<P> = ({ sw, data }) => {
                     <span className="block text-[13px] font-medium text-slate-900 leading-snug">{a.title}</span>
                     <span className="block mt-0.5 text-[11px] text-slate-500 truncate">{a.detail}</span>
                   </span>
-                  <span className={`font-mono text-[10.5px] uppercase tracking-wider shrink-0 pt-0.5 ${a.urgent ? 'text-rose-600 font-semibold' : 'text-slate-400'}`}>{a.due}</span>
+                  <span className={`font-mono text-[10px] uppercase tracking-wider whitespace-nowrap shrink-0 pt-0.5 ${a.urgent ? 'text-rose-600 font-semibold' : 'text-slate-400'}`}>{a.due}</span>
                 </button>
               </li>
             );
           })}
         </ul>
       )}
+      </div>
     </SokoPanel>
   );
 };
@@ -258,8 +301,9 @@ export const CompliancePanel: React.FC<P> = ({ sw, data }) => {
             <p className="text-[40px] font-semibold text-slate-900 leading-none tabular-nums tracking-tight">
               {accepted}<span className="text-lg text-slate-400 font-medium">/{complianceDocs.length}</span>
             </p>
-            <p className="text-right text-xs text-slate-500 pb-1">documents<br />accepted</p>
+            <p className="text-right text-xs text-slate-500 pb-1">documents accepted<br /><span className="text-slate-400">{Math.round((accepted / complianceDocs.length) * 100)}% acceptance rate</span></p>
           </div>
+          <p className="mt-2 text-[11px] text-slate-500 leading-relaxed">Acceptance rate counts reviewed documents only. It does not validate certificate authenticity or scope.</p>
           <div className="mt-3"><SokoWaffle cells={cells} label={DOC_ORDER.map((s) => `${DOC_META[s].label} ${docCount(s)}`).join(', ')} /></div>
           <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
             {DOC_ORDER.filter((s) => docCount(s) > 0).map((s) => (
@@ -302,24 +346,29 @@ export const CompliancePanel: React.FC<P> = ({ sw, data }) => {
 };
 
 export const VisitsPanel: React.FC<P> = ({ sw, data }) => {
-  const { visits, upcomingVisits, todayVisits, monthVisits, markedDays, counterpart, today } = data;
-  const confirmed = upcomingVisits.filter((v) => v.status === 'scheduled').length;
+  const { visits, upcomingVisits, todayVisits, monthVisits, markedDays, counterpart, today, visitStatus } = data;
+  const tiles: [string, number, string][] = [
+    ['Scheduled', visitStatus.scheduled, 'bg-emerald-500'],
+    ['Pending confirmation', visitStatus.pendingConfirmation, 'bg-amber-500'],
+    ['Checked in', visitStatus.checkedIn, 'bg-blue-500'],
+    ['Completed', visitStatus.completed, 'bg-slate-400'],
+  ];
   return (
     <SokoPanel
       title="Supplier visits"
-      subtitle={`${confirmed} scheduled · ${plural(monthVisits.length, 'visit')} this month`}
+      subtitle={`${plural(todayVisits.length, 'visit')} today · ${monthVisits.length} this month`}
       icon={CalendarDays}
       action={<SokoPanelLink label="View all" onClick={() => sw.go('sw-visits')} />}
     >
-      <div className="grid grid-cols-3 gap-2">
-        {[['Today', todayVisits.length], ['Upcoming', upcomingVisits.length], ['This month', monthVisits.length]].map(([l, v]) => (
-          <div key={l} className="rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2">
-            <p className="text-lg font-semibold text-slate-900 tabular-nums leading-tight">{v}</p>
-            <p className="text-[11px] text-slate-500">{l}</p>
+      <dl className="grid grid-cols-2 gap-2">
+        {tiles.map(([l, v, dot]) => (
+          <div key={l} className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 min-w-0">
+            <dt className="flex items-center gap-1.5 text-[11px] text-slate-500 whitespace-nowrap"><span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} aria-hidden />{l}</dt>
+            <dd className="text-lg font-semibold text-slate-900 tabular-nums leading-tight">{v}</dd>
           </div>
         ))}
-      </div>
-      <div className="mt-4"><SokoMiniCalendar today={today} marked={markedDays} /></div>
+      </dl>
+      <div className="mt-3"><SokoMiniCalendar today={today} marked={markedDays} /></div>
       <div className="mt-4 -mx-5 border-t border-slate-100">
         {visits.length === 0 || upcomingVisits.length === 0 ? (
           <p className="px-5 pt-4 text-xs text-slate-500">No upcoming visits. Schedule one from the Visits page.</p>
@@ -359,6 +408,7 @@ export const MarketHubPanel: React.FC<P> = ({ sw, data }) => {
       subtitle="Opportunities relevant to you"
       icon={TrendingUp}
       action={<SokoPanelLink label="Explore" onClick={() => sw.go('opportunities')} />}
+      className="w-full"
     >
       <div className="grid grid-cols-3 gap-3">
         {[['Relevant', market.relevantCount, 'text-blue-600'], ['Responses', market.responses, 'text-slate-900'], ['Network', contactsCount, 'text-slate-900']].map(([l, v, c]) => (
@@ -397,7 +447,7 @@ export const MarketHubPanel: React.FC<P> = ({ sw, data }) => {
 export const RecentActivityPanel: React.FC<P> = ({ sw, data }) => {
   const { audit } = data;
   return (
-    <SokoPanel title="Recent activity" subtitle="Latest actions in this workspace" icon={Activity}>
+    <SokoPanel title="Recent activity" subtitle="Latest actions in this workspace" icon={Activity} className="w-full">
       {audit.length === 0 ? (
         <SokoEmptyState icon={Activity} title="No recent activity" description="Actions taken by your team will appear here." />
       ) : (
@@ -424,7 +474,7 @@ export const ProductDiscoveryPanel: React.FC<P> = ({ sw, data }) => {
   const savedIds = new Set(savedProducts.map((s) => s.productId));
   const list = tab === 'saved' ? savedProducts : recentProducts;
   return (
-    <SokoPanel title="Product discovery" subtitle="Construction products across SOKO" icon={Boxes} action={<SokoPanelLink label="Discover" onClick={() => sw.go('sw-products')} />}>
+    <SokoPanel title="Product discovery" subtitle="Construction products across SOKO" icon={Boxes} className="w-full" action={<SokoPanelLink label="Discover" onClick={() => sw.go('sw-products')} />}>
       <SokoTabs<DiscoveryTab> variant="underline" label="Product lists" active={tab} onChange={setTab} tabs={[
         { id: 'saved', label: 'Saved', count: savedProducts.length },
         { id: 'recent', label: 'Recently viewed', count: recentProducts.length },

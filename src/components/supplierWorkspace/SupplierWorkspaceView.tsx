@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { SokoBreadcrumb } from '../sokoDesignSystem/SokoBreadcrumb';
 import { Info } from 'lucide-react';
 import { CommunityContact } from '../../types';
 import { can, roleMeta, SessionUser, SupplierResult, SupplierStore } from '../../data/supplierTypes';
@@ -36,8 +37,52 @@ interface Props {
   onUpdateNetworkContacts: (c: CommunityContact[]) => void;
 }
 
+const TAB_LABELS: Record<string, string> = {
+  'sw-dashboard': 'Dashboard',
+  'sw-profile': 'Company Profile',
+  'sw-products': 'Products',
+  'sw-documents': 'Documents',
+  'sw-contacts': 'Contacts',
+  'sw-visits': 'Visits',
+  'sw-insights': 'Intelligence',
+  'sw-vendors': 'Vendors',
+  'sw-team': 'Team',
+  'sw-plan': 'Plan',
+  'sw-settings': 'Company Settings',
+};
+
+/** Page history scoped to one company workspace; it resets when the workspace changes. */
+const useWorkspaceHistory = (companyId: string, tab: string) => {
+  const [history, setHistory] = useState<{ companyId: string; stack: string[] }>({ companyId, stack: [tab] });
+  const backTarget = useRef<string | null>(null);
+
+  useEffect(() => {
+    setHistory((h) => {
+      if (h.companyId !== companyId) return { companyId, stack: [tab] };
+      if (backTarget.current === tab) {
+        backTarget.current = null;
+        return h;
+      }
+      if (h.stack[h.stack.length - 1] === tab) return h;
+      return { companyId, stack: [...h.stack, tab].slice(-20) };
+    });
+  }, [companyId, tab]);
+
+  const stack = history.companyId === companyId ? history.stack : [tab];
+  const previous = stack.length > 1 ? stack[stack.length - 2] : 'sw-dashboard';
+
+  const back = (navigate: (t: string) => void) => {
+    backTarget.current = previous;
+    setHistory((h) => ({ companyId, stack: h.stack.length > 1 ? h.stack.slice(0, -1) : ['sw-dashboard'] }));
+    navigate(previous);
+  };
+
+  return { previous, back };
+};
+
 export const SupplierWorkspaceView: React.FC<Props> = ({ tab, store, onStoreChange, user, companyId, onNavigate, onLeaveCompany, onStartMessageWith, networkContacts, onUpdateNetworkContacts }) => {
   const [toast, setToast] = useState<string | null>(null);
+  const history = useWorkspaceHistory(companyId, tab);
   const company = companyById(store, companyId);
   const membership = membershipFor(store, user.id, companyId);
 
@@ -107,6 +152,17 @@ export const SupplierWorkspaceView: React.FC<Props> = ({ tab, store, onStoreChan
             Change in Company Settings
           </button>
         </div>
+      )}
+      {tab !== 'sw-dashboard' && (
+        <SokoBreadcrumb
+          className="mb-4"
+          onBack={() => history.back(onNavigate)}
+          backLabel={`Back to ${TAB_LABELS[history.previous] ?? 'Dashboard'}`}
+          trail={[
+            { label: sw.company.profile.tradingName, onClick: () => onNavigate('sw-dashboard') },
+            { label: TAB_LABELS[tab] ?? 'Page' },
+          ]}
+        />
       )}
 
       {tab === 'sw-dashboard' && (sw.company.kind === 'contractor' ? <ContractorDashboard sw={sw} /> : <SupplierDashboard sw={sw} />)}

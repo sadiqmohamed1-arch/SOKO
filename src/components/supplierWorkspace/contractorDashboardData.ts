@@ -174,8 +174,35 @@ export const useContractorDashboardData = (sw: SW) => {
 
     const audit = store.audit.filter((a) => a.companyId === company.id).slice(0, 6);
 
+    const acceptedDocs = docCount('accepted');
+    const acceptance = complianceDocs.length ? { accepted: acceptedDocs, total: complianceDocs.length, pct: Math.round((acceptedDocs / complianceDocs.length) * 100) } : null;
+
+    const pendingWaits = pendingVendors
+      .map((v) => ({ vendor: v, days: Math.max(0, -daysFrom(today, v.addedAt)) }))
+      .sort((a, b) => b.days - a.days);
+    const avgPendingWait = pendingWaits.length ? Math.round(pendingWaits.reduce((s, w) => s + w.days, 0) / pendingWaits.length) : null;
+
+    const approved = vendors.filter((v) => v.approvalStatus === 'approved');
+    const notApproved = vendors.filter((v) => v.approvalStatus !== 'approved');
+    const verificationMatrix = {
+      verifiedApproved: approved.filter((v) => v.sokoVerified),
+      verifiedNotApproved: notApproved.filter((v) => v.sokoVerified),
+      unverifiedApproved: approved.filter((v) => !v.sokoVerified),
+      unverifiedNotApproved: notApproved.filter((v) => !v.sokoVerified),
+    };
+    const verifiedPending = pendingVendors.filter((v) => v.sokoVerified);
+    const externalVendors = vendors.filter((v) => v.external);
+
+    const visitStatus = {
+      scheduled: visits.filter((v) => v.status === 'scheduled').length,
+      pendingConfirmation: visits.filter((v) => v.status === 'pending-confirmation').length,
+      checkedIn: visits.filter((v) => v.status === 'checked-in' || v.status === 'in-meeting').length,
+      completed: visits.filter((v) => v.status === 'completed').length,
+    };
+
     return {
       today, market, vendors, statusCount, pendingVendors, linkedVendors, vendorProgress, categories, singleSource,
+      approved, acceptance, pendingWaits, avgPendingWait, verificationMatrix, verifiedPending, externalVendors, visitStatus,
       complianceDocs, docCount, docTypes, complianceVendorCount, awaitingDocs, missingDocs, expiring,
       visits, upcomingVisits, todayVisits, monthVisits, markedDays, counterpart,
       actions, weekly, contactsCount, newConnections,

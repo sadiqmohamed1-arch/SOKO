@@ -23,16 +23,15 @@ export const SokoSegmentBar: React.FC<{ segments: SokoSegment[]; height?: string
 export const SokoCoverageRow: React.FC<{ label: string; value: number; total: number; unit: [string, string]; tone?: MetricTone }> = ({ label, value, total, unit, tone = 'blue' }) => {
   const pct = total > 0 ? Math.round((value / total) * 100) : 0;
   return (
-    <li className="grid grid-cols-[minmax(0,6.5rem)_1fr_3.5rem] items-center gap-3">
-      <span className="text-[13px] text-slate-700 truncate">{label}</span>
-      <div className="h-6 rounded-full bg-slate-100 overflow-hidden" role="presentation">
-        <div className={`h-full rounded-full ${sokoTone(tone).bar} flex items-center px-2.5 transition-all duration-500`} style={{ width: `${Math.max(pct, 12)}%` }}>
+    <li className="grid grid-cols-[minmax(0,8.5rem)_1fr_auto] items-center gap-3">
+      <span className="text-[13px] text-slate-700 truncate" title={label}>{label}</span>
+      <div className="h-5 rounded-full bg-slate-100 overflow-hidden" role="img" aria-label={`${label}: ${pct}%`}>
+        <div className={`h-full rounded-full ${sokoTone(tone).bar} flex items-center px-2 transition-all duration-500`} style={{ width: `${Math.max(pct, 14)}%` }}>
           <span className="font-mono text-[10px] font-semibold text-white">{pct}%</span>
         </div>
       </div>
-      <span className="text-right font-mono text-[10.5px] text-slate-500 leading-tight tabular-nums">
-        <span className="block text-slate-700">{value}</span>
-        {value === 1 ? unit[0] : unit[1]}
+      <span className="min-w-[4.5rem] text-right font-mono text-[10.5px] text-slate-500 whitespace-nowrap tabular-nums">
+        <span className="text-slate-800 font-semibold">{value}</span> {value === 1 ? unit[0] : unit[1]}
       </span>
     </li>
   );
@@ -131,8 +130,8 @@ export const SokoMiniCalendar: React.FC<{ today: Date; marked: Set<string> }> = 
   return (
     <div>
       <p className="sr-only">{today.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}</p>
-      <div className="grid grid-cols-7 gap-1.5 text-center">
-        {WEEKDAYS.map((d, i) => <span key={i} className="font-mono text-[10px] text-slate-400 pb-1">{d}</span>)}
+      <div className="grid grid-cols-7 gap-x-1.5 gap-y-1 text-center">
+        {WEEKDAYS.map((d, i) => <span key={i} className="font-mono text-[10px] text-slate-400 pb-0.5" aria-hidden>{d}</span>)}
         {cells.map((d, i) => {
           if (!d) return <span key={i} />;
           const key = dayKey(d);
@@ -141,7 +140,7 @@ export const SokoMiniCalendar: React.FC<{ today: Date; marked: Set<string> }> = 
           const past = d < today && !isToday;
           return (
             <span key={i} aria-label={isMarked ? `${d.getDate()}: visit scheduled` : undefined}
-              className={`relative h-7 rounded-lg flex items-center justify-center font-mono text-[11px] tabular-nums ${
+              className={`relative h-6 rounded-md flex items-center justify-center font-mono text-[11px] tabular-nums ${
                 isToday ? 'bg-slate-900 text-white font-semibold' : isMarked ? 'bg-blue-50 text-blue-700 font-semibold' : past ? 'text-slate-400' : 'text-slate-700'
               }`}>
               {d.getDate()}

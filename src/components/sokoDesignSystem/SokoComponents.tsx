@@ -1,5 +1,5 @@
-import React from 'react';
-import { ArrowUpRight, Bookmark, type LucideIcon } from 'lucide-react';
+import React, { useId, useState } from 'react';
+import { ArrowUpRight, Bookmark, Info, type LucideIcon } from 'lucide-react';
 
 export const sokoTokens = {
   radius: { card: 'rounded-2xl', control: 'rounded-xl', pill: 'rounded-full' },
@@ -134,7 +134,7 @@ export const SokoQuickActionTile: React.FC<SokoQuickActionTileProps> = ({ label,
     </span>
     <span className="min-w-0 flex-1">
       <span className="block text-[13px] font-semibold leading-tight truncate">{label}</span>
-      <span className={`block mt-0.5 text-[11px] truncate ${primary ? 'text-blue-100' : 'text-slate-500'}`}>{description}</span>
+      <span className={`block mt-0.5 text-[11px] leading-snug ${primary ? 'text-blue-100' : 'text-slate-500'}`}>{description}</span>
     </span>
     {shortcut && (
       <kbd className={`hidden sm:inline-flex h-5 min-w-5 px-1 items-center justify-center rounded border font-mono text-[10px] shrink-0 ${
@@ -150,6 +150,7 @@ export interface SokoKpiCellProps {
   detail?: React.ReactNode;
   delta?: { label: string; tone: 'up' | 'down' | 'warn'; title?: string };
   visual?: React.ReactNode;
+  hint?: string;
   onClick?: () => void;
 }
 
@@ -159,14 +160,26 @@ const deltaStyles = {
   warn: 'bg-amber-50 text-amber-700',
 };
 
-export const SokoKpiCell: React.FC<SokoKpiCellProps> = ({ label, value, detail, delta, visual, onClick }) => (
+export const SokoKpiCell: React.FC<SokoKpiCellProps> = ({ label, value, detail, delta, visual, hint, onClick }) => {
+  const hintId = useId();
+  return (
   <button
     type="button"
     onClick={onClick}
-    className={`${sokoTokens.focus} focus-visible:ring-offset-0 group w-full text-left px-6 sm:px-8 py-5 flex items-end justify-between gap-4 hover:bg-slate-50/70 transition-colors cursor-pointer`}
+    aria-describedby={hint ? hintId : undefined}
+    className={`${sokoTokens.focus} focus-visible:ring-offset-0 group relative w-full text-left px-5 sm:px-6 py-4 flex items-end justify-between gap-4 hover:bg-slate-50/70 transition-colors cursor-pointer`}
   >
     <div className="min-w-0">
-      <p className="text-xs text-slate-500">{label}</p>
+      <p className="flex items-center gap-1 text-xs text-slate-500 whitespace-nowrap">
+        <span className="truncate">{label}</span>
+        {hint && <Info className="w-3 h-3 text-slate-400 shrink-0" aria-hidden />}
+      </p>
+      {hint && (
+        <span id={hintId} role="tooltip"
+          className="pointer-events-none absolute left-5 sm:left-6 top-full z-20 -mt-2 w-64 rounded-lg bg-slate-900 px-3 py-2 text-[11px] leading-relaxed text-slate-100 shadow-lg opacity-0 translate-y-1 transition-all group-hover:opacity-100 group-hover:translate-y-0 group-focus-visible:opacity-100 group-focus-visible:translate-y-0">
+          {hint}
+        </span>
+      )}
       <p className="mt-2 flex items-center gap-2">
         <span className="text-[28px] font-semibold text-slate-900 leading-none tabular-nums tracking-tight">{value}</span>
         {delta && (
@@ -176,11 +189,12 @@ export const SokoKpiCell: React.FC<SokoKpiCellProps> = ({ label, value, detail, 
           </span>
         )}
       </p>
-      {detail && <p className="mt-2 text-[11px] text-slate-500 truncate">{detail}</p>}
+      {detail && <p className="mt-2 text-[11px] text-slate-500 leading-snug">{detail}</p>}
     </div>
-    {visual && <div className="w-24 lg:w-28 shrink-0">{visual}</div>}
+    {visual && <div className="w-16 lg:w-20 shrink-0 pb-1">{visual}</div>}
   </button>
-);
+  );
+};
 
 export const SokoProgress: React.FC<{ value: number; tone?: MetricTone; className?: string }> = ({ value, tone = 'blue', className = 'w-20' }) => (
   <div className={`h-1.5 rounded-full bg-slate-100 overflow-hidden ${className}`} role="presentation">
@@ -277,13 +291,21 @@ export interface SokoProductCardProps {
   onClick: () => void;
 }
 
-export const SokoProductCard: React.FC<SokoProductCardProps> = ({ name, supplier, category, spec, imageUrl, placeholderIcon: Icon, saved, onClick }) => (
+export const SokoProductCard: React.FC<SokoProductCardProps> = ({ name, supplier, category, spec, imageUrl, placeholderIcon: Icon, saved, onClick }) => {
+  const [failed, setFailed] = useState(false);
+  const showImage = Boolean(imageUrl) && !failed;
+  return (
   <button type="button" onClick={onClick}
-    className={`${sokoTokens.focus} group w-full text-left rounded-xl border border-slate-200 bg-white overflow-hidden hover:border-blue-300 hover:shadow-sm transition-all cursor-pointer`}>
-    <div className="relative h-36 bg-slate-50 border-b border-slate-100">
-      {imageUrl
-        ? <img src={imageUrl} alt="" loading="lazy" className="w-full h-full object-cover" />
-        : <div className="w-full h-full flex items-center justify-center"><Icon className="w-7 h-7 text-slate-300" /></div>}
+    className={`${sokoTokens.focus} group w-full h-full flex flex-col text-left rounded-xl border border-slate-200 bg-white overflow-hidden hover:border-blue-300 hover:shadow-sm transition-all cursor-pointer`}>
+    <div className="relative aspect-[16/9] shrink-0 bg-slate-50 border-b border-slate-100">
+      {showImage
+        ? <img src={imageUrl} alt="" loading="lazy" onError={() => setFailed(true)} className="w-full h-full object-cover" />
+        : (
+          <div className="w-full h-full flex flex-col items-center justify-center gap-1.5 bg-[repeating-linear-gradient(135deg,transparent,transparent_8px,rgba(148,163,184,0.08)_8px,rgba(148,163,184,0.08)_9px)]">
+            <Icon className="w-6 h-6 text-slate-300" aria-hidden />
+            <span className="text-[10px] text-slate-400">No image supplied</span>
+          </div>
+        )}
       <span className="absolute top-2 left-2 max-w-[70%] truncate rounded-md bg-white/90 backdrop-blur px-1.5 py-0.5 font-mono text-[10px] text-slate-600 border border-slate-200/70">{category}</span>
       {saved && (
         <span className="absolute top-2 right-2 w-6 h-6 rounded-md bg-blue-600 text-white flex items-center justify-center" aria-label="Saved">
@@ -291,13 +313,14 @@ export const SokoProductCard: React.FC<SokoProductCardProps> = ({ name, supplier
         </span>
       )}
     </div>
-    <div className="px-3 py-2.5">
-      <p className="text-sm font-semibold text-slate-900 truncate group-hover:text-blue-700 transition-colors">{name}</p>
-      <p className="text-[11px] text-slate-500 truncate">{supplier}</p>
-      {spec && <p className="mt-1.5 font-mono text-[10.5px] text-slate-400 truncate">{spec}</p>}
+    <div className="flex-1 px-3 py-2.5">
+      <p className="text-sm font-semibold text-slate-900 truncate group-hover:text-blue-700 transition-colors" title={name}>{name}</p>
+      <p className="text-[11px] text-slate-500 truncate" title={supplier}>{supplier}</p>
+      {spec && <p className="mt-1.5 font-mono text-[10.5px] text-slate-500 leading-relaxed line-clamp-2" title={spec}>{spec}</p>}
     </div>
   </button>
-);
+  );
+};
 
 export interface SokoEmptyStateProps {
   icon: LucideIcon;
