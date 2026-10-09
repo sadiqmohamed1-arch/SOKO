@@ -17,6 +17,7 @@ import {
   LogIn,
   Check,
   Building2,
+  LayoutGrid,
   Award,
   LayoutDashboard,
   FolderLock,
@@ -61,7 +62,7 @@ interface BuyerNavbarProps {
   onMarkAllNotificationsRead: (filter: NotificationFilter) => void;
 }
 
-type OpenMenu = 'none' | 'notifications' | 'profile';
+type OpenMenu = 'none' | 'notifications' | 'profile' | 'sections';
 
 const NAV_ITEMS = [
   { id: 'feed', label: 'Home', icon: Home },
@@ -175,6 +176,12 @@ export const BuyerNavbar: React.FC<BuyerNavbarProps> = ({
 }) => {
   const [openMenu, setOpenMenu] = useState<OpenMenu>('none');
   const [notifFilter, setNotifFilter] = useState<NotificationFilter>('all');
+  const [tip, setTip] = useState<{ label: string; x: number; y: number } | null>(null);
+  const showTip = (label: string) => (e: React.SyntheticEvent<HTMLElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    setTip({ label, x: r.left + r.width / 2, y: r.bottom + 6 });
+  };
+  const hideTip = () => setTip(null);
   const rightRef = useRef<HTMLDivElement>(null);
 
   const personalWorkspace = workspaces.find((w) => w.kind === 'personal');
@@ -265,8 +272,13 @@ export const BuyerNavbar: React.FC<BuyerNavbarProps> = ({
                 key={item.id}
                 id={`nav-btn-${item.id}`}
                 onClick={() => setActiveTab(item.id)}
-                title={item.label}
-                className={`relative flex flex-col items-center justify-center px-2 sm:px-3 py-1.5 rounded-lg text-xs transition-colors cursor-pointer shrink-0 ${
+                aria-label={item.label}
+                aria-current={isActive ? 'page' : undefined}
+                onMouseEnter={showTip(item.label)}
+                onMouseLeave={hideTip}
+                onFocus={showTip(item.label)}
+                onBlur={hideTip}
+                className={`relative flex flex-col focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 items-center justify-center px-2 sm:px-3 py-1.5 rounded-lg text-xs transition-colors cursor-pointer shrink-0 ${
                   isActive ? 'text-blue-700 font-semibold' : 'text-slate-600 font-medium hover:text-slate-900 hover:bg-slate-100'
                 }`}
               >
@@ -285,9 +297,50 @@ export const BuyerNavbar: React.FC<BuyerNavbarProps> = ({
           })}
         </nav>
 
+        {tip && (
+          <div
+            role="tooltip"
+            className={`fixed z-50 -translate-x-1/2 pointer-events-none px-2 py-1 rounded-md bg-slate-900 text-white text-xs font-medium whitespace-nowrap shadow-lg ${companyMode ? 'xl:hidden' : 'lg:hidden'}`}
+            style={{ left: tip.x, top: tip.y }}
+          >
+            {tip.label}
+          </div>
+        )}
+
         <div ref={rightRef} className="flex items-center gap-1.5 sm:gap-2 shrink-0 relative">
           {companyMode && (
             <>
+              <button
+                type="button"
+                onClick={() => toggle('sections')}
+                aria-expanded={openMenu === 'sections'}
+                aria-label="Show all workspace sections"
+                className={`xl:hidden inline-flex items-center gap-1.5 p-2 sm:px-2.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${openMenu === 'sections' ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-100'}`}
+              >
+                <LayoutGrid className="w-5 h-5" />
+                <span className="hidden sm:inline">Menu</span>
+              </button>
+              {openMenu === 'sections' && (
+                <div className="absolute right-0 top-full mt-2 w-64 rounded-2xl border border-slate-200 bg-white shadow-xl p-2 z-50" role="menu">
+                  <p className="px-2 pt-1 pb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Workspace sections</p>
+                  {navItems.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = activeTab === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        role="menuitem"
+                        onClick={() => go(() => setActiveTab(item.id))}
+                        className={`w-full flex items-center gap-3 px-2 py-2 rounded-lg text-sm text-left transition-colors cursor-pointer ${isActive ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-700 hover:bg-slate-50'}`}
+                      >
+                        <Icon className={`w-4 h-4 ${isActive ? 'text-blue-700' : 'text-slate-400'}`} />
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
               <button
                 id="nav-btn-soko-ai"
                 onClick={() => setActiveTab('soko-ai')}

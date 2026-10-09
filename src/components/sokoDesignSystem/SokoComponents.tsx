@@ -1,11 +1,5 @@
 import React from 'react';
-import { ArrowUpRight, type LucideIcon } from 'lucide-react';
-
-/* ============================================================
- * SOKO Design System 2.0 — Design Tokens
- * Centralized color, spacing, radius, and shadow tokens.
- * Used by all SOKO 2.0 presentation components.
- * ============================================================ */
+import { ArrowUpRight, ChevronRight, type LucideIcon } from 'lucide-react';
 
 export const sokoTokens = {
   color: {
@@ -27,76 +21,59 @@ export const sokoTokens = {
     softPurple: '#F5F3FF',
   },
   radius: {
-    card: 'rounded-2xl',       // 16px
-    cardLg: 'rounded-[18px]',  // 18px
-    button: 'rounded-xl',      // 12px
+    card: 'rounded-2xl',
+    button: 'rounded-xl',
     pill: 'rounded-full',
   },
   shadow: {
-    card: 'shadow-[0_1px_3px_rgba(17,24,39,0.06),0_1px_2px_rgba(17,24,39,0.04)]',
-    cardHover: 'shadow-[0_4px_12px_rgba(17,24,39,0.08),0_2px_4px_rgba(17,24,39,0.04)]',
-    elevated: 'shadow-[0_8px_24px_rgba(17,24,39,0.10),0_4px_8px_rgba(17,24,39,0.04)]',
+    card: 'shadow-[0_1px_2px_rgba(17,24,39,0.04),0_1px_3px_rgba(17,24,39,0.05)]',
+    cardHover: 'hover:shadow-[0_6px_16px_rgba(17,24,39,0.07),0_2px_4px_rgba(17,24,39,0.04)]',
   },
+  border: 'border border-[#E5EAF1]',
+  focus: 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2',
 } as const;
 
-/* ============================================================
- * SokoPageHeader
- * Section A: Workspace identity + greeting (NOT dark navy banner)
- * ============================================================ */
+export type MetricTone = 'blue' | 'green' | 'amber' | 'red' | 'slate' | 'gold';
+
+const toneStyles: Record<MetricTone, { soft: string; text: string; bar: string; accent: string }> = {
+  blue:  { soft: 'bg-blue-50',    text: 'text-blue-600',    bar: 'bg-blue-500',    accent: 'bg-blue-500' },
+  green: { soft: 'bg-emerald-50', text: 'text-emerald-600', bar: 'bg-emerald-500', accent: 'bg-emerald-500' },
+  amber: { soft: 'bg-amber-50',   text: 'text-amber-600',   bar: 'bg-amber-500',   accent: 'bg-amber-500' },
+  red:   { soft: 'bg-rose-50',    text: 'text-rose-600',    bar: 'bg-rose-500',    accent: 'bg-rose-500' },
+  slate: { soft: 'bg-slate-100',  text: 'text-slate-600',   bar: 'bg-slate-400',   accent: 'bg-slate-400' },
+  gold:  { soft: 'bg-amber-50',   text: 'text-amber-700',   bar: 'bg-[#D6A64A]',   accent: 'bg-[#D6A64A]' },
+};
+
+const cardBase = `${sokoTokens.radius.card} ${sokoTokens.shadow.card} ${sokoTokens.border} bg-white`;
 
 export interface SokoPageHeaderProps {
   companyName: string;
   companyInitials: string;
   logoTone: string;
+  workspaceLabel: string;
   greeting: string;
   userName: string;
   dateLabel: string;
-  verificationBadge?: React.ReactNode;
-  planBadge?: React.ReactNode;
+  badges?: React.ReactNode;
 }
 
-export const SokoPageHeader: React.FC<SokoPageHeaderProps> = ({
-  companyName,
-  companyInitials,
-  logoTone,
-  greeting,
-  userName,
-  dateLabel,
-  verificationBadge,
-  planBadge,
-}) => (
-  <header className="flex flex-col sm:flex-row sm:items-center gap-4 mb-8">
-    <div className={`${logoTone} w-14 h-14 rounded-2xl text-white font-bold text-lg flex items-center justify-center shrink-0 shadow-sm`}>
+export const SokoPageHeader: React.FC<SokoPageHeaderProps> = ({ companyName, companyInitials, logoTone, workspaceLabel, greeting, userName, dateLabel, badges }) => (
+  <header className="flex flex-col sm:flex-row sm:items-center gap-4">
+    <div className={`${logoTone} w-12 h-12 rounded-xl text-white font-semibold text-base flex items-center justify-center shrink-0`} aria-hidden>
       {companyInitials}
     </div>
     <div className="min-w-0 flex-1">
-      <div className="flex flex-wrap items-center gap-2">
-        <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">{companyName}</h1>
-        {verificationBadge}
-        {planBadge}
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{workspaceLabel}</p>
+      <div className="mt-0.5 flex flex-wrap items-center gap-2">
+        <h1 className="text-xl sm:text-2xl font-semibold text-slate-900 tracking-tight leading-tight">{companyName}</h1>
+        {badges}
       </div>
       <p className="mt-1 text-sm text-slate-500">
-        <span className="font-semibold text-slate-700">{greeting}, {userName}</span> · {dateLabel}
+        {greeting}, <span className="font-medium text-slate-700">{userName}</span> · {dateLabel}
       </p>
     </div>
   </header>
 );
-
-/* ============================================================
- * SokoMetricCard
- * Section B: KPI cards (6 metrics)
- * ============================================================ */
-
-export type MetricTone = 'blue' | 'green' | 'amber' | 'red' | 'purple' | 'gold';
-
-const metricToneStyles: Record<MetricTone, { iconBg: string; iconText: string; accent: string }> = {
-  blue:   { iconBg: 'bg-blue-50',   iconText: 'text-blue-600',   accent: 'text-blue-600' },
-  green:  { iconBg: 'bg-emerald-50', iconText: 'text-emerald-600', accent: 'text-emerald-600' },
-  amber:  { iconBg: 'bg-amber-50',  iconText: 'text-amber-600',  accent: 'text-amber-600' },
-  red:    { iconBg: 'bg-rose-50',   iconText: 'text-rose-600',   accent: 'text-rose-600' },
-  purple: { iconBg: 'bg-violet-50', iconText: 'text-violet-600', accent: 'text-violet-600' },
-  gold:   { iconBg: 'bg-amber-50',  iconText: 'text-amber-700',  accent: 'text-amber-700' },
-};
 
 export interface SokoMetricCardProps {
   label: string;
@@ -104,81 +81,90 @@ export interface SokoMetricCardProps {
   icon: LucideIcon;
   tone?: MetricTone;
   sublabel?: string;
-  trend?: { value: string; direction: 'up' | 'down' | 'flat' };
+  emphasis?: 'primary' | 'supporting';
   onClick?: () => void;
 }
 
-export const SokoMetricCard: React.FC<SokoMetricCardProps> = ({
-  label,
-  value,
-  icon: Icon,
-  tone = 'blue',
-  sublabel,
-  trend,
-  onClick,
-}) => {
-  const ts = metricToneStyles[tone];
-  const trendColor = trend?.direction === 'up' ? 'text-emerald-600' : trend?.direction === 'down' ? 'text-rose-600' : 'text-slate-400';
-  return (
-    <div
-      onClick={onClick}
-      className={`${sokoTokens.radius.card} ${sokoTokens.shadow.card} bg-white border border-slate-200/80 p-5 transition-all duration-200 ${
-        onClick ? 'cursor-pointer hover:border-slate-300 hover:-translate-y-0.5 hover:shadow-[0_4px_12px_rgba(17,24,39,0.08)]' : ''
-      }`}
-    >
-      <div className="flex items-start justify-between">
-        <div className={`${ts.iconBg} ${ts.iconText} w-10 h-10 rounded-xl flex items-center justify-center`}>
-          <Icon className="w-5 h-5" />
+export const SokoMetricCard: React.FC<SokoMetricCardProps> = ({ label, value, icon: Icon, tone = 'blue', sublabel, emphasis = 'primary', onClick }) => {
+  const ts = toneStyles[tone];
+  const interactive = onClick ? `cursor-pointer hover:border-slate-300 ${sokoTokens.shadow.cardHover} ${sokoTokens.focus}` : '';
+  if (emphasis === 'supporting') {
+    return (
+      <button type="button" onClick={onClick} className={`${cardBase} ${interactive} w-full text-left flex items-center gap-3 px-4 py-3 transition-all duration-200 group`}>
+        <div className={`${ts.soft} ${ts.text} w-9 h-9 rounded-lg flex items-center justify-center shrink-0`}>
+          <Icon className="w-4 h-4" />
         </div>
-        {trend && (
-          <span className={`text-xs font-semibold ${trendColor}`}>{trend.value}</span>
-        )}
+        <div className="min-w-0 flex-1">
+          <p className="text-xs text-slate-500 truncate">{label}</p>
+          <p className="text-lg font-semibold text-slate-900 tabular-nums leading-tight">{value}</p>
+        </div>
+        {sublabel && <span className="text-[11px] text-slate-500 text-right shrink-0 max-w-[45%] truncate">{sublabel}</span>}
+      </button>
+    );
+  }
+  return (
+    <button type="button" onClick={onClick} className={`${cardBase} ${interactive} relative overflow-hidden w-full text-left p-5 transition-all duration-200 group`}>
+      <span className={`absolute inset-y-0 left-0 w-1 ${ts.accent}`} aria-hidden />
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-sm font-medium text-slate-600">{label}</p>
+        <div className={`${ts.soft} ${ts.text} w-9 h-9 rounded-lg flex items-center justify-center shrink-0`}>
+          <Icon className="w-[18px] h-[18px]" />
+        </div>
       </div>
-      <p className="mt-3 text-2xl font-bold text-slate-900 tabular-nums">{value}</p>
-      <p className="mt-0.5 text-sm text-slate-500">{label}</p>
-      {sublabel && <p className="mt-1 text-xs text-slate-400">{sublabel}</p>}
-    </div>
+      <p className="mt-2 text-3xl font-semibold text-slate-900 tabular-nums leading-none">{value}</p>
+      <div className="mt-3 flex items-center justify-between gap-2">
+        {sublabel && <p className="text-xs text-slate-500 truncate">{sublabel}</p>}
+        {onClick && <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-blue-500 group-hover:translate-x-0.5 transition-all shrink-0" />}
+      </div>
+    </button>
   );
 };
 
-/* ============================================================
- * SokoSectionCard
- * Generic container for dashboard sections C-H
- * ============================================================ */
-
 export interface SokoSectionCardProps {
   title: string;
+  subtitle?: string;
   icon?: LucideIcon;
   action?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
-  noPadding?: boolean;
 }
 
-export const SokoSectionCard: React.FC<SokoSectionCardProps> = ({
-  title,
-  icon: Icon,
-  action,
-  children,
-  className = '',
-  noPadding = false,
-}) => (
-  <section className={`${sokoTokens.radius.card} ${sokoTokens.shadow.card} bg-white border border-slate-200/80 ${className}`}>
-    <div className="flex items-center justify-between gap-3 px-5 pt-5 pb-3">
-      <div className="flex items-center gap-2 min-w-0">
-        {Icon && <Icon className="w-4 h-4 text-slate-400 shrink-0" />}
-        <h2 className="text-sm font-semibold text-slate-900 truncate">{title}</h2>
+export const SokoSectionCard: React.FC<SokoSectionCardProps> = ({ title, subtitle, icon: Icon, action, children, className = '' }) => (
+  <section className={`${cardBase} flex flex-col ${className}`}>
+    <div className="flex items-start justify-between gap-3 px-5 pt-5 pb-4">
+      <div className="flex items-start gap-2.5 min-w-0">
+        {Icon && (
+          <div className="w-8 h-8 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0">
+            <Icon className="w-4 h-4 text-slate-500" />
+          </div>
+        )}
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold text-slate-900 leading-8 truncate">{title}</h2>
+          {subtitle && <p className="-mt-1 text-xs text-slate-500">{subtitle}</p>}
+        </div>
       </div>
-      {action && <div className="shrink-0">{action}</div>}
+      {action && <div className="shrink-0 pt-1.5">{action}</div>}
     </div>
-    <div className={noPadding ? '' : 'px-5 pb-5'}>{children}</div>
+    <div className="px-5 pb-5 flex-1">{children}</div>
   </section>
 );
 
-/* ============================================================
- * SokoActionButton
- * Quick actions and CTA buttons
- * ============================================================ */
+export const SokoStatTile: React.FC<{ label: string; value: number | string; tone?: MetricTone }> = ({ label, value, tone = 'slate' }) => {
+  const ts = toneStyles[tone];
+  return (
+    <div className={`${ts.soft} rounded-xl px-3 py-2.5`}>
+      <p className={`text-lg font-semibold tabular-nums leading-tight ${tone === 'slate' ? 'text-slate-900' : ts.text}`}>{value}</p>
+      <p className="text-[11px] text-slate-600 mt-0.5 truncate">{label}</p>
+    </div>
+  );
+};
+
+export const SokoSubheading: React.FC<{ children: React.ReactNode; aside?: React.ReactNode }> = ({ children, aside }) => (
+  <div className="flex items-center justify-between gap-2 mb-2">
+    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{children}</p>
+    {aside && <span className="text-[11px] text-slate-500">{aside}</span>}
+  </div>
+);
 
 export type SokoButtonVariant = 'primary' | 'secondary' | 'ghost';
 
@@ -190,62 +176,63 @@ export interface SokoActionButtonProps {
   fullWidth?: boolean;
 }
 
-export const SokoActionButton: React.FC<SokoActionButtonProps> = ({
-  label,
-  icon: Icon,
-  variant = 'secondary',
-  onClick,
-  fullWidth = false,
-}) => {
-  const base = `${sokoTokens.radius.button} inline-flex items-center gap-2 text-sm font-semibold transition-all duration-200 cursor-pointer min-h-10 px-4 ${fullWidth ? 'w-full justify-center' : ''}`;
+export const SokoActionButton: React.FC<SokoActionButtonProps> = ({ label, icon: Icon, variant = 'secondary', onClick, fullWidth = false }) => {
   const variants = {
-    primary: 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm hover:shadow',
+    primary: 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm',
     secondary: 'bg-white text-slate-700 border border-slate-200 hover:border-slate-300 hover:bg-slate-50',
     ghost: 'text-blue-600 hover:bg-blue-50',
   };
   return (
-    <button type="button" onClick={onClick} className={`${base} ${variants[variant]}`}>
+    <button type="button" onClick={onClick} className={`${sokoTokens.radius.button} ${sokoTokens.focus} inline-flex items-center gap-2 text-sm font-semibold transition-all duration-200 cursor-pointer min-h-10 px-4 ${fullWidth ? 'w-full justify-center' : ''} ${variants[variant]}`}>
       {Icon && <Icon className="w-4 h-4" />}
       {label}
     </button>
   );
 };
 
-/* ============================================================
- * SokoStatusIndicator
- * Status pills for compliance, verification, etc.
- * ============================================================ */
+export interface SokoQuickActionProps {
+  label: string;
+  description: string;
+  icon: LucideIcon;
+  onClick: () => void;
+}
+
+export const SokoQuickAction: React.FC<SokoQuickActionProps> = ({ label, description, icon: Icon, onClick }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className={`${sokoTokens.focus} group w-full flex items-center gap-3 p-3 rounded-xl border border-slate-200 bg-white text-left hover:border-blue-300 hover:bg-blue-50/50 transition-all duration-200 cursor-pointer`}
+  >
+    <div className="w-9 h-9 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+      <Icon className="w-4 h-4" />
+    </div>
+    <div className="min-w-0 flex-1">
+      <p className="text-sm font-semibold text-slate-900 truncate">{label}</p>
+      <p className="text-xs text-slate-500 truncate">{description}</p>
+    </div>
+    <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-blue-500 group-hover:translate-x-0.5 transition-all shrink-0" />
+  </button>
+);
 
 export type SokoStatusTone = 'success' | 'warning' | 'critical' | 'info' | 'neutral';
 
-const statusToneStyles: Record<SokoStatusTone, { bg: string; text: string; border: string; dot: string }> = {
-  success:  { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-500' },
-  warning:  { bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200',   dot: 'bg-amber-500' },
-  critical: { bg: 'bg-rose-50',    text: 'text-rose-700',    border: 'border-rose-200',    dot: 'bg-rose-500' },
-  info:     { bg: 'bg-blue-50',    text: 'text-blue-700',    border: 'border-blue-200',    dot: 'bg-blue-500' },
-  neutral:  { bg: 'bg-slate-100',  text: 'text-slate-600',   border: 'border-slate-200',   dot: 'bg-slate-400' },
+const statusToneStyles: Record<SokoStatusTone, { bg: string; text: string; dot: string }> = {
+  success:  { bg: 'bg-emerald-50', text: 'text-emerald-700', dot: 'bg-emerald-500' },
+  warning:  { bg: 'bg-amber-50',   text: 'text-amber-800',   dot: 'bg-amber-500' },
+  critical: { bg: 'bg-rose-50',    text: 'text-rose-700',    dot: 'bg-rose-500' },
+  info:     { bg: 'bg-blue-50',    text: 'text-blue-700',    dot: 'bg-blue-500' },
+  neutral:  { bg: 'bg-slate-100',  text: 'text-slate-600',   dot: 'bg-slate-400' },
 };
 
-export interface SokoStatusIndicatorProps {
-  label: string;
-  tone: SokoStatusTone;
-  dot?: boolean;
-}
-
-export const SokoStatusIndicator: React.FC<SokoStatusIndicatorProps> = ({ label, tone, dot = true }) => {
+export const SokoStatusIndicator: React.FC<{ label: string; tone: SokoStatusTone }> = ({ label, tone }) => {
   const s = statusToneStyles[tone];
   return (
-    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 ${sokoTokens.radius.button} ${s.bg} ${s.text} ${s.border} border text-xs font-semibold`}>
-      {dot && <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />}
+    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md ${s.bg} ${s.text} text-[11px] font-semibold whitespace-nowrap capitalize`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
       {label}
     </span>
   );
 };
-
-/* ============================================================
- * SokoEmptyState
- * Empty placeholder for sections with no data
- * ============================================================ */
 
 export interface SokoEmptyStateProps {
   icon: LucideIcon;
@@ -255,50 +242,49 @@ export interface SokoEmptyStateProps {
 }
 
 export const SokoEmptyState: React.FC<SokoEmptyStateProps> = ({ icon: Icon, title, description, action }) => (
-  <div className="flex flex-col items-center justify-center text-center py-8 px-4">
-    <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center mb-3">
-      <Icon className="w-6 h-6 text-slate-400" />
+  <div className="flex flex-col items-center justify-center text-center py-6 px-4">
+    <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center mb-3">
+      <Icon className="w-5 h-5 text-slate-400" />
     </div>
-    <p className="text-sm font-semibold text-slate-700">{title}</p>
-    {description && <p className="mt-1 text-xs text-slate-500 max-w-xs">{description}</p>}
+    <p className="text-sm font-medium text-slate-700">{title}</p>
+    {description && <p className="mt-1 text-xs text-slate-500 max-w-xs leading-relaxed">{description}</p>}
     {action && <div className="mt-4">{action}</div>}
   </div>
 );
-
-/* ============================================================
- * SokoActivityItem
- * Recent activity feed rows
- * ============================================================ */
 
 export interface SokoActivityItemData {
   id: string;
   icon: LucideIcon;
   iconTone: MetricTone;
   title: string;
-  detail?: string;
+  record: string;
+  author: string;
   timestamp: string;
+  onClick?: () => void;
 }
 
-export const SokoActivityItem: React.FC<SokoActivityItemData> = ({ icon: Icon, iconTone, title, detail, timestamp }) => {
-  const ts = metricToneStyles[iconTone];
+export const SokoActivityItem: React.FC<SokoActivityItemData> = ({ icon: Icon, iconTone, title, record, author, timestamp, onClick }) => {
+  const ts = toneStyles[iconTone];
   return (
-    <div className="flex items-start gap-3 py-2.5">
-      <div className={`${ts.iconBg} ${ts.iconText} w-8 h-8 rounded-lg flex items-center justify-center shrink-0`}>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!onClick}
+      className={`${sokoTokens.focus} w-full flex items-start gap-3 py-3 px-2 -mx-2 rounded-lg text-left transition-colors ${onClick ? 'hover:bg-slate-50 cursor-pointer' : 'cursor-default'}`}
+    >
+      <div className={`${ts.soft} ${ts.text} w-8 h-8 rounded-lg flex items-center justify-center shrink-0`}>
         <Icon className="w-4 h-4" />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-sm text-slate-800 leading-snug">{title}</p>
-        {detail && <p className="text-xs text-slate-500 mt-0.5">{detail}</p>}
+        <p className="text-sm font-medium text-slate-900 leading-snug">{title}</p>
+        <p className="mt-0.5 text-xs text-slate-500">
+          <span className="text-slate-600">{record}</span> · {author}
+        </p>
       </div>
-      <span className="text-xs text-slate-400 shrink-0 whitespace-nowrap">{timestamp}</span>
-    </div>
+      <span className="text-[11px] text-slate-400 shrink-0 whitespace-nowrap pt-0.5">{timestamp}</span>
+    </button>
   );
 };
-
-/* ============================================================
- * SokoChartContainer
- * Lightweight bar chart container for Vendor Network etc.
- * ============================================================ */
 
 export interface SokoBarDatum {
   label: string;
@@ -306,50 +292,95 @@ export interface SokoBarDatum {
   tone?: MetricTone;
 }
 
-const barToneColors: Record<MetricTone, string> = {
-  blue: 'bg-blue-500',
-  green: 'bg-emerald-500',
-  amber: 'bg-amber-500',
-  red: 'bg-rose-500',
-  purple: 'bg-violet-500',
-  gold: 'bg-amber-600',
+export const SokoBarChart: React.FC<{ data: SokoBarDatum[]; total: number; unit: string }> = ({ data, total, unit }) => {
+  const scale = Math.max(total, 1);
+  return (
+    <ul className="space-y-2.5">
+      {data.map((d) => {
+        const pct = Math.round((d.value / scale) * 100);
+        return (
+          <li key={d.label}>
+            <div className="flex items-baseline justify-between gap-2 mb-1">
+              <span className="text-xs text-slate-700 truncate">{d.label}</span>
+              <span className="text-xs text-slate-500 tabular-nums shrink-0">
+                <span className="font-semibold text-slate-900">{d.value}</span> {unit} · {pct}%
+              </span>
+            </div>
+            <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden" role="presentation">
+              <div className={`h-full rounded-full ${toneStyles[d.tone ?? 'blue'].bar} transition-all duration-500 ease-out`} style={{ width: `${pct}%` }} />
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
 };
 
-export const SokoBarChart: React.FC<{ data: SokoBarDatum[]; maxValue?: number; unit?: string }> = ({ data, maxValue, unit }) => {
-  const max = maxValue ?? Math.max(...data.map((d) => d.value), 1);
+export interface SokoSegment {
+  label: string;
+  value: number;
+  tone: MetricTone;
+}
+
+export const SokoSegmentBar: React.FC<{ segments: SokoSegment[] }> = ({ segments }) => {
+  const total = segments.reduce((s, x) => s + x.value, 0);
+  if (total === 0) return null;
   return (
-    <div className="space-y-3">
-      {data.map((d, i) => (
-        <div key={i} className="flex items-center gap-3">
-          <span className="text-xs text-slate-600 w-28 sm:w-32 truncate shrink-0">{d.label}</span>
-          <div className="flex-1 h-6 bg-slate-100 rounded-lg overflow-hidden">
-            <div
-              className={`h-full ${barToneColors[d.tone ?? 'blue']} rounded-lg transition-all duration-500 ease-out flex items-center justify-end pr-1.5`}
-              style={{ width: `${Math.max(4, (d.value / max) * 100)}%` }}
-            >
-              {d.value > 0 && (
-                <span className="text-[10px] font-bold text-white tabular-nums">
-                  {d.value}{unit ?? ''}
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-      ))}
+    <div>
+      <div className="flex h-2 rounded-full overflow-hidden bg-slate-100 gap-0.5">
+        {segments.filter((s) => s.value > 0).map((s) => (
+          <div key={s.label} className={`${toneStyles[s.tone].bar} h-full transition-all duration-500`} style={{ width: `${(s.value / total) * 100}%` }} />
+        ))}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+        {segments.map((s) => (
+          <span key={s.label} className="inline-flex items-center gap-1.5 text-xs text-slate-600">
+            <span className={`w-2 h-2 rounded-full ${toneStyles[s.tone].bar}`} />
+            {s.label} <span className="font-semibold text-slate-900 tabular-nums">{s.value}</span>
+          </span>
+        ))}
+      </div>
     </div>
   );
 };
 
-/* ============================================================
- * SokoLinkAction
- * "View all" link used in section card headers
- * ============================================================ */
+export interface SokoProductRowProps {
+  name: string;
+  supplier: string;
+  category: string;
+  imageUrl?: string;
+  placeholderIcon: LucideIcon;
+  meta?: string;
+  onClick: () => void;
+}
+
+export const SokoProductRow: React.FC<SokoProductRowProps> = ({ name, supplier, category, imageUrl, placeholderIcon: Icon, meta, onClick }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className={`${sokoTokens.focus} group w-full flex items-center gap-3 py-2 px-2 -mx-2 rounded-lg text-left hover:bg-slate-50 transition-colors cursor-pointer`}
+  >
+    {imageUrl ? (
+      <img src={imageUrl} alt="" loading="lazy" className="w-11 h-11 rounded-lg object-cover bg-slate-100 border border-slate-100 shrink-0" />
+    ) : (
+      <div className="w-11 h-11 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0">
+        <Icon className="w-5 h-5 text-slate-400" />
+      </div>
+    )}
+    <div className="min-w-0 flex-1">
+      <p className="text-sm font-medium text-slate-900 truncate group-hover:text-blue-700 transition-colors">{name}</p>
+      <p className="text-xs text-slate-500 truncate">{supplier}</p>
+      <p className="mt-0.5 text-[11px] text-slate-400 truncate">{category}{meta ? ` · ${meta}` : ''}</p>
+    </div>
+    <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-blue-500 transition-colors shrink-0" />
+  </button>
+);
 
 export const SokoLinkAction: React.FC<{ label: string; onClick: () => void }> = ({ label, onClick }) => (
   <button
     type="button"
     onClick={onClick}
-    className="inline-flex items-center gap-0.5 text-xs font-semibold text-blue-600 hover:text-blue-700 transition-colors cursor-pointer"
+    className={`${sokoTokens.focus} inline-flex items-center gap-0.5 rounded-md text-xs font-semibold text-blue-600 hover:text-blue-700 transition-colors cursor-pointer`}
   >
     {label}
     <ArrowUpRight className="w-3.5 h-3.5" />

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Clock, Crown, Lock, ShieldAlert, ShieldCheck, ShieldQuestion } from 'lucide-react';
-import { CompanyDocument, CompanyMembership, CompanyProduct, CompanyRecord, CompanyRole, Permission, SessionUser, SupplierResult, SupplierStore } from '../../data/supplierTypes';
+import { CompanyDocument, CompanyMembership, CompanyProduct, CompanyRecord, CompanyRole, CONTRACTOR_TIER_CONFIG, Permission, SessionUser, SupplierResult, SupplierStore } from '../../data/supplierTypes';
 import { SupplierCtx } from '../../data/supplierService';
 import { MarketWorkspace } from '../../data/marketHubTypes';
 
@@ -81,14 +81,16 @@ export const VerificationBadge: React.FC<{ company: CompanyRecord }> = ({ compan
   );
 };
 
-export const PlanBadge: React.FC<{ premium: boolean }> = ({ premium }) =>
-  premium ? (
+export const PlanBadge: React.FC<{ premium: boolean; kind?: CompanyRecord['kind'] }> = ({ premium, kind = 'supplier' }) => {
+  const label = kind === 'contractor' ? CONTRACTOR_TIER_CONFIG[premium ? 'premium' : 'free'].label : premium ? 'Supplier Premium' : 'Supplier Free';
+  return premium ? (
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-900 text-gold-300 text-[11px] font-semibold">
-      <Crown className="w-3.5 h-3.5" /> Supplier Premium
+      <Crown className="w-3.5 h-3.5" /> {label}
     </span>
   ) : (
-    <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-blue-50 border border-blue-200 text-[11px] font-semibold text-blue-700">Supplier Free</span>
+    <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-blue-50 border border-blue-200 text-[11px] font-semibold text-blue-700">{label}</span>
   );
+};
 
 export const Card: React.FC<{ title?: string; action?: React.ReactNode; children: React.ReactNode; className?: string }> = ({ title, action, children, className = '' }) => (
   <section className={`rounded-2xl border border-slate-200 bg-white p-5 ${className}`}>
