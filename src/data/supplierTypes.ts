@@ -98,6 +98,41 @@ export const TIER_CONFIG: Record<SupplierTier, { label: string; tagline: string;
   premium: { label: 'Supplier Premium', tagline: 'Manage your company intelligence and grow your market reach.', storageMb: 10240, listingLimit: 500, specLimit: 30, imageLimit: 6, teamSeats: 25 },
 };
 
+export const CONTRACTOR_TIER_CONFIG: Record<SupplierTier, { label: string; tagline: string; storageMb: number; features: string[] }> = {
+  free: {
+    label: 'Contractor Free',
+    tagline: 'Basic document management and vendor compliance tracking.',
+    storageMb: 1024,
+    features: ['1 GB document storage', 'Basic document uploads', 'Basic vendor compliance tracking', 'Expiry date tracking', 'Up to 3 team members'],
+  },
+  premium: {
+    label: 'Contractor Premium',
+    tagline: 'Expanded storage, advanced compliance and automated workflows.',
+    storageMb: 25600,
+    features: ['25 GB document storage', 'Expanded document storage', 'Advanced compliance reporting', 'Automated expiry workflows', 'Bulk document management', 'Unlimited team members'],
+  },
+};
+
+export type VendorDocStatus = 'submitted' | 'missing' | 'under-review' | 'accepted' | 'rejected';
+
+export interface VendorComplianceDoc {
+  id: string;
+  companyId: string;
+  vendorId: string;
+  supplierName: string;
+  documentType: string;
+  status: VendorDocStatus;
+  issueDate?: string;
+  expiryDate?: string;
+  reviewer?: string;
+  reviewNotes?: string;
+  reviewedAt?: string;
+  fileName?: string;
+  sizeMb?: number;
+  createdAt: string;
+  createdBy: string;
+}
+
 export type VerificationStatus = 'not_submitted' | 'pending' | 'verified' | 'rejected';
 
 export interface CompanyVerification {
@@ -393,6 +428,7 @@ export interface SupplierStore {
   vendorRecords: VendorRecord[];
   savedProducts: SavedProduct[];
   recentlyViewedProducts: RecentlyViewedProduct[];
+  vendorComplianceDocs: VendorComplianceDoc[];
   previewRole: Record<string, CompanyRole | undefined>;
 }
 

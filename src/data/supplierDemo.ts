@@ -1,7 +1,7 @@
 import { BuyerSupplier, IMG } from './buyerSuppliers';
 import { CompanyContact, CompanyDocument, CompanyKind, CompanyMembership, CompanyProduct, CompanyRecord, DocumentCategory, SupplierStore, AuditEntry, SupplierVisit, VisitFollowUp, VisitTask, VendorRecord, VendorNote, DocumentVisibility } from './supplierTypes';
 
-export const SUPPLIER_STORE_VERSION = 9;
+export const SUPPLIER_STORE_VERSION = 10;
 export const DEMO_USER = { id: 'usr_me_01', name: 'Mohamed Sadiq', email: 'mohamed.sadiq@soko.demo', title: 'Director of Strategic Sourcing' };
 
 const day = 86400000;
@@ -251,6 +251,14 @@ export const buildSupplierDemo = (directory: BuyerSupplier[]): SupplierStore => 
     recentlyViewedProducts: [
       { id: 'rv_gec_1', companyId: GEC, productId: 'prd_abc_cementitious', viewedBy: 'Mohamed Sadiq', viewedById: 'usr_me_01', at: ago(3) },
       { id: 'rv_gec_2', companyId: GEC, productId: 'prd_es_heavy', viewedBy: 'Mohamed Sadiq', viewedById: 'usr_me_01', at: ago(1) },
+    ],
+    vendorComplianceDocs: [
+      { id: 'vcd_gec_1', companyId: GEC, vendorId: 'vnd_gec_2', supplierName: 'Emirates Steel Industries', documentType: 'ISO 9001 Certificate', status: 'accepted', issueDate: '2024-03-12', expiryDate: '2027-03-12', reviewer: 'Mohamed Sadiq', reviewNotes: 'Valid certificate, verified issuer.', reviewedAt: ago(90), fileName: 'ES-ISO9001.pdf', sizeMb: 0.9, createdAt: ago(95), createdBy: 'Mohamed Sadiq' },
+      { id: 'vcd_gec_2', companyId: GEC, vendorId: 'vnd_gec_2', supplierName: 'Emirates Steel Industries', documentType: 'CARES Product Certificate', status: 'accepted', issueDate: '2025-02-28', expiryDate: '2027-02-28', reviewer: 'Mohamed Sadiq', reviewedAt: ago(80), fileName: 'ES-CARES.pdf', sizeMb: 1.1, createdAt: ago(85), createdBy: 'Mohamed Sadiq' },
+      { id: 'vcd_gec_3', companyId: GEC, vendorId: 'vnd_gec_1', supplierName: 'ABC Waterproofing LLC', documentType: 'Trade License', status: 'under-review', issueDate: '2025-01-01', expiryDate: '2027-01-01', fileName: 'ABC-License.pdf', sizeMb: 1.2, createdAt: ago(10), createdBy: 'Mohamed Sadiq' },
+      { id: 'vcd_gec_4', companyId: GEC, vendorId: 'vnd_gec_1', supplierName: 'ABC Waterproofing LLC', documentType: 'ICV Certificate', status: 'submitted', createdAt: ago(5), createdBy: 'Hassan Qureshi' },
+      { id: 'vcd_gec_5', companyId: GEC, vendorId: 'vnd_gec_1', supplierName: 'ABC Waterproofing LLC', documentType: 'Product Test Reports', status: 'missing', createdAt: ago(5), createdBy: 'Mohamed Sadiq' },
+      { id: 'vcd_gec_6', companyId: GEC, vendorId: 'vnd_gec_4', supplierName: 'Meridian Fire Doors LLC', documentType: 'UL 10C Fire Door Listing', status: 'rejected', reviewer: 'Mohamed Sadiq', reviewNotes: 'Expired certificate. Request renewed listing.', reviewedAt: ago(20), createdAt: ago(25), createdBy: 'Mohamed Sadiq' },
     ],
     companies: [companyFromDirectory(abc, 'free'), companyFromDirectory(es, 'premium'), gec],
     memberships: [

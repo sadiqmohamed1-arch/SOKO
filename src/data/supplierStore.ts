@@ -1,6 +1,6 @@
 import { BUYER_SUPPLIERS, BuyerSupplier, SupplierProduct, SupplierType } from './buyerSuppliers';
 import { buildSupplierDemo, SUPPLIER_STORE_VERSION } from './supplierDemo';
-import { CompanyDocument, CompanyMembership, CompanyProduct, CompanyRecord, CompanyRole, SessionUser, SupplierStore, TIER_CONFIG } from './supplierTypes';
+import { CompanyDocument, CompanyMembership, CompanyProduct, CompanyRecord, CompanyRole, CONTRACTOR_TIER_CONFIG, SessionUser, SupplierStore, SupplierTier, TIER_CONFIG, VendorComplianceDoc } from './supplierTypes';
 
 const STORAGE_KEY = 'soko_supplier_workspace_v1';
 
@@ -41,8 +41,10 @@ export const membershipFor = (store: SupplierStore, userId: string, companyId: s
 export const effectiveRole = (store: SupplierStore, membership: CompanyMembership): CompanyRole =>
   membership.role === 'supplier_admin' || membership.role === 'contractor_admin' ? store.previewRole[membership.companyId] ?? membership.role : membership.role;
 
-export const storageAllocationMb = (c: CompanyRecord) => c.storageMb ?? TIER_CONFIG[c.tier].storageMb;
+export const storageAllocationMb = (c: CompanyRecord) =>
+  c.storageMb ?? (c.kind === 'contractor' ? CONTRACTOR_TIER_CONFIG[c.tier].storageMb : TIER_CONFIG[c.tier].storageMb);
 export const storageUsedMb = (docs: CompanyDocument[]) => Math.round(docs.reduce((n, d) => n + d.sizeMb, 0) * 10) / 10;
+export const vendorComplianceDocsOf = (store: SupplierStore, companyId: string) => store.vendorComplianceDocs.filter((d) => d.companyId === companyId);
 
 export const daysUntil = (iso?: string) => (iso ? Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000) : undefined);
 

@@ -1,5 +1,5 @@
-import { companyById, documentsOf, findDuplicateCompanies, membersOf, storageAllocationMb, storageUsedMb } from './supplierStore';
-import { can, CompanyContact, CompanyDocument, CompanyMembership, CompanyProduct, CompanyProfile, CompanyRecord, DocumentAccessLevel, DocumentCategory, Permission, SessionUser, SupplierResult, CompanyRole, SupplierStore, SupplierTier, TIER_CONFIG, AuditEntry, roleMeta, SupplierVisit, VisitFollowUp, VisitTask, VendorRecord, VendorApprovalStatus, VendorNote, SavedProduct, RecentlyViewedProduct } from './supplierTypes';
+import { companyById, documentsOf, findDuplicateCompanies, membersOf, storageAllocationMb, storageUsedMb, vendorComplianceDocsOf } from './supplierStore';
+import { can, CompanyContact, CompanyDocument, CompanyMembership, CompanyProduct, CompanyProfile, CompanyRecord, DocumentAccessLevel, DocumentCategory, Permission, SessionUser, SupplierResult, CompanyRole, SupplierStore, SupplierTier, TIER_CONFIG, AuditEntry, roleMeta, SupplierVisit, VisitFollowUp, VisitTask, VendorRecord, VendorApprovalStatus, VendorNote, SavedProduct, RecentlyViewedProduct, VendorComplianceDoc, VendorDocStatus } from './supplierTypes';
 
 export interface SupplierCtx {
   store: SupplierStore;
@@ -83,7 +83,7 @@ export const deleteProduct = (ctx: SupplierCtx, id: string): SupplierResult => {
 };
 
 const docGate = (ctx: SupplierCtx, p: Permission) => {
-  if (!premium(ctx)) return fail('The Document Center is part of Supplier Premium.');
+  if (company(ctx).kind === 'supplier' && !premium(ctx)) return fail('The Document Center is part of Supplier Premium.');
   return deny(ctx, p);
 };
 
@@ -558,4 +558,42 @@ export const leaveCompany = (store: SupplierStore, user: SessionUser, companyId:
     { ...store, memberships: remaining, audit: [{ id: uid('aud'), companyId, at: now(), actor: user.name, action: `${user.name} left the company workspace`, kind: 'team' as const }, ...store.audit] },
     undefined,
   );
+};
+
+export const addVendorComplianceDoc = (ctx: SupplierCtx, input: { vendorId: string; supplierName: string; documentType: string; issueDate?: string; expiryDate?: string; fileName?: string; sizeMb?: number }): SupplierResult<VendorComplianceDoc> => {
+  const g = docGate(ctx, 'documents.manage');
+  if (g) return g;
+  if (!input.documentType.trim()) return fail('Document type is required.');
+  const doc: VendorComplianceDoc = {
+    id: uid('vcd'),
+    companyId: ctx.companyId,
+    vendorId: input.vendorId,
+    supplierName: input.supplierName,
+    documentType: input.documentType.trim(),
+    status: 'submitted',
+    issueDate: input.issueDate || undefined,
+    expiryDate: input.expiryDate || undefined,
+    fileName: input.fileName,
+    sizeMb: input.sizeMb,
+    createdAt: now(),
+    createdBy: ctx.user.name,
+  };
+  return done(touch(ctx.store, ctx, `Added compliance document "${doc.documentType}" for ${doc.supplierName}`, 'document', { vendorComplianceDocs: [doc, ...ctx.store.vendorComplianceDocs] }), doc);
+};
+
+export const reviewVendorComplianceDoc = (ctx: SupplierCtx, id: string, status: VendorDocStatus, reviewNotes?: string): SupplierResult<VendorComplianceDoc> => {
+  const g = docGate(ctx, 'documents.manage');
+  if (g) return g;
+  const doc = ctx.store.vendorComplianceDocs.find((d) => d.id === id && d.companyId === ctx.companyId);
+  if (!doc) return fail('Compliance document not found.');
+  const updated: VendorComplianceDoc = { ...doc, status, reviewer: ctx.user.name, reviewNotes: reviewNotes?.trim() || undefined, reviewedAt: now() };
+  return done(touch(ctx.store, ctx, `Reviewed "${doc.documentType}" from ${doc.supplierName}: ${status}`, 'document', { vendorComplianceDocs: ctx.store.vendorComplianceDocs.map((d) => (d.id === id ? updated : d)) }), updated);
+};
+
+export const deleteVendorComplianceDoc = (ctx: SupplierCtx, id: string): SupplierResult => {
+  const g = docGate(ctx, 'records.delete');
+  if (g) return g;
+  const doc = ctx.store.vendorComplianceDocs.find((d) => d.id === id && d.companyId === ctx.companyId);
+  if (!doc) return fail('Compliance document not found.');
+  return done(touch(ctx.store, ctx, `Removed compliance document "${doc.documentType}" for ${doc.supplierName}`, 'document', { vendorComplianceDocs: ctx.store.vendorComplianceDocs.filter((d) => d.id !== id) }), undefined);
 };
