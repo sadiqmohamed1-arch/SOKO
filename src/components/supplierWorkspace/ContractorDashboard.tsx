@@ -106,7 +106,7 @@ export const ContractorDashboard: React.FC<{ sw: SW }> = ({ sw }) => {
           </div>
         </div>
 
-        <div aria-label="Key metrics" role="group" className="relative grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 border-t border-slate-100 bg-white divide-y sm:divide-y-0 divide-slate-100 [&>*]:border-slate-100 sm:[&>*:nth-child(odd)]:border-r sm:[&>*:nth-child(-n+2)]:border-b xl:[&>*:nth-child(-n+2)]:border-b-0 xl:[&>*:not(:last-child)]:border-r">
+        <div aria-label="Key metrics" role="group" className="relative grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 border-t border-slate-100 bg-white divide-y sm:divide-y-0 divide-slate-100 [&>*]:border-slate-100 sm:[&>*:nth-child(odd)]:border-r sm:[&>*:nth-child(-n+2)]:border-b lg:[&>*:nth-child(-n+2)]:border-b-0 lg:[&>*:not(:last-child)]:border-r">
           <SokoKpiCell label="Approved vendors" value={trends.approved}
             delta={trends.approvedNew > 0 ? { label: `+${trends.approvedNew}`, tone: 'up', title: 'added in the last 30 days' } : undefined}
             visual={<SokoSparkLine values={trends.approvedSeries} label="Approved vendors, last 12 weeks" />}
