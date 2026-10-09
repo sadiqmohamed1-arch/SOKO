@@ -19,6 +19,7 @@ import { CompanySettings } from './CompanySettings';
 import { VendorDirectory } from './VendorDirectory';
 import { ContractorDashboard } from './ContractorDashboard';
 import { ContractorDocumentCenter } from './ContractorDocumentCenter';
+import { ContractorIntelligence } from './ContractorIntelligence';
 import { ProductDiscovery } from './ProductDiscovery';
 
 interface Props {
@@ -113,7 +114,7 @@ export const SupplierWorkspaceView: React.FC<Props> = ({ tab, store, onStoreChan
       {tab === 'sw-documents' && (sw.company.kind === 'contractor' ? <ContractorDocumentCenter sw={sw} /> : <DocumentCenter sw={sw} />)}
       {tab === 'sw-contacts' && <SupplierContacts sw={sw} onStartMessageWith={onStartMessageWith} />}
       {tab === 'sw-visits' && <SupplierVisits sw={sw} />}
-      {tab === 'sw-insights' && <SupplierInsights sw={sw} />}
+      {tab === 'sw-insights' && (sw.company.kind === 'contractor' ? <ContractorIntelligence sw={sw} /> : <SupplierInsights sw={sw} />)}
       {tab === 'sw-vendors' && <VendorDirectory sw={sw} />}
       {tab === 'sw-team' && <TeamManagement sw={sw} />}
       {tab === 'sw-plan' && <SupplierPlans sw={sw} />}
