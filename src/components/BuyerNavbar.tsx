@@ -76,6 +76,7 @@ const SUPPLIER_NAV_ITEMS = [
 
 const CONTRACTOR_NAV_ITEMS = [
   { id: 'sw-dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'sw-profile', label: 'Company Profile', icon: Building2 },
   { id: 'sw-vendors', label: 'Vendors', icon: Users },
   { id: 'sw-products', label: 'Products', icon: Package },
   { id: 'sw-documents', label: 'Documents', icon: FolderLock },
