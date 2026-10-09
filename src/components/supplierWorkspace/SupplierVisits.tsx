@@ -24,7 +24,7 @@ const STATUS_META: Record<VisitStatus, { label: string; tone: 'blue' | 'slate' |
   declined: { label: 'Declined', tone: 'amber' },
 };
 
-const PURPOSES: VisitPurpose[] = ['Sample Demonstration', 'Contract Negotiation', 'RFQ Discussion', 'Vendor Onboarding', 'Facility Inspection', 'Commercial Review', 'Other'];
+export const PURPOSES: VisitPurpose[] = ['Sample Demonstration', 'Contract Negotiation', 'RFQ Discussion', 'Vendor Onboarding', 'Facility Inspection', 'Commercial Review', 'Other'];
 
 const TIMELINE_STEPS: { status: VisitStatus; label: string }[] = [
   { status: 'pending-confirmation', label: 'Pending' },
@@ -51,7 +51,7 @@ const TASK_STATUS_META: Record<VisitTask['status'], { label: string; cls: string
 };
 
 // ─── Visit Details Modal ───────────────────────────────────────────
-const VisitDetailsModal: React.FC<{ sw: SW; visit: SupplierVisit; onClose: () => void }> = ({ sw, visit, onClose }) => {
+export const VisitDetailsModal: React.FC<{ sw: SW; visit: SupplierVisit; onClose: () => void; onViewSupplier?: () => void }> = ({ sw, visit, onClose, onViewSupplier }) => {
   const [note, setNote] = useState('');
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [taskDesc, setTaskDesc] = useState('');
@@ -222,6 +222,12 @@ const VisitDetailsModal: React.FC<{ sw: SW; visit: SupplierVisit; onClose: () =>
           </div>
         </div>
 
+        {onViewSupplier && (
+          <button type="button" onClick={onViewSupplier} className="-mt-2 inline-flex items-center gap-1 text-xs font-semibold text-blue-700 hover:text-blue-800 cursor-pointer">
+            View supplier in Vendor Directory<ExternalLink className="w-3.5 h-3.5" />
+          </button>
+        )}
+
         {/* Section C — Visit Info */}
         <div className="grid sm:grid-cols-2 gap-x-4 gap-y-2 rounded-xl border border-slate-200 p-3">
           <Field label="Purpose" value={visit.purpose} />
@@ -365,7 +371,7 @@ const VisitDetailsModal: React.FC<{ sw: SW; visit: SupplierVisit; onClose: () =>
 };
 
 // ─── Create Visit Modal ────────────────────────────────────────────
-const CreateVisitModal: React.FC<{ sw: SW; onClose: () => void }> = ({ sw, onClose }) => {
+export const CreateVisitModal: React.FC<{ sw: SW; onClose: () => void }> = ({ sw, onClose }) => {
   const [hostQuery, setHostQuery] = useState('');
   const [selectedHost, setSelectedHost] = useState<CompanyRecord | null>(null);
   const [hostContact, setHostContact] = useState('');
