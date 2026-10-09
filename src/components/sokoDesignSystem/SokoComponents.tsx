@@ -59,14 +59,14 @@ export interface SokoPanelProps {
 
 export const SokoPanel: React.FC<SokoPanelProps> = ({ title, subtitle, icon: Icon, action, children, className = '', flush = false }) => (
   <section className={`${sokoCard} flex flex-col overflow-hidden ${className}`}>
-    <header className="flex items-start justify-between gap-3 px-5 pt-4 pb-4">
+    <header className="flex items-start justify-between gap-3 px-5 pt-5 pb-4">
       <div className="flex items-start gap-3 min-w-0">
-        <span className="w-8 h-8 rounded-lg border border-slate-200 bg-white text-blue-600 flex items-center justify-center shrink-0">
+        <span className="w-9 h-9 rounded-xl border border-slate-200 bg-white text-blue-600 flex items-center justify-center shrink-0 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
           <Icon className="w-4 h-4" />
         </span>
         <div className="min-w-0">
           <h2 className="text-[15px] font-semibold text-slate-900 leading-tight">{title}</h2>
-          {subtitle && <p className="mt-0.5 text-xs text-slate-500 truncate">{subtitle}</p>}
+          {subtitle && <p className="mt-1 text-xs text-slate-500 truncate">{subtitle}</p>}
         </div>
       </div>
       {action && <div className="shrink-0 -mr-1.5">{action}</div>}
@@ -102,7 +102,7 @@ const statusStyles: Record<SokoStatusTone, { bg: string; text: string; dot: stri
 export const SokoStatusIndicator: React.FC<{ label: string; tone: SokoStatusTone }> = ({ label, tone }) => {
   const s = statusStyles[tone];
   return (
-    <span className={`inline-flex items-center gap-1.5 h-5 px-2 rounded-md ${s.bg} ${s.text} text-[11px] font-medium whitespace-nowrap`}>
+    <span className={`inline-flex items-center gap-1.5 h-5 px-2 rounded-full ${s.bg} ${s.text} text-[11px] font-medium whitespace-nowrap`}>
       <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
       {label}
     </span>
@@ -115,25 +115,32 @@ export interface SokoQuickActionTileProps {
   icon: LucideIcon;
   onClick: () => void;
   primary?: boolean;
+  shortcut?: string;
 }
 
-export const SokoQuickActionTile: React.FC<SokoQuickActionTileProps> = ({ label, description, icon: Icon, onClick, primary }) => (
+export const SokoQuickActionTile: React.FC<SokoQuickActionTileProps> = ({ label, description, icon: Icon, onClick, primary, shortcut }) => (
   <button
     type="button"
     onClick={onClick}
+    aria-keyshortcuts={shortcut}
     className={`${sokoTokens.focus} group flex items-center gap-3 w-full min-h-[60px] px-3 py-2.5 rounded-xl text-left transition-all duration-200 cursor-pointer ${
       primary
-        ? 'bg-blue-600 text-white shadow-[0_8px_20px_-8px_rgba(37,99,235,0.6)] hover:bg-blue-700'
-        : 'bg-white border border-slate-200 text-slate-900 hover:border-blue-300 hover:shadow-sm'
+        ? 'bg-blue-600 text-white shadow-[0_10px_24px_-10px_rgba(37,99,235,0.7)] hover:bg-blue-700'
+        : 'bg-white/90 border border-slate-200 text-slate-900 hover:border-blue-300 hover:shadow-sm'
     }`}
   >
-    <span className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${primary ? 'bg-white/15 text-white' : 'bg-blue-50 text-blue-600'}`}>
+    <span className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${primary ? 'bg-white/15 text-white' : 'bg-blue-50 text-blue-600'}`}>
       <Icon className="w-4 h-4" />
     </span>
-    <span className="min-w-0">
-      <span className="block text-sm font-semibold leading-tight truncate">{label}</span>
-      <span className={`block text-[11px] truncate ${primary ? 'text-blue-100' : 'text-slate-500'}`}>{description}</span>
+    <span className="min-w-0 flex-1">
+      <span className="block text-[13px] font-semibold leading-tight truncate">{label}</span>
+      <span className={`block mt-0.5 text-[11px] truncate ${primary ? 'text-blue-100' : 'text-slate-500'}`}>{description}</span>
     </span>
+    {shortcut && (
+      <kbd className={`hidden sm:inline-flex h-5 min-w-5 px-1 items-center justify-center rounded border font-mono text-[10px] shrink-0 ${
+        primary ? 'border-white/30 text-white/90' : 'border-slate-200 text-slate-500'
+      }`}>{shortcut}</kbd>
+    )}
   </button>
 );
 
@@ -141,22 +148,37 @@ export interface SokoKpiCellProps {
   label: string;
   value: React.ReactNode;
   detail?: React.ReactNode;
+  delta?: { label: string; tone: 'up' | 'down' | 'warn'; title?: string };
   visual?: React.ReactNode;
   onClick?: () => void;
 }
 
-export const SokoKpiCell: React.FC<SokoKpiCellProps> = ({ label, value, detail, visual, onClick }) => (
+const deltaStyles = {
+  up: 'bg-emerald-50 text-emerald-700',
+  down: 'bg-rose-50 text-rose-700',
+  warn: 'bg-amber-50 text-amber-700',
+};
+
+export const SokoKpiCell: React.FC<SokoKpiCellProps> = ({ label, value, detail, delta, visual, onClick }) => (
   <button
     type="button"
     onClick={onClick}
-    className={`${sokoTokens.focus} group w-full text-left px-5 py-4 flex items-end justify-between gap-4 hover:bg-slate-50/70 transition-colors cursor-pointer`}
+    className={`${sokoTokens.focus} focus-visible:ring-offset-0 group w-full text-left px-6 sm:px-8 py-5 flex items-end justify-between gap-4 hover:bg-slate-50/70 transition-colors cursor-pointer`}
   >
     <div className="min-w-0">
       <p className="text-xs text-slate-500">{label}</p>
-      <p className="mt-1.5 text-[28px] font-semibold text-slate-900 leading-none tabular-nums tracking-tight">{value}</p>
+      <p className="mt-2 flex items-center gap-2">
+        <span className="text-[28px] font-semibold text-slate-900 leading-none tabular-nums tracking-tight">{value}</span>
+        {delta && (
+          <span title={delta.title} className={`inline-flex h-5 items-center px-1.5 rounded-md font-mono text-[10.5px] font-medium tabular-nums ${deltaStyles[delta.tone]}`}>
+            {delta.label}
+            {delta.title && <span className="sr-only"> {delta.title}</span>}
+          </span>
+        )}
+      </p>
       {detail && <p className="mt-2 text-[11px] text-slate-500 truncate">{detail}</p>}
     </div>
-    {visual && <div className="w-24 shrink-0 pb-0.5">{visual}</div>}
+    {visual && <div className="w-24 lg:w-28 shrink-0">{visual}</div>}
   </button>
 );
 
@@ -189,7 +211,7 @@ export function SokoTabs<T extends string>({ tabs, active, onChange, label, vari
               className={`${sokoTokens.focus} relative -mb-px pb-2 text-xs transition-colors cursor-pointer whitespace-nowrap ${on ? 'text-slate-900 font-semibold' : 'text-slate-500 font-medium hover:text-slate-800'}`}>
               {t.label}
               {t.count !== undefined && <span className="ml-1 text-slate-400 tabular-nums">{t.count}</span>}
-              {on && <span className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-slate-900" />}
+              {on && <span className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-blue-600" />}
             </button>
           );
         })}
@@ -258,7 +280,7 @@ export interface SokoProductCardProps {
 export const SokoProductCard: React.FC<SokoProductCardProps> = ({ name, supplier, category, spec, imageUrl, placeholderIcon: Icon, saved, onClick }) => (
   <button type="button" onClick={onClick}
     className={`${sokoTokens.focus} group w-full text-left rounded-xl border border-slate-200 bg-white overflow-hidden hover:border-blue-300 hover:shadow-sm transition-all cursor-pointer`}>
-    <div className="relative h-28 bg-slate-50 border-b border-slate-100">
+    <div className="relative h-36 bg-slate-50 border-b border-slate-100">
       {imageUrl
         ? <img src={imageUrl} alt="" loading="lazy" className="w-full h-full object-cover" />
         : <div className="w-full h-full flex items-center justify-center"><Icon className="w-7 h-7 text-slate-300" /></div>}
