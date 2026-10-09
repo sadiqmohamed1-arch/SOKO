@@ -43,6 +43,7 @@ interface BuyerSupplierProfileProps {
   onOpenSupplier: (id: string) => void;
   onRequestContact: () => void;
   onNotify: (message: string) => void;
+  hideBackButton?: boolean;
 }
 
 const VERIFIED_EXPLAINER =
@@ -144,6 +145,7 @@ export const BuyerSupplierProfile: React.FC<BuyerSupplierProfileProps> = ({
   onOpenSupplier,
   onRequestContact,
   onNotify,
+  hideBackButton = false,
 }) => {
   const vault = buyerVault(s);
   const isPro = supplierPlan(s) === 'pro';
@@ -189,10 +191,12 @@ export const BuyerSupplierProfile: React.FC<BuyerSupplierProfileProps> = ({
 
   return (
     <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 py-6">
-      <button type="button" onClick={onBack} className="mb-4 inline-flex items-center gap-1.5 min-h-10 text-sm font-semibold text-slate-600 hover:text-slate-900 cursor-pointer">
-        <ArrowLeft className="w-4 h-4" />
-        Back to suppliers
-      </button>
+      {!hideBackButton && (
+        <button type="button" onClick={onBack} className="mb-4 inline-flex items-center gap-1.5 min-h-10 text-sm font-semibold text-slate-600 hover:text-slate-900 cursor-pointer">
+          <ArrowLeft className="w-4 h-4" />
+          Back to suppliers
+        </button>
+      )}
 
       <section className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5">
         <div className="flex flex-col lg:flex-row lg:items-start gap-4 lg:gap-6">

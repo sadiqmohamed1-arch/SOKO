@@ -10,7 +10,7 @@ import {
   SokoStatusIndicator, SokoStatusTone, SokoTab, SokoTabs,
 } from '../sokoDesignSystem/SokoComponents';
 import { SokoBreadcrumb } from '../sokoDesignSystem/SokoBreadcrumb';
-import { VendorRecord, VendorApprovalStatus, CompanyDocument, DocumentVisibility } from '../../data/supplierTypes';
+import { VendorRecord, VendorApprovalStatus, CompanyDocument, DocumentVisibility, SupplierVisit } from '../../data/supplierTypes';
 import { addVendor, updateVendorStatus, removeVendor, addVendorNote, deleteVendorNote, saveCompanyContact, isSavedCorporateContact } from '../../data/supplierService';
 import { membersOf } from '../../data/supplierStore';
 import { Bookmark, BookmarkCheck } from 'lucide-react';
@@ -62,11 +62,65 @@ const isShareExpired = (doc: CompanyDocument, companyTradingName: string) => {
   return new Date(share.until) <= new Date();
 };
 
+/**
+ * Resolves how a contractor may see a supplier document. Categories are exclusive:
+ * - 'shared': an unexpired share names this company
+ * - 'public': published on the supplier's SOKO profile (visibility 'public')
+ * - 'expired': this company's share has lapsed and the document is not public
+ * - 'restricted': private, or shared only with other companies — never listed by name
+ */
+type DocAccess = 'shared' | 'public' | 'expired' | 'restricted';
+export const docAccessFor = (doc: CompanyDocument, companyTradingName: string): DocAccess => {
+  if (findValidShare(doc, companyTradingName)) return 'shared';
+  if (doc.visibility === 'public') return 'public';
+  if (isShareExpired(doc, companyTradingName)) return 'expired';
+  return 'restricted';
+};
+
+// ─── Visit Summary ─────────────────────────────────────────────────
+const UPCOMING_STATUSES: SupplierVisit['status'][] = ['pending-confirmation', 'scheduled'];
+const VISIT_STATUS_LABEL: Partial<Record<SupplierVisit['status'], string>> = {
+  'pending-confirmation': 'Pending confirmation',
+  'scheduled': 'Scheduled',
+};
+
+const visitsForVendor = (sw: SW, vendor: VendorRecord) =>
+  sw.store.visits.filter((v) =>
+    (v.companyId === sw.company.id || v.hostCompanyId === sw.company.id) &&
+    (v.hostCompany === vendor.supplierName || v.companyId === vendor.supplierCompanyId));
+
+interface VisitSummary { last?: string; next?: { date: string; status?: string } }
+
+/** Only completed past visits count as "Last visit"; scheduled or pending visits are reported as upcoming. */
+const visitSummaryFor = (sw: SW, vendor: VendorRecord): VisitSummary => {
+  const now = Date.now();
+  const visits = visitsForVendor(sw, vendor);
+  const last = visits
+    .filter((v) => v.status === 'completed' && new Date(v.date).getTime() <= now)
+    .sort((a, b) => b.date.localeCompare(a.date))[0];
+  const next = visits
+    .filter((v) => UPCOMING_STATUSES.includes(v.status))
+    .sort((a, b) => a.date.localeCompare(b.date))[0];
+  const summary: VisitSummary = {
+    last: last?.date,
+    next: next ? { date: next.date, status: VISIT_STATUS_LABEL[next.status] } : undefined,
+  };
+  // Fall back to the vendor record's stored date only when no visit record covers it.
+  if (vendor.lastVisitDate) {
+    const t = new Date(vendor.lastVisitDate).getTime();
+    if (t <= now && !summary.last) summary.last = vendor.lastVisitDate;
+    if (t > now && !summary.next) summary.next = { date: vendor.lastVisitDate };
+  }
+  return summary;
+};
+
 // ─── Shared Document Row ───────────────────────────────────────────
 const SharedDocRow: React.FC<{ doc: CompanyDocument; sw: SW; onView: () => void }> = ({ doc, sw, onView }) => {
-  const share = findValidShare(doc, sw.company.profile.tradingName);
-  const expired = isShareExpired(doc, sw.company.profile.tradingName);
-  const canAccess = !!share && !expired;
+  const access = docAccessFor(doc, sw.company.profile.tradingName);
+  const share = access === 'shared' ? findValidShare(doc, sw.company.profile.tradingName) : undefined;
+  const expired = access === 'expired';
+  const expiredShare = expired ? doc.shares.find((s) => s.company === sw.company.profile.tradingName) : undefined;
+  const canAccess = access === 'shared' || access === 'public';
   const visMeta = VISIBILITY_META[doc.visibility];
 
   return (
@@ -81,12 +135,15 @@ const SharedDocRow: React.FC<{ doc: CompanyDocument; sw: SW; onView: () => void 
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            {doc.category} · {doc.sizeMb.toFixed(1)} MB · Shared by {doc.uploadedBy} on {fmtDate(share?.at ?? doc.uploadedAt)}
+            {doc.category} · {doc.sizeMb.toFixed(1)} MB · {access === 'public'
+              ? <>Published on SOKO profile {fmtDate(doc.uploadedAt)}</>
+              : <>Shared by {(share ?? expiredShare)?.by ?? doc.uploadedBy} on {fmtDate((share ?? expiredShare)?.at ?? doc.uploadedAt)}</>}
           </p>
           {share && (
-            <p className={`text-[10px] mt-0.5 ${expired ? 'text-rose-600' : 'text-slate-400'}`}>
-              {expired ? <><Clock className="w-2.5 h-2.5 inline" /> Access expired {fmtDate(share.until)}</> : <>Access valid until {fmtDate(share.until)}</>}
-            </p>
+            <p className="text-[10px] mt-0.5 text-slate-400">Access valid until {fmtDate(share.until)}</p>
+          )}
+          {expiredShare && (
+            <p className="text-[10px] mt-0.5 text-rose-600"><Clock className="w-2.5 h-2.5 inline" /> Access expired {fmtDate(expiredShare.until)}</p>
           )}
         </div>
         <div className="shrink-0 flex items-center gap-1.5">
@@ -136,19 +193,29 @@ const DocPreviewDialog: React.FC<{ doc: CompanyDocument; onClose: () => void }> 
 );
 
 // ─── Public Supplier Profile Modal ─────────────────────────────────
-const SupplierProfileModal: React.FC<{ supplierId: string; onClose: () => void }> = ({ supplierId, onClose }) => {
+const SupplierProfileModal: React.FC<{ supplierId: string; companyName: string; vendorName: string; onClose: () => void; onDashboard: () => void; onVendors: () => void }> = ({ supplierId, companyName, vendorName, onClose, onDashboard, onVendors }) => {
   const supplier = useMemo(() => BUYER_SUPPLIERS.find((s) => s.id === supplierId), [supplierId]);
   if (!supplier) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-white overflow-y-auto">
-      <div className="sticky top-0 z-10 bg-white border-b border-slate-200 px-4 py-2 flex items-center justify-between">
-        <button type="button" onClick={onClose} className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-600 hover:text-slate-900 cursor-pointer">
-          <ArrowLeft className="w-4 h-4" />Back to Vendor Register
-        </button>
-        <span className="text-xs text-slate-400">Public Supplier Profile</span>
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-50" role="dialog" aria-modal="true" aria-label={`${supplier.name} public profile`}>
+      <div className={`sticky top-0 z-10 border-b border-slate-200/80 bg-white/95 backdrop-blur ${sokoTokens.shadow.card}`}>
+        <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3 px-4 py-2.5 sm:px-6">
+          <SokoBreadcrumb
+            onBack={onClose}
+            backLabel={`Back to ${vendorName}`}
+            trail={[
+              { label: companyName, onClick: onDashboard },
+              { label: 'Vendors', onClick: onVendors },
+              { label: vendorName, onClick: onClose },
+              { label: 'Public profile' },
+            ]}
+          />
+          <span className={`hidden shrink-0 sm:inline ${sokoTokens.eyebrow}`}>Public SOKO profile</span>
+        </div>
       </div>
       <BuyerSupplierProfile
+        hideBackButton
         supplier={supplier}
         matchQuery=""
         initialTab={'overview' as ProfileTab}
@@ -189,21 +256,19 @@ const VendorDetailPage: React.FC<{ sw: SW; vendor: VendorRecord; onClose: () => 
   };
 
   // Find visit history for this vendor
-  const vendorVisits = sw.store.visits.filter((v) =>
-    (v.companyId === sw.company.id || v.hostCompanyId === sw.company.id) &&
-    (v.hostCompany === vendor.supplierName || v.companyId === vendor.supplierCompanyId)
-  );
+  const vendorVisits = visitsForVendor(sw, vendor);
+  const visitSummary = visitSummaryFor(sw, vendor);
 
   // Find documents from this supplier that are accessible to GEC
   const supplierDocs = vendor.supplierCompanyId
     ? sw.store.documents.filter((d) => d.companyId === vendor.supplierCompanyId && !d.archived)
     : [];
 
-  // Categorize: shared with us, public, and private (inaccessible)
-  const sharedWithUs = supplierDocs.filter((d) => findValidShare(d, sw.company.profile.tradingName));
-  const publicDocs = supplierDocs.filter((d) => d.visibility === 'public' && !findValidShare(d, sw.company.profile.tradingName));
-  const privateDocs = supplierDocs.filter((d) => d.visibility === 'private' && !findValidShare(d, sw.company.profile.tradingName));
-  const expiredShared = supplierDocs.filter((d) => isShareExpired(d, sw.company.profile.tradingName) && !findValidShare(d, sw.company.profile.tradingName));
+  const tradingName = sw.company.profile.tradingName;
+  const sharedWithUs = supplierDocs.filter((d) => docAccessFor(d, tradingName) === 'shared');
+  const publicDocs = supplierDocs.filter((d) => docAccessFor(d, tradingName) === 'public');
+  const expiredShared = supplierDocs.filter((d) => docAccessFor(d, tradingName) === 'expired');
+  const restrictedCount = supplierDocs.filter((d) => docAccessFor(d, tradingName) === 'restricted').length;
 
   // Products from this supplier
   const supplierProducts = vendor.supplierCompanyId
@@ -247,7 +312,10 @@ const VendorDetailPage: React.FC<{ sw: SW; vendor: VendorRecord; onClose: () => 
           {vendor.contactEmail && <Field label="Email" value={vendor.contactEmail} />}
           {vendor.contactPhone && <Field label="Phone" value={vendor.contactPhone} />}
           <Field label="Added" value={`${fmtDate(vendor.addedAt)} by ${vendor.addedBy}`} />
-          {vendor.lastVisitDate && <Field label="Last Visit" value={fmtDate(vendor.lastVisitDate)} />}
+          <Field label="Last Visit" value={visitSummary.last ? fmtDate(visitSummary.last) : 'No completed visits'} />
+          {visitSummary.next && (
+            <Field label="Next Visit" value={`${fmtDate(visitSummary.next.date)}${visitSummary.next.status ? ` · ${visitSummary.next.status}` : ''}`} />
+          )}
         </div>
 
         {/* Save to Company Contacts — only for linked SOKO suppliers */}
@@ -336,7 +404,7 @@ const VendorDetailPage: React.FC<{ sw: SW; vendor: VendorRecord; onClose: () => 
           <div>
             <div className="flex items-center justify-between mb-2">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Documents from {vendor.supplierName}</p>
-              <span className="text-[10px] text-slate-400">{sharedWithUs.length} accessible · {publicDocs.length} public · {privateDocs.length} private</span>
+              <span className="text-[10px] text-slate-400">{sharedWithUs.length} shared with you · {publicDocs.length} public</span>
             </div>
 
             {/* Shared with GEC */}
@@ -370,19 +438,10 @@ const VendorDetailPage: React.FC<{ sw: SW; vendor: VendorRecord; onClose: () => 
             )}
 
             {/* Private (inaccessible) */}
-            {privateDocs.length > 0 && (
-              <div className="space-y-2">
-                <p className="text-xs font-semibold text-slate-400 flex items-center gap-1"><Lock className="w-3 h-3" />Private — Not Shared with {sw.company.profile.tradingName}</p>
-                {privateDocs.map((d) => (
-                  <div key={d.id} className="rounded-lg border border-slate-100 bg-slate-50/50 px-3 py-2 text-sm flex items-center justify-between">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <Lock className="w-3.5 h-3.5 text-slate-300 shrink-0" />
-                      <span className="text-slate-400 truncate">{d.name}</span>
-                    </div>
-                    <span className="text-[10px] text-slate-400 shrink-0">{d.category}</span>
-                  </div>
-                ))}
-                <p className="text-[10px] text-slate-400">These documents are private to {vendor.supplierName}. Request access directly from the supplier.</p>
+            {restrictedCount > 0 && (
+              <div className="flex items-center gap-2 rounded-lg border border-slate-100 bg-slate-50/50 px-3 py-2 text-xs text-slate-500">
+                <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" aria-hidden />
+                <span>{restrictedCount} further {restrictedCount === 1 ? 'document is' : 'documents are'} not shared with {tradingName}. Request access directly from {vendor.supplierName}.</span>
               </div>
             )}
           </div>
@@ -756,7 +815,7 @@ export const VendorDirectory: React.FC<{ sw: SW; pageBack?: { label: string; onB
 
   // Count expiring documents from linked suppliers
   const linkedSupplierIds = vendors.filter((v) => v.supplierCompanyId).map((v) => v.supplierCompanyId!);
-  const expiringDocs = sw.store.documents.filter((d) => linkedSupplierIds.includes(d.companyId) && d.expiry && d.shares.some((s) => s.company === company) && new Date(d.expiry) < new Date(Date.now() + 30 * 86400000));
+  const expiringDocs = sw.store.documents.filter((d) => linkedSupplierIds.includes(d.companyId) && !d.archived && d.expiry && ['shared', 'public'].includes(docAccessFor(d, company)) && new Date(d.expiry) < new Date(Date.now() + 30 * 86400000));
 
   if (open) {
     return (
@@ -768,7 +827,14 @@ export const VendorDirectory: React.FC<{ sw: SW; pageBack?: { label: string; onB
           onOpenSupplierProfile={(id) => navigate({ vendorId: open.id, profileId: id })}
         />
         {nav.profileId && (
-          <SupplierProfileModal supplierId={nav.profileId} onClose={() => navigate({ vendorId: open.id, profileId: null })} />
+          <SupplierProfileModal
+            supplierId={nav.profileId}
+            companyName={company}
+            vendorName={open.supplierName}
+            onClose={() => navigate({ vendorId: open.id, profileId: null })}
+            onVendors={closeVendor}
+            onDashboard={() => sw.go('sw-dashboard')}
+          />
         )}
       </>
     );
@@ -816,8 +882,8 @@ export const VendorDirectory: React.FC<{ sw: SW; pageBack?: { label: string; onB
           <div className="bg-white"><SokoKpiCell label="Approved" value={counts.approved} detail={`by ${company}`} onClick={() => setFilter('approval', 'approved')} /></div>
           <div className="bg-white"><SokoKpiCell label="Under review" value={counts.review} detail="Incl. conditional" onClick={() => setFilter('approval', 'review')} /></div>
           <div className="bg-white"><SokoKpiCell label="Not reviewed" value={counts.new} detail="Awaiting first review" onClick={() => setFilter('approval', 'new')} /></div>
-          <div className="bg-white"><SokoKpiCell label="SOKO Verified" value={counts.verified} detail={`${counts.external} external`} onClick={() => setFilter('network', 'verified')} /></div>
-          <div className="col-span-2 bg-white lg:col-span-1"><SokoKpiCell label="Expiring documents" value={expiringDocs.length} detail="Shared with you · 30 days" onClick={() => sw.go('sw-documents')} /></div>
+          <div className="bg-white"><SokoKpiCell label="SOKO Verified" value={counts.verified} detail={`of ${vendors.length} vendors on SOKO`} onClick={() => setFilter('network', 'verified')} /></div>
+          <div className="col-span-2 bg-white lg:col-span-1"><SokoKpiCell label="Expiring documents" value={expiringDocs.length} detail="Shared or public · 30 days" onClick={() => sw.go('sw-documents')} /></div>
         </div>
       </section>
 
@@ -914,7 +980,15 @@ export const VendorDirectory: React.FC<{ sw: SW; pageBack?: { label: string; onB
                       <p className="text-slate-700">{v.contactPerson}</p>
                       {v.contactEmail && <p className="max-w-[180px] truncate text-xs text-slate-400">{v.contactEmail}</p>}
                     </td>
-                    <td className="px-3 py-3.5 font-mono text-[11px] text-slate-500 whitespace-nowrap">{v.lastVisitDate ? fmtDate(v.lastVisitDate) : '—'}</td>
+                    <td className="px-3 py-3.5 whitespace-nowrap">{(() => {
+                      const vs = visitSummaryFor(sw, v);
+                      return (
+                        <>
+                          <p className="font-mono text-[11px] text-slate-500">{vs.last ? fmtDate(vs.last) : '—'}</p>
+                          {vs.next && <p className="text-[11px] text-blue-700">Next {fmtDate(vs.next.date)}{vs.next.status ? ` · ${vs.next.status}` : ''}</p>}
+                        </>
+                      );
+                    })()}</td>
                     <td className="px-3 py-3.5 text-xs text-slate-500 whitespace-nowrap">
                       {v.notes.length > 0 ? <span className="inline-flex items-center gap-1"><StickyNote className="w-3.5 h-3.5 text-slate-400" aria-hidden />{v.notes.length}</span> : '—'}
                     </td>
@@ -952,7 +1026,12 @@ export const VendorDirectory: React.FC<{ sw: SW; pageBack?: { label: string; onB
                   </div>
                   <div className="flex items-center justify-between gap-3 pl-12">
                     <p className="min-w-0 truncate text-xs text-slate-500">
-                      {v.contactPerson}{v.lastVisitDate && <> · Visited {fmtDate(v.lastVisitDate)}</>}
+                      {v.contactPerson}{(() => {
+                        const vs = visitSummaryFor(sw, v);
+                        if (vs.last) return <> · Visited {fmtDate(vs.last)}</>;
+                        if (vs.next) return <> · Next visit {fmtDate(vs.next.date)}{vs.next.status ? ` (${vs.next.status})` : ''}</>;
+                        return null;
+                      })()}
                     </p>
                     {canManage && (
                       <ApprovalMenu compact current={v.approvalStatus} company={company} vendorName={v.supplierName} onChange={(s) => changeStatus(v, s)} />
