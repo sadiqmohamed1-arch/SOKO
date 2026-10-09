@@ -11,10 +11,10 @@ import {
   SokoPanel, SokoPanelLink, SokoEyebrow, SokoStatusIndicator, SokoProgress, SokoTabs, SokoTimelineItem,
   SokoProductCard, SokoEmptyState, SokoAvatar, sokoTone, sokoTokens, type MetricTone, type SokoStatusTone,
 } from '../sokoDesignSystem/SokoComponents';
-
-const sokoEyebrowClass = sokoTokens.eyebrow;
 import { SokoSegmentBar, SokoCoverageRow, SokoWaffle, SokoColumnChart, SokoMiniCalendar } from '../sokoDesignSystem/SokoCharts';
 import { ActionGroup, ActionKind, ContractorDashboardData, PIPELINE_ORDER, daysFrom } from './contractorDashboardData';
+
+const sokoEyebrowClass = sokoTokens.eyebrow;
 
 export const APPROVAL_META: Record<VendorApprovalStatus, { label: string; status: SokoStatusTone; tone: MetricTone }> = {
   'not-reviewed':           { label: 'Not reviewed', status: 'neutral',  tone: 'blueSoft' },
