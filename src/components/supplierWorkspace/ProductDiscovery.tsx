@@ -1,12 +1,13 @@
 import React, { useMemo, useState } from 'react';
 import {
-  ArrowUpRight, Bookmark, BookmarkCheck, Building2, Clock, FileText, History, ImageOff, LayoutGrid, Lock, Mail,
-  MapPin, MessageSquare, Package, Search, ShieldCheck,
+  ArrowUpRight, Bookmark, BookmarkCheck, Boxes, Building, Building2, Clock, DoorOpen, Droplets, FileText, FlaskConical,
+  History, Layers, LayoutGrid, Lock, Mail, MapPin, MessageSquare, Package, Paintbrush, Search, ShieldCheck, Truck, Wrench, Zap,
+  type LucideIcon,
 } from 'lucide-react';
 import { CompanyProduct, CompanyRecord } from '../../data/supplierTypes';
 import { companyById, documentsOf, membersOf } from '../../data/supplierStore';
 import { toggleSavedProduct, trackProductView } from '../../data/supplierService';
-import { BUYER_SUPPLIERS } from '../../data/buyerSuppliers';
+import { BUYER_SUPPLIERS, IMG } from '../../data/buyerSuppliers';
 import { BuyerSupplierProfile, ProfileTab } from '../BuyerSupplierProfile';
 import { daysAgo, fmtDate } from '../marketHub/MarketHubShared';
 import { SokoBreadcrumb } from '../sokoDesignSystem/SokoBreadcrumb';
@@ -33,25 +34,79 @@ const VerificationStatus: React.FC<{ supplier?: CompanyRecord }> = ({ supplier }
     ? <SokoStatusIndicator label="SOKO verified" tone="success" />
     : <SokoStatusIndicator label="Not verified" tone="neutral" />;
 
-const ProductImage: React.FC<{ product: CompanyProduct; className?: string }> = ({ product, className = '' }) => (
-  <div className={`aspect-[4/3] overflow-hidden bg-slate-100 ${className}`}>
-    {product.images[0] ? (
-      <img src={product.images[0]} alt={product.name} loading="lazy" className="h-full w-full object-cover" />
-    ) : (
-      <div className="flex h-full w-full items-center justify-center text-slate-300"><ImageOff className="w-8 h-8" aria-hidden /></div>
-    )}
-  </div>
-);
+// Shared stock category photography is not a photograph of any specific product, so it is never shown as one.
+const STOCK_PHOTOS = new Set<string>(Object.values(IMG));
+const productPhotos = (p: CompanyProduct) => p.images.filter((src) => src && !STOCK_PHOTOS.has(src));
+
+const CATEGORY_ICONS: Record<string, LucideIcon> = {
+  'Steel & Rebar': Layers,
+  Waterproofing: Droplets,
+  'Construction Chemicals': FlaskConical,
+  Doors: DoorOpen,
+  Equipment: Wrench,
+  'Façade': Building,
+  Finishes: Paintbrush,
+  MEP: Zap,
+  Precast: Boxes,
+  'Ready Mix Concrete': Truck,
+};
+
+const CategoryPlaceholder: React.FC<{ category: string; size?: 'sm' | 'md' }> = ({ category, size = 'md' }) => {
+  const Icon = CATEGORY_ICONS[category] ?? Package;
+  return (
+    <div
+      role="img"
+      aria-label={`No product photo · ${category || 'Product'}`}
+      className="flex h-full w-full flex-col items-center justify-center gap-2 bg-slate-50 text-slate-400"
+      style={{ backgroundImage: 'repeating-linear-gradient(135deg, rgb(241 245 249) 0 1px, transparent 1px 12px)' }}
+    >
+      <span className={`flex items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm ${size === 'sm' ? 'h-7 w-7' : 'h-11 w-11'}`}>
+        <Icon className={size === 'sm' ? 'h-3.5 w-3.5' : 'h-5 w-5'} aria-hidden />
+      </span>
+      {size === 'md' && (
+        <span className="flex flex-col items-center gap-0.5 px-3 text-center">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{category || 'Product'}</span>
+          <span className="text-[11px] text-slate-400">No product photo</span>
+        </span>
+      )}
+    </div>
+  );
+};
+
+const ProductImage: React.FC<{ product: CompanyProduct; src?: string; className?: string; size?: 'sm' | 'md' }> = ({ product, src, className = '', size = 'md' }) => {
+  const photo = src ?? productPhotos(product)[0];
+  return (
+    <div className={`aspect-[4/3] overflow-hidden bg-slate-100 ${className}`}>
+      {photo
+        ? <img src={photo} alt={product.name} loading="lazy" className="h-full w-full object-cover" />
+        : <CategoryPlaceholder category={product.category} size={size} />}
+    </div>
+  );
+};
 
 const SpecList: React.FC<{ specs: CompanyProduct['specs']; limit?: number; compact?: boolean }> = ({ specs, limit, compact }) => {
   const shown = limit ? specs.slice(0, limit) : specs;
-  if (shown.length === 0) return <p className="text-xs text-slate-400">No specifications published</p>;
+  if (shown.length === 0) {
+    return <p className={`text-slate-400 ${compact ? 'text-xs leading-5' : 'text-sm'}`}>No technical specifications published by the supplier.</p>;
+  }
+  if (compact) {
+    return (
+      <dl className="flex flex-col gap-1 rounded-lg bg-slate-50 px-2.5 py-2">
+        {shown.map((s, i) => (
+          <div key={i} className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-baseline gap-2 text-xs leading-5">
+            <dt className="truncate text-slate-500" title={s.label}>{s.label}</dt>
+            <dd className="truncate font-medium tabular-nums text-slate-800" title={s.value}>{s.value}</dd>
+          </div>
+        ))}
+      </dl>
+    );
+  }
   return (
-    <dl className={compact ? 'flex flex-col gap-1' : 'grid grid-cols-1 gap-x-6 sm:grid-cols-2'}>
+    <dl className="grid grid-cols-1 gap-x-8 sm:grid-cols-2">
       {shown.map((s, i) => (
-        <div key={i} className={`flex items-baseline justify-between gap-3 ${compact ? 'text-xs' : 'border-b border-slate-100 py-2 text-sm'}`}>
-          <dt className="shrink-0 text-slate-500">{s.label}</dt>
-          <dd title={s.value} className={`min-w-0 text-right font-mono tabular-nums text-slate-800 ${compact ? 'truncate' : ''}`}>{s.value}</dd>
+        <div key={i} className="flex flex-col gap-0.5 border-b border-slate-100 py-2.5">
+          <dt className="text-xs text-slate-500">{s.label}</dt>
+          <dd className="text-sm font-medium leading-relaxed tabular-nums text-slate-900 text-pretty">{s.value}</dd>
         </div>
       ))}
     </dl>
@@ -89,6 +144,7 @@ const ProductDetail: React.FC<{
   const contact = supplier ? membersOf(sw.store, supplier.id).find((m) => m.status === 'active') : undefined;
   const activeCerts = supplier?.profile.certifications.filter((c) => c.status === 'active') ?? [];
   const [activeImage, setActiveImage] = useState(0);
+  const photos = productPhotos(product);
 
   return (
     <div className="flex flex-col gap-6">
@@ -101,11 +157,11 @@ const ProductDetail: React.FC<{
       <header className={`${sokoCard} grid grid-cols-1 gap-6 overflow-hidden p-5 sm:p-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]`}>
         <div className="flex flex-col gap-2">
           <div className="overflow-hidden rounded-xl border border-slate-100">
-            <ProductImage product={{ ...product, images: product.images.slice(activeImage) }} />
+            <ProductImage product={product} src={photos[activeImage]} />
           </div>
-          {product.images.length > 1 && (
+          {photos.length > 1 && (
             <div className="flex gap-2" role="group" aria-label="Product images">
-              {product.images.map((src, i) => (
+              {photos.map((src, i) => (
                 <button key={i} type="button" onClick={() => setActiveImage(i)} aria-label={`Show image ${i + 1}`} aria-pressed={i === activeImage}
                   className={`${sokoTokens.focus} h-14 w-16 overflow-hidden rounded-lg border-2 cursor-pointer ${i === activeImage ? 'border-blue-600' : 'border-transparent opacity-70 hover:opacity-100'}`}>
                   <img src={src} alt="" className="h-full w-full object-cover" />
@@ -247,7 +303,7 @@ const ProductDetail: React.FC<{
   );
 };
 
-// ─── Product card / row ────────────────────────────────────────────
+// ─── Product card / row ─────���──────────────────────────────────────
 interface CardProps {
   product: CompanyProduct;
   supplier?: CompanyRecord;
@@ -522,7 +578,7 @@ export const ProductDiscovery: React.FC<{ sw: SW; onStartMessageWith: (userId: s
               return (
                 <li key={r.id}>
                   <button type="button" onClick={() => open(p)} className={`${sokoCard} ${sokoTokens.focus} group flex w-full items-center gap-3 p-2.5 text-left cursor-pointer hover:border-slate-300`}>
-                    <span className="w-16 shrink-0 overflow-hidden rounded-lg"><ProductImage product={p} /></span>
+                    <span className="w-16 shrink-0 overflow-hidden rounded-lg"><ProductImage product={p} size="sm" /></span>
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-medium text-slate-900 group-hover:text-blue-700">{p.name}</span>
                       <span className="block truncate text-xs text-slate-500">{supplierOf(p)?.profile.tradingName}</span>
@@ -569,7 +625,7 @@ export const ProductDiscovery: React.FC<{ sw: SW; onStartMessageWith: (userId: s
             return (
               <li key={p.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:gap-4">
                 <button type="button" onClick={() => open(p)} tabIndex={-1} aria-hidden className="hidden w-28 shrink-0 overflow-hidden rounded-lg sm:block cursor-pointer">
-                  <ProductImage product={p} />
+                  <ProductImage product={p} size="sm" />
                 </button>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[11px] font-medium uppercase tracking-wider text-slate-500">{p.category}</p>

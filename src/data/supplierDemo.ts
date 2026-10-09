@@ -1,7 +1,7 @@
-import { BuyerSupplier, IMG } from './buyerSuppliers';
+import { BuyerSupplier } from './buyerSuppliers';
 import { CompanyContact, CompanyDocument, CompanyKind, CompanyMembership, CompanyProduct, CompanyRecord, DocumentCategory, SupplierStore, AuditEntry, SupplierVisit, VisitFollowUp, VisitTask, VendorRecord, VendorNote, DocumentVisibility } from './supplierTypes';
 
-export const SUPPLIER_STORE_VERSION = 10;
+export const SUPPLIER_STORE_VERSION = 11;
 export const DEMO_USER = { id: 'usr_me_01', name: 'Mohamed Sadiq', email: 'mohamed.sadiq@soko.demo', title: 'Director of Strategic Sourcing' };
 
 const day = 86400000;
@@ -108,31 +108,29 @@ const gecCompany = (): CompanyRecord => ({
   },
 });
 
+// Keyed by product id: specs are only published for the exact products they describe.
 const SPECS: Record<string, { label: string; value: string }[]> = {
-  'Reinforcement Steel': [
+  prd_es_b500b: [
     { label: 'Grade', value: 'B500B to BS 4449:2005' },
     { label: 'Diameters', value: '8 – 40 mm' },
     { label: 'Lengths', value: '12 m standard, cut lengths on request' },
     { label: 'Yield strength', value: '≥ 500 MPa' },
     { label: 'Certification', value: 'CARES approved' },
   ],
-  'Structural Steel': [
+  prd_es_heavy: [
     { label: 'Standard', value: 'EN 10025 S275JR / S355JR' },
     { label: 'Sizes', value: 'HEA/HEB 100 – 600' },
     { label: 'Length', value: '12 m and 15 m' },
     { label: 'Finish', value: 'Mill finish, shot-blast option' },
   ],
-  'Waterproofing Membrane': [
+  prd_sikaproof_a_plus: [
     { label: 'Thickness', value: '1.2 mm' },
     { label: 'Roll size', value: '2 m × 20 m' },
     { label: 'Application', value: 'Pre-applied, below-grade' },
   ],
 };
 
-const fallbackSpecs = (type: string) => SPECS[type] ?? [
-  { label: 'Product type', value: type },
-  { label: 'Packaging', value: 'Standard trade packaging' },
-];
+const publishedSpecs = (productId: string) => SPECS[productId] ?? [];
 
 const productsFor = (s: BuyerSupplier, premium: boolean): CompanyProduct[] =>
   s.products.map((p, i) => ({
@@ -144,9 +142,9 @@ const productsFor = (s: BuyerSupplier, premium: boolean): CompanyProduct[] =>
     subcategory: s.subcategories.find((x) => p.type.toLowerCase().includes(x.toLowerCase().split(' ')[0])) ?? s.subcategories[0] ?? '',
     brand: p.brand,
     description: `${p.name} by ${p.brand}. ${p.type} supplied for UAE construction projects with stock held locally.`,
-    specs: premium ? fallbackSpecs(p.type) : fallbackSpecs(p.type).slice(0, 3),
+    specs: premium ? publishedSpecs(p.id) : publishedSpecs(p.id).slice(0, 3),
     regions: s.regionsServed.slice(0, premium ? 4 : 2),
-    images: premium && i < 6 ? [p.imageUrl, IMG.equipment, IMG.concrete] : [p.imageUrl],
+    images: [p.imageUrl],
     variations: premium && p.type === 'Reinforcement Steel' ? ['10 mm', '12 mm', '16 mm', '20 mm', '25 mm', '32 mm'] : premium && p.type === 'Structural Steel' ? ['HEA 200', 'HEB 300', 'HEB 400'] : [],
     attachments: premium
       ? [
