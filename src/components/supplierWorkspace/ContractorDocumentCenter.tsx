@@ -1,48 +1,57 @@
 import React, { useMemo, useState } from 'react';
 import {
-  FileText, Search, Lock, Eye, EyeOff, Download, Clock,
-  ShieldCheck, AlertTriangle, Building2, ExternalLink,
-  Upload, HardDrive, Crown, X, Plus, CheckCircle2, Trash2, FileWarning,
+  FileText, Search, Lock, Eye, Download, Clock,
+  ShieldCheck, AlertTriangle, ExternalLink, Info, History,
+  Upload, Crown, X, Plus, CheckCircle2, Trash2, FileWarning, type LucideIcon,
 } from 'lucide-react';
-import { CompanyDocument, DocumentVisibility, DocumentCategory, DocumentAccessLevel, DOCUMENT_CATEGORIES, ACCESS_META, CONTRACTOR_TIER_CONFIG, VendorComplianceDoc, VendorDocStatus } from '../../data/supplierTypes';
-import { btnPrimary, btnSecondary, btnGhost, inputCls, labelCls, StatusPill } from '../NetworkShared';
-import { DemoNote, EmptyState, KpiCard, SubTabs, fmtDate, Field } from '../marketHub/MarketHubShared';
-import { PageHeader, SW } from './SupplierShared';
+import { CompanyDocument, DocumentVisibility, DocumentCategory, DocumentAccessLevel, DOCUMENT_CATEGORIES, ACCESS_META, CONTRACTOR_TIER_CONFIG, VendorComplianceDoc, VendorDocStatus, VendorApprovalStatus, VendorRecord } from '../../data/supplierTypes';
+import { btnPrimary, btnSecondary, btnGhost, inputCls, labelCls } from '../NetworkShared';
+import { DemoNote, fmtDate, Field } from '../marketHub/MarketHubShared';
+import { SW } from './SupplierShared';
+import {
+  sokoCard, sokoTokens, SokoEmptyState, SokoKpiCell, SokoProgress, SokoStatusIndicator,
+  SokoStatusTone, SokoTabs, SokoTimelineItem,
+} from '../sokoDesignSystem/SokoComponents';
 import { ProfileDialog } from '../ProfileDialog';
 import { BUYER_SUPPLIERS } from '../../data/buyerSuppliers';
 import { BuyerSupplierProfile, ProfileTab } from '../BuyerSupplierProfile';
 import { uploadDocument, addVendorComplianceDoc, reviewVendorComplianceDoc, deleteVendorComplianceDoc } from '../../data/supplierService';
 import { storageAllocationMb, storageUsedMb } from '../../data/supplierStore';
 
-type Section = 'own' | 'shared' | 'compliance' | 'review' | 'expiring';
+type DocTab = 'internal' | 'shared' | 'compliance' | 'activity';
+type ComplianceFilter = 'queue' | 'all' | VendorDocStatus;
 
-const VISIBILITY_META: Record<DocumentVisibility, { label: string; icon: typeof Lock; cls: string }> = {
-  'private': { label: 'Private', icon: Lock, cls: 'text-slate-500 bg-slate-50 border-slate-200' },
-  'public': { label: 'Public', icon: Eye, cls: 'text-blue-700 bg-blue-50 border-blue-200' },
-  'shared': { label: 'Shared', icon: ExternalLink, cls: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+const COMPLIANCE_STATUS_META: Record<VendorDocStatus, { label: string; tone: SokoStatusTone }> = {
+  'submitted': { label: 'Submitted', tone: 'info' },
+  'missing': { label: 'Missing', tone: 'critical' },
+  'under-review': { label: 'Under Review', tone: 'warning' },
+  'accepted': { label: 'Accepted', tone: 'success' },
+  'rejected': { label: 'Rejected', tone: 'neutral' },
 };
 
-const COMPLIANCE_STATUS_META: Record<VendorDocStatus, { label: string; tone: 'blue' | 'amber' | 'emerald' | 'rose' | 'slate' }> = {
-  'submitted': { label: 'Submitted', tone: 'blue' },
-  'missing': { label: 'Missing', tone: 'rose' },
-  'under-review': { label: 'Under Review', tone: 'amber' },
-  'accepted': { label: 'Accepted', tone: 'emerald' },
-  'rejected': { label: 'Rejected', tone: 'rose' },
+/** Supplier documents enter GEC's view only through approval status, never through GEC's own review. */
+const VENDOR_REVIEW_META: Record<VendorApprovalStatus, { label: string; tone: SokoStatusTone }> = {
+  'not-reviewed': { label: 'Awaiting vendor review', tone: 'warning' },
+  'under-review': { label: 'Vendor under review', tone: 'warning' },
+  'approved': { label: 'Vendor approved', tone: 'success' },
+  'conditionally-approved': { label: 'Conditionally approved', tone: 'warning' },
+  'rejected': { label: 'Vendor rejected', tone: 'neutral' },
+  'suspended': { label: 'Vendor suspended', tone: 'neutral' },
 };
+
+const PENDING_APPROVAL: VendorApprovalStatus[] = ['not-reviewed', 'under-review'];
+const REVIEW_QUEUE: VendorDocStatus[] = ['submitted', 'under-review'];
 
 const findValidShare = (doc: CompanyDocument, companyTradingName: string) =>
   doc.shares.find((s) => s.company === companyTradingName && new Date(s.until) > new Date());
 
-const isShareExpired = (doc: CompanyDocument, companyTradingName: string) => {
-  const share = doc.shares.find((s) => s.company === companyTradingName);
-  return share ? new Date(share.until) <= new Date() : false;
-};
+/** Public documents, or documents explicitly shared with this company within their access window. Private documents never qualify. */
+const isVisibleToCompany = (doc: CompanyDocument, companyTradingName: string) =>
+  doc.visibility === 'public' || (doc.visibility === 'shared' && !!findValidShare(doc, companyTradingName));
 
-const isExpiringSoon = (doc: CompanyDocument) => {
-  if (!doc.expiry) return false;
-  const days = (new Date(doc.expiry).getTime() - Date.now()) / 86400000;
-  return days <= 30;
-};
+const daysUntil = (date: string) => Math.ceil((new Date(date).getTime() - Date.now()) / 86400000);
+
+const isExpiringSoon = (doc: CompanyDocument) => !!doc.expiry && daysUntil(doc.expiry) <= 30;
 
 // ─── Upload Dialog ──────────────────────────────────────────────────
 const UploadDialog: React.FC<{ sw: SW; onClose: () => void }> = ({ sw, onClose }) => {
@@ -185,61 +194,6 @@ const UploadDialog: React.FC<{ sw: SW; onClose: () => void }> = ({ sw, onClose }
   );
 };
 
-// ─── Storage Meter ──────────────────────────────────────────────────
-const StorageMeter: React.FC<{ sw: SW; onUpgrade: () => void }> = ({ sw, onUpgrade }) => {
-  const ownDocs = sw.store.documents.filter((d) => d.companyId === sw.company.id && !d.archived);
-  const used = storageUsedMb(ownDocs);
-  const total = storageAllocationMb(sw.company);
-  const pct = total > 0 ? Math.round((used / total) * 100) : 0;
-  const available = Math.max(0, Math.round((total - used) * 10) / 10);
-  const tierConfig = CONTRACTOR_TIER_CONFIG[sw.company.tier];
-
-  const isWarning = pct >= 80 && pct < 95;
-  const isCritical = pct >= 95 && pct < 100;
-  const isFull = pct >= 100;
-
-  const barColor = isFull ? 'bg-rose-600' : isCritical ? 'bg-amber-500' : isWarning ? 'bg-amber-400' : 'bg-blue-600';
-  const bgColor = isFull ? 'bg-rose-50 border-rose-200' : isCritical ? 'bg-amber-50 border-amber-200' : isWarning ? 'bg-amber-50 border-amber-200' : 'bg-white border-slate-200';
-
-  return (
-    <div className={`rounded-xl border ${bgColor} px-4 py-3 mb-4`}>
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2">
-          <HardDrive className={`w-5 h-5 ${isFull || isCritical ? 'text-rose-600' : isWarning ? 'text-amber-600' : 'text-slate-500'}`} />
-          <div>
-            <p className="text-sm font-semibold text-slate-900">{tierConfig.label}</p>
-            <p className="text-xs text-slate-500">{used.toFixed(1)} MB used of {total.toLocaleString()} MB · {available.toFixed(1)} MB available · {pct}%</p>
-          </div>
-        </div>
-        {sw.can('plan.manage') && sw.company.tier !== 'premium' && (
-          <button type="button" onClick={onUpgrade} className={`${btnPrimary} text-xs`}>
-            <Crown className="w-3.5 h-3.5" /> Upgrade to Premium
-          </button>
-        )}
-      </div>
-      <div className="mt-2 h-2 rounded-full bg-slate-100 overflow-hidden">
-        <div className={`h-full ${barColor} rounded-full transition-all`} style={{ width: `${Math.min(100, pct)}%` }} />
-      </div>
-      {isWarning && (
-        <p className="mt-2 text-xs text-amber-800 flex items-center gap-1.5">
-          <AlertTriangle className="w-3.5 h-3.5" /> Storage usage is at {pct}%. Consider upgrading to Premium for 25 GB.
-        </p>
-      )}
-      {isCritical && (
-        <p className="mt-2 text-xs text-amber-900 font-semibold flex items-center gap-1.5">
-          <FileWarning className="w-3.5 h-3.5" /> Storage is nearly full ({pct}%). New uploads may be blocked soon.
-        </p>
-      )}
-      {isFull && (
-        <p className="mt-2 text-xs text-rose-800 font-semibold flex items-center gap-1.5">
-          <FileWarning className="w-3.5 h-3.5" /> Storage is full. New uploads are blocked. Existing documents can still be viewed and downloaded. {sw.can('plan.manage') && 'Upgrade to Premium to continue uploading.'}
-        </p>
-      )}
-      <p className="mt-1.5 text-[11px] text-slate-400">Storage counts only documents owned by {sw.company.profile.tradingName}. Supplier documents shared with you do not consume your quota.</p>
-    </div>
-  );
-};
-
 // ─── Upgrade Modal ──────────────────────────────────────────────────
 const UpgradeModal: React.FC<{ sw: SW; onClose: () => void }> = ({ sw, onClose }) => {
   const freeConfig = CONTRACTOR_TIER_CONFIG.free;
@@ -369,66 +323,8 @@ const AddComplianceDialog: React.FC<{ sw: SW; onClose: () => void }> = ({ sw, on
   );
 };
 
-// ─── Vendor Compliance Row ──────────────────────────────────────────
-const ComplianceRow: React.FC<{ doc: VendorComplianceDoc; sw: SW }> = ({ doc, sw }) => {
-  const [showReview, setShowReview] = useState(false);
-  const [reviewNotes, setReviewNotes] = useState(doc.reviewNotes ?? '');
-  const canManage = sw.can('documents.manage');
-  const canDelete = sw.can('records.delete');
-  const meta = COMPLIANCE_STATUS_META[doc.status];
-
-  const handleReview = (status: VendorDocStatus) => {
-    const res = reviewVendorComplianceDoc(sw.ctx, doc.id, status, reviewNotes);
-    if (sw.run(res, `Reviewed "${doc.documentType}" from ${doc.supplierName}: ${COMPLIANCE_STATUS_META[status].label}`)) {
-      setShowReview(false);
-    }
-  };
-
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <FileText className="w-4 h-4 text-slate-400 shrink-0" />
-            <span className="font-medium text-slate-900 truncate">{doc.documentType}</span>
-            <StatusPill tone={meta.tone}>{meta.label}</StatusPill>
-          </div>
-          <p className="text-xs text-slate-500 mt-0.5">
-            {doc.supplierName}
-            {doc.issueDate && ` · Issued ${fmtDate(doc.issueDate)}`}
-            {doc.expiryDate && ` · Expires ${fmtDate(doc.expiryDate)}`}
-            {doc.fileName && ` · ${doc.fileName}`}
-          </p>
-          {doc.reviewer && <p className="text-[10px] text-slate-400 mt-0.5">Reviewed by {doc.reviewer}{doc.reviewedAt ? ` · ${fmtDate(doc.reviewedAt)}` : ''}{doc.reviewNotes ? ` · ${doc.reviewNotes}` : ''}</p>}
-        </div>
-        <div className="shrink-0 flex items-center gap-1.5">
-          {canManage && !showReview && doc.status !== 'accepted' && doc.status !== 'rejected' && (
-            <button type="button" onClick={() => setShowReview(true)} className={`${btnGhost} text-xs`}>Review</button>
-          )}
-          {canDelete && (
-            <button type="button" aria-label="Delete" onClick={() => sw.run(deleteVendorComplianceDoc(sw.ctx, doc.id), `Removed compliance document`)} className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer">
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
-      </div>
-      {showReview && (
-        <div className="mt-2 pt-2 border-t border-slate-100 space-y-2">
-          <textarea value={reviewNotes} onChange={(e) => setReviewNotes(e.target.value)} placeholder="Review notes (optional)…" rows={2} className={inputCls} />
-          <div className="flex gap-1.5 flex-wrap">
-            <button type="button" onClick={() => handleReview('accepted')} className={`${btnPrimary} text-xs`}><CheckCircle2 className="w-3.5 h-3.5" /> Accept</button>
-            <button type="button" onClick={() => handleReview('rejected')} className={`${btnSecondary} text-xs`}>Reject</button>
-            <button type="button" onClick={() => handleReview('under-review')} className={`${btnSecondary} text-xs`}>Mark Under Review</button>
-            <button type="button" onClick={() => setShowReview(false)} className={`${btnGhost} text-xs`}>Cancel</button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
 // ─── Document Preview Dialog ────────────────────────────────────────
-const DocPreviewDialog: React.FC<{ doc: CompanyDocument; onClose: () => void }> = ({ doc, onClose }) => (
+const DocPreviewDialog: React.FC<{ doc: CompanyDocument; onClose: () => void; onDownload: () => void }> = ({ doc, onClose, onDownload }) => (
   <ProfileDialog title={doc.name} subtitle={`${doc.category} · ${doc.sizeMb.toFixed(1)} MB`} onClose={onClose} size="md"
     footer={<button type="button" onClick={onClose} className={`${btnGhost} text-sm`}>Close</button>}
   >
@@ -437,7 +333,7 @@ const DocPreviewDialog: React.FC<{ doc: CompanyDocument; onClose: () => void }> 
         <FileText className="w-12 h-12 text-slate-300 mx-auto mb-3" />
         <p className="text-sm font-semibold text-slate-700">{doc.fileName}</p>
         <p className="text-xs text-slate-500 mt-1">Document preview — simulated</p>
-        <button type="button" className={`${btnSecondary} text-xs mt-3`} onClick={() => {}}>
+        <button type="button" className={`${btnSecondary} text-xs mt-3`} onClick={onDownload}>
           <Download className="w-3.5 h-3.5" />Download
         </button>
       </div>
@@ -474,364 +370,567 @@ const SupplierProfileModal: React.FC<{ supplierId: string; onClose: () => void }
   );
 };
 
-// ─── Shared Document Row ────────────────────────────────────────────
-const SharedDocRow: React.FC<{ doc: CompanyDocument; sw: SW; onView: () => void; supplierName: string }> = ({ doc, sw, onView, supplierName }) => {
-  const share = findValidShare(doc, sw.company.profile.tradingName);
-  const expired = isShareExpired(doc, sw.company.profile.tradingName);
-  const canAccess = !!share && !expired;
-  const visMeta = VISIBILITY_META[doc.visibility];
-  const expiring = isExpiringSoon(doc);
+// ─── Table primitives ───────────────────────────────────────────────
+const thCls = `px-4 py-2.5 text-left whitespace-nowrap ${sokoTokens.eyebrow}`;
+const tdCls = 'px-4 py-3 align-middle';
+const controlCls = `h-9 ${sokoTokens.radius.control} border border-slate-200 bg-white px-3 text-sm text-slate-700 ${sokoTokens.focus}`;
 
+const VisibilityBadge: React.FC<{ icon: LucideIcon; label: string; tone: 'private' | 'shared' | 'public'; note?: string }> = ({ icon: Icon, label, tone, note }) => {
+  const cls = tone === 'private'
+    ? 'border-slate-200 bg-slate-50 text-slate-600'
+    : tone === 'shared'
+      ? 'border-blue-200 bg-blue-50 text-blue-700'
+      : 'border-slate-200 bg-white text-slate-700';
   return (
-    <div className={`rounded-lg border px-3 py-2.5 text-sm ${canAccess ? 'border-slate-200 bg-white' : 'border-rose-200 bg-rose-50/50'}`}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <FileText className="w-4 h-4 text-slate-400 shrink-0" />
-            <span className="font-medium text-slate-900 truncate">{doc.name}</span>
-            <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border ${visMeta.cls}`}>
-              <visMeta.icon className="w-2.5 h-2.5" />{visMeta.label}
-            </span>
-            {expiring && doc.expiry && <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-amber-200 bg-amber-50 text-amber-700"><Clock className="w-2.5 h-2.5" />Expiring</span>}
-          </div>
-          <p className="text-xs text-slate-500 mt-0.5">
-            From {supplierName} · {doc.category} · {doc.sizeMb.toFixed(1)} MB
-          </p>
-          {share && (
-            <p className={`text-[10px] mt-0.5 ${expired ? 'text-rose-600' : 'text-slate-400'}`}>
-              {expired ? <>Access expired {fmtDate(share.until)}</> : <>Shared by {share.by} · Valid until {fmtDate(share.until)}</>}
-            </p>
-          )}
-        </div>
-        <div className="shrink-0 flex items-center gap-1.5">
-          {canAccess ? (
-            <>
-              <button type="button" onClick={onView} className={`${btnGhost} text-xs`}><Eye className="w-3.5 h-3.5" />Preview</button>
-              <button type="button" onClick={() => sw.notify(`Downloading "${doc.name}" — simulated`)} className={`${btnGhost} text-xs`}><Download className="w-3.5 h-3.5" /></button>
-            </>
-          ) : (
-            <span className="inline-flex items-center gap-1 text-xs text-rose-500"><EyeOff className="w-3.5 h-3.5" />No access</span>
-          )}
-        </div>
-      </div>
+    <div className="flex flex-col gap-1">
+      <span className={`inline-flex w-fit items-center gap-1 h-5 px-1.5 rounded-md border text-[11px] font-medium whitespace-nowrap ${cls}`}>
+        <Icon className="w-3 h-3" aria-hidden />{label}
+      </span>
+      {note && <span className="text-[11px] text-slate-400 whitespace-nowrap">{note}</span>}
     </div>
   );
 };
 
+const INTERNAL_VISIBILITY: Record<DocumentVisibility, { label: string; icon: LucideIcon; tone: 'private' | 'shared' | 'public' }> = {
+  private: { label: 'Private', icon: Lock, tone: 'private' },
+  shared: { label: 'Shared externally', icon: ExternalLink, tone: 'shared' },
+  public: { label: 'Public', icon: Eye, tone: 'public' },
+};
+
+const ExpiryCell: React.FC<{ date?: string }> = ({ date }) => {
+  if (!date) return <span className="text-slate-400" aria-label="No expiry">—</span>;
+  const days = daysUntil(date);
+  if (days < 0) return <SokoStatusIndicator label={`Expired ${fmtDate(date)}`} tone="critical" />;
+  if (days <= 30) return (
+    <div className="flex flex-col gap-1">
+      <SokoStatusIndicator label={`In ${days} day${days === 1 ? '' : 's'}`} tone="warning" />
+      <span className="text-[11px] text-slate-400 whitespace-nowrap">{fmtDate(date)}</span>
+    </div>
+  );
+  return <span className="text-sm text-slate-600 tabular-nums whitespace-nowrap">{fmtDate(date)}</span>;
+};
+
+const IconAction: React.FC<{ icon: LucideIcon; label: string; onClick: () => void; danger?: boolean }> = ({ icon: Icon, label, onClick, danger }) => (
+  <button type="button" onClick={onClick} aria-label={label} title={label}
+    className={`${sokoTokens.focus} w-8 h-8 inline-flex items-center justify-center rounded-lg text-slate-500 transition-colors cursor-pointer ${danger ? 'hover:bg-rose-50 hover:text-rose-600' : 'hover:bg-slate-100 hover:text-slate-900'}`}>
+    <Icon className="w-4 h-4" aria-hidden />
+  </button>
+);
+
+const DocNameCell: React.FC<{ doc: CompanyDocument; onPreview: () => void }> = ({ doc, onPreview }) => (
+  <button type="button" onClick={onPreview} title={doc.name} className={`${sokoTokens.focus} flex w-full max-w-[300px] items-center gap-3 text-left min-w-0 rounded-lg cursor-pointer group`}>
+    <span className="w-9 h-9 rounded-xl border border-slate-200 bg-slate-50 text-slate-500 flex items-center justify-center shrink-0">
+      <FileText className="w-4 h-4" aria-hidden />
+    </span>
+    <span className="min-w-0">
+      <span className="block text-sm font-medium text-slate-900 truncate group-hover:text-blue-700">{doc.name}</span>
+      <span className="block text-[11px] text-slate-500 truncate font-mono">{doc.fileName} · {doc.sizeMb.toFixed(1)} MB</span>
+    </span>
+  </button>
+);
+
+interface ActivityEntry { id: string; at: string; actor: string; text: string; tag: string }
+
 // ─── Main Component ─────────────────────────────────────────────────
 export const ContractorDocumentCenter: React.FC<{ sw: SW }> = ({ sw }) => {
-  const [section, setSection] = useState<Section>('own');
+  const [tab, setTab] = useState<DocTab>('internal');
   const [search, setSearch] = useState('');
+  const [category, setCategory] = useState<'all' | DocumentCategory>('all');
+  const [visibility, setVisibility] = useState<'all' | DocumentVisibility>('all');
+  const [complianceFilter, setComplianceFilter] = useState<ComplianceFilter>('queue');
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
+  const [reviewNotes, setReviewNotes] = useState('');
   const [previewDoc, setPreviewDoc] = useState<CompanyDocument | null>(null);
   const [profileSupplierId, setProfileSupplierId] = useState<string | null>(null);
   const [showUpload, setShowUpload] = useState(false);
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [showAddCompliance, setShowAddCompliance] = useState(false);
 
+  const gecName = sw.company.profile.tradingName;
+  const canUpload = sw.can('documents.manage');
+  const canDelete = sw.can('records.delete');
+  const canUpgrade = sw.can('plan.manage') && sw.company.tier !== 'premium';
+
   const ownDocs = sw.store.documents.filter((d) => d.companyId === sw.company.id && !d.archived);
   const used = storageUsedMb(ownDocs);
   const total = storageAllocationMb(sw.company);
   const pct = total > 0 ? Math.round((used / total) * 100) : 0;
   const isFull = pct >= 100;
+  const tierConfig = CONTRACTOR_TIER_CONFIG[sw.company.tier];
 
-  const canUpload = sw.can('documents.manage');
+  const vendorBySupplier = new Map<string, VendorRecord>();
+  sw.store.vendorRecords
+    .filter((v) => v.companyId === sw.company.id && v.supplierCompanyId)
+    .forEach((v) => vendorBySupplier.set(v.supplierCompanyId!, v));
 
-  const vendors = sw.store.vendorRecords.filter((v) => v.companyId === sw.company.id && v.supplierCompanyId);
-  const linkedSupplierIds = vendors.map((v) => v.supplierCompanyId!);
-
-  const allSupplierDocs = sw.store.documents.filter((d) => linkedSupplierIds.includes(d.companyId) && !d.archived);
-  const sharedWithGec = allSupplierDocs.filter((d) => findValidShare(d, sw.company.profile.tradingName));
-
-  const reviewVendorIds = vendors.filter((v) => v.approvalStatus === 'under-review' || v.approvalStatus === 'not-reviewed').map((v) => v.supplierCompanyId!);
-  const awaitingReview = allSupplierDocs.filter((d) => reviewVendorIds.includes(d.companyId) && (d.visibility === 'shared' || d.visibility === 'public'));
-
-  const expiringSupplierDocs = allSupplierDocs.filter((d) => isExpiringSoon(d) && (findValidShare(d, sw.company.profile.tradingName) || d.visibility === 'public'));
+  const supplierDocs = sw.store.documents.filter((d) => vendorBySupplier.has(d.companyId) && !d.archived && isVisibleToCompany(d, gecName));
+  const sharedWithGec = supplierDocs.filter((d) => d.visibility === 'shared');
+  const publicSupplierDocs = supplierDocs.length - sharedWithGec.length;
+  const pendingVendorDocs = supplierDocs.filter((d) => PENDING_APPROVAL.includes(vendorBySupplier.get(d.companyId)!.approvalStatus));
+  const supplierCount = new Set(supplierDocs.map((d) => d.companyId)).size;
 
   const complianceDocs = sw.store.vendorComplianceDocs.filter((d) => d.companyId === sw.company.id);
+  const reviewQueue = complianceDocs.filter((d) => REVIEW_QUEUE.includes(d.status));
 
-  const sharedBySupplier = useMemo(() => {
-    const map = new Map<string, { supplierId: string; supplierName: string; docs: CompanyDocument[] }>();
-    sharedWithGec.forEach((d) => {
-      const vendor = vendors.find((v) => v.supplierCompanyId === d.companyId);
-      const name = vendor?.supplierName ?? 'Unknown';
-      const key = d.companyId;
-      if (!map.has(key)) map.set(key, { supplierId: d.companyId, supplierName: name, docs: [] });
-      map.get(key)!.docs.push(d);
-    });
-    return Array.from(map.values());
-  }, [sharedWithGec, vendors]);
+  const expiringInternal = ownDocs.filter(isExpiringSoon).length;
+  const expiringSupplier = supplierDocs.filter(isExpiringSoon).length;
+  const expiringCompliance = complianceDocs.filter((d) => d.expiryDate && d.status !== 'rejected' && daysUntil(d.expiryDate) <= 30).length;
+  const expiringTotal = expiringInternal + expiringSupplier + expiringCompliance;
 
-  const reviewBySupplier = useMemo(() => {
-    const map = new Map<string, { supplierId: string; supplierName: string; docs: CompanyDocument[] }>();
-    awaitingReview.forEach((d) => {
-      const vendor = vendors.find((v) => v.supplierCompanyId === d.companyId);
-      const name = vendor?.supplierName ?? 'Unknown';
-      const key = d.companyId;
-      if (!map.has(key)) map.set(key, { supplierId: d.companyId, supplierName: name, docs: [] });
-      map.get(key)!.docs.push(d);
-    });
-    return Array.from(map.values());
-  }, [awaitingReview, vendors]);
+  const q = search.trim().toLowerCase();
+  const matches = (...parts: (string | undefined)[]) => !q || parts.filter(Boolean).join(' ').toLowerCase().includes(q);
+  const supplierName = (doc: CompanyDocument) => vendorBySupplier.get(doc.companyId)?.supplierName ?? 'Supplier';
 
-  const expiringBySupplier = useMemo(() => {
-    const map = new Map<string, { supplierId: string; supplierName: string; docs: CompanyDocument[] }>();
-    expiringSupplierDocs.forEach((d) => {
-      const vendor = vendors.find((v) => v.supplierCompanyId === d.companyId);
-      const name = vendor?.supplierName ?? 'Unknown';
-      const key = d.companyId;
-      if (!map.has(key)) map.set(key, { supplierId: d.companyId, supplierName: name, docs: [] });
-      map.get(key)!.docs.push(d);
-    });
-    return Array.from(map.values());
-  }, [expiringSupplierDocs, vendors]);
+  const internalRows = ownDocs.filter((d) =>
+    (category === 'all' || d.category === category) &&
+    (visibility === 'all' || d.visibility === visibility) &&
+    matches(d.name, d.fileName, d.category, d.uploadedBy));
 
-  const complianceByVendor = useMemo(() => {
-    const map = new Map<string, { vendorName: string; docs: VendorComplianceDoc[] }>();
-    complianceDocs.forEach((d) => {
-      if (!map.has(d.vendorId)) map.set(d.vendorId, { vendorName: d.supplierName, docs: [] });
-      map.get(d.vendorId)!.docs.push(d);
-    });
-    return Array.from(map.values());
-  }, [complianceDocs]);
+  const supplierRows = supplierDocs.filter((d) =>
+    (category === 'all' || d.category === category) &&
+    (visibility === 'all' || d.visibility === visibility) &&
+    matches(d.name, d.fileName, d.category, supplierName(d)));
 
-  const ownFiltered = search
-    ? ownDocs.filter((d) => `${d.name} ${d.category} ${d.fileName}`.toLowerCase().includes(search.toLowerCase()))
-    : ownDocs;
+  const complianceRows = complianceDocs.filter((d) =>
+    (complianceFilter === 'all' || (complianceFilter === 'queue' ? REVIEW_QUEUE.includes(d.status) : d.status === complianceFilter)) &&
+    matches(d.documentType, d.supplierName, d.fileName, d.reviewer));
+
+  const activity = useMemo<ActivityEntry[]>(() => {
+    const entries: ActivityEntry[] = [];
+    sw.store.audit
+      .filter((a) => a.companyId === sw.company.id && a.kind === 'document')
+      .forEach((a) => entries.push({ id: `audit-${a.id}`, at: a.at, actor: a.actor, text: a.action, tag: 'Audit log' }));
+    sw.store.documents
+      .filter((d) => d.companyId === sw.company.id)
+      .forEach((d) => {
+        if (d.versions.length === 0) {
+          entries.push({ id: `doc-${d.id}`, at: d.uploadedAt, actor: d.uploadedBy, text: `Uploaded "${d.name}"`, tag: 'Internal' });
+          return;
+        }
+        d.versions.forEach((v) => entries.push({
+          id: `doc-${d.id}-v${v.version}`, at: v.at, actor: v.by, tag: 'Internal',
+          text: v.version === 1 ? `Uploaded "${d.name}"` : `Uploaded version ${v.version} of "${d.name}"`,
+        }));
+      });
+    sw.store.vendorComplianceDocs
+      .filter((d) => d.companyId === sw.company.id)
+      .forEach((d) => {
+        entries.push({ id: `cmp-${d.id}`, at: d.createdAt, actor: d.createdBy, tag: 'Compliance', text: `Started tracking ${d.documentType} for ${d.supplierName}` });
+        if (d.reviewedAt && d.reviewer) {
+          entries.push({ id: `rev-${d.id}`, at: d.reviewedAt, actor: d.reviewer, tag: 'Review', text: `Marked ${d.documentType} from ${d.supplierName} as ${COMPLIANCE_STATUS_META[d.status].label}` });
+        }
+      });
+    return entries.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+  }, [sw.store.audit, sw.store.documents, sw.store.vendorComplianceDocs, sw.company.id]);
+
+  const activityRows = activity.filter((e) => matches(e.text, e.actor, e.tag));
+
+  const changeTab = (next: DocTab) => {
+    setTab(next);
+    setCategory('all');
+    setVisibility('all');
+    setReviewingId(null);
+  };
+
+  const openUpload = () => {
+    if (isFull) { sw.notify('Storage is full. Existing documents remain available; upgrade to Premium to upload more.'); return; }
+    setShowUpload(true);
+  };
+
+  const requestDownload = (doc: CompanyDocument) =>
+    sw.notify(`Secure download of "${doc.name}" requires backend file storage, which is not connected in this prototype.`);
+
+  const startReview = (doc: VendorComplianceDoc) => {
+    setReviewingId(doc.id);
+    setReviewNotes(doc.reviewNotes ?? '');
+  };
+
+  const submitReview = (doc: VendorComplianceDoc, status: VendorDocStatus) => {
+    const res = reviewVendorComplianceDoc(sw.ctx, doc.id, status, reviewNotes);
+    if (sw.run(res, `Reviewed "${doc.documentType}" from ${doc.supplierName}: ${COMPLIANCE_STATUS_META[status].label}`)) setReviewingId(null);
+  };
+
+  const storageTone = pct >= 95 ? 'red' : pct >= 80 ? 'amber' : 'blue';
+  const resultCount = tab === 'internal' ? internalRows.length : tab === 'shared' ? supplierRows.length : tab === 'compliance' ? complianceRows.length : activityRows.length;
+
+  const complianceFilters: { id: ComplianceFilter; label: string; count: number }[] = [
+    { id: 'queue', label: 'Review queue', count: reviewQueue.length },
+    { id: 'missing', label: 'Missing', count: complianceDocs.filter((d) => d.status === 'missing').length },
+    { id: 'accepted', label: 'Accepted', count: complianceDocs.filter((d) => d.status === 'accepted').length },
+    { id: 'rejected', label: 'Rejected', count: complianceDocs.filter((d) => d.status === 'rejected').length },
+    { id: 'all', label: 'All', count: complianceDocs.length },
+  ];
 
   return (
-    <div>
-      <PageHeader
-        eyebrow="Documents · Contractor"
-        title="Document Center"
-        subtitle="Internal company documents, vendor compliance tracking, shared supplier documents and review queue."
-        actions={
-          canUpload && (
-            <button type="button" onClick={() => isFull ? sw.notify('Storage is full. Upgrade to Premium to upload more documents.') : setShowUpload(true)} className={btnPrimary}>
-              <Upload className="w-4 h-4" /> Upload Document
+    <div className="flex flex-col gap-6">
+      <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div className="min-w-0">
+          <p className={sokoTokens.eyebrow}>Contractor workspace · Documents</p>
+          <h1 className="mt-2 text-2xl md:text-[28px] font-semibold tracking-tight text-slate-900 text-balance">Documents &amp; Compliance</h1>
+          <p className="mt-1.5 max-w-2xl text-sm text-slate-500 leading-relaxed text-pretty">
+            Internal records owned by {gecName}, documents suppliers have made available to you, and your vendor compliance review queue.
+          </p>
+        </div>
+        {canUpload && (
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button type="button" onClick={() => setShowAddCompliance(true)} className={`${btnSecondary} text-sm`}>
+              <Plus className="w-4 h-4" aria-hidden /> Track compliance document
             </button>
-          )
-        }
-      />
-
-      <StorageMeter sw={sw} onUpgrade={() => setShowUpgrade(true)} />
-
-      {/* KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 mb-6">
-        <KpiCard label="Internal Documents" value={ownDocs.length} />
-        <KpiCard label="Compliance Tracked" value={complianceDocs.length} />
-        <KpiCard label="Shared with GEC" value={sharedWithGec.length} />
-        <KpiCard label="Awaiting Review" value={awaitingReview.length} />
-        <KpiCard label="Expiring Soon" value={expiringSupplierDocs.length} />
-        <KpiCard label="Storage Used" value={`${pct}%`} />
-      </div>
-
-      {/* Section Tabs */}
-      <div className="mb-4">
-        <SubTabs
-          tabs={[
-            { id: 'own' as Section, label: 'Internal Documents', count: ownDocs.length },
-            { id: 'compliance' as Section, label: 'Vendor Compliance', count: complianceDocs.length },
-            { id: 'shared' as Section, label: 'Shared with GEC', count: sharedWithGec.length },
-            { id: 'review' as Section, label: 'Awaiting Review', count: awaitingReview.length },
-            { id: 'expiring' as Section, label: 'Expiring Compliance', count: expiringSupplierDocs.length },
-          ]}
-          value={section}
-          onChange={setSection}
-        />
-      </div>
-
-      {/* ─── Internal Documents ─── */}
-      {section === 'own' && (
-        <div>
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <p className="text-sm text-slate-600">Documents owned by {sw.company.profile.tradingName}. These are separate from any supplier documents.</p>
-            <div className="relative w-56">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search…" className={`${inputCls} pl-9`} />
-            </div>
+            <button type="button" onClick={openUpload} aria-disabled={isFull} className={`${btnPrimary} text-sm ${isFull ? 'opacity-60' : ''}`}>
+              <Upload className="w-4 h-4" aria-hidden /> Upload document
+            </button>
           </div>
-          {ownFiltered.length === 0 ? (
-            <EmptyState
-              icon={<FileText className="w-5 h-5" />}
-              title="No internal documents"
-              text="Upload your company's own documents — contracts, policies, project records and more."
-              action={canUpload && !isFull ? <button type="button" onClick={() => setShowUpload(true)} className={btnPrimary}><Upload className="w-4 h-4" /> Upload Document</button> : undefined}
-            />
-          ) : (
-            <ul className="rounded-2xl border border-slate-200 bg-white divide-y divide-slate-100">
-              {ownFiltered.map((d) => (
-                <li key={d.id}>
-                  <button type="button" onClick={() => setPreviewDoc(d)} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-slate-50 cursor-pointer">
-                    <span className="w-9 h-9 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center shrink-0"><FileText className="w-4 h-4" /></span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-slate-900 truncate">{d.name}</p>
-                      <p className="text-xs text-slate-500 truncate">{d.category} · {d.sizeMb.toFixed(1)} MB · Uploaded {fmtDate(d.uploadedAt)}{d.expiry ? ` · Expires ${fmtDate(d.expiry)}` : ''}</p>
-                    </div>
-                    {d.expiry && isExpiringSoon(d) && <span className="text-xs text-amber-700 font-medium">Expiring</span>}
-                  </button>
-                </li>
-              ))}
-            </ul>
+        )}
+      </header>
+
+      <section aria-label="Document overview" className={`${sokoCard} grid grid-cols-2 lg:grid-cols-5 gap-px bg-slate-200/80 overflow-hidden`}>
+        <div className="bg-white">
+          <SokoKpiCell label="Internal documents" value={ownDocs.length} detail={`Owned by ${gecName}`} onClick={() => changeTab('internal')} />
+        </div>
+        <div className="bg-white">
+          <SokoKpiCell label={`Shared with ${gecName}`} value={sharedWithGec.length}
+            detail={`${publicSupplierDocs} public · ${supplierCount} supplier${supplierCount === 1 ? '' : 's'}`}
+            hint="Supplier documents explicitly shared with you and still within their access window. Supplier-private documents are never shown."
+            onClick={() => changeTab('shared')} />
+        </div>
+        <div className="bg-white">
+          <SokoKpiCell label="Awaiting review" value={reviewQueue.length}
+            detail={`${pendingVendorDocs.length} supplier doc${pendingVendorDocs.length === 1 ? '' : 's'} from vendors pending approval`}
+            hint="Compliance documents with Submitted or Under Review status in your vendor compliance tracker."
+            onClick={() => { setComplianceFilter('queue'); changeTab('compliance'); }} />
+        </div>
+        <div className="bg-white">
+          <SokoKpiCell label="Expiring soon" value={expiringTotal}
+            detail={`${expiringInternal} internal · ${expiringSupplier} supplier · ${expiringCompliance} tracked`}
+            hint="Documents expiring within 30 days, including any already expired."
+            onClick={() => { setComplianceFilter('all'); changeTab('compliance'); }} />
+        </div>
+        <div className="bg-white col-span-2 lg:col-span-1">
+          <SokoKpiCell label="Storage usage" value={`${pct}%`}
+            detail={`${used.toFixed(1)} of ${total.toLocaleString()} MB · ${tierConfig.label}`}
+            hint={`Only documents owned by ${gecName} count toward storage. Supplier documents shared with you stay in the supplier's storage.`}
+            visual={<SokoProgress value={total > 0 ? used / total : 0} tone={storageTone} className="w-full" />}
+            onClick={canUpgrade ? () => setShowUpgrade(true) : undefined} />
+        </div>
+      </section>
+
+      {pct >= 80 && (
+        <div role="status" className={`flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between ${sokoTokens.radius.control} border px-4 py-3 ${pct >= 95 ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
+          <p className="flex items-start gap-2 text-sm">
+            <FileWarning className="w-4 h-4 mt-0.5 shrink-0" aria-hidden />
+            {isFull
+              ? 'Storage is full. New uploads are blocked; existing documents can still be viewed.'
+              : `Storage is at ${pct}%. New uploads may be blocked when it reaches 100%.`}
+          </p>
+          {canUpgrade && (
+            <button type="button" onClick={() => setShowUpgrade(true)} className={`${btnPrimary} text-xs shrink-0`}>
+              <Crown className="w-3.5 h-3.5" aria-hidden /> Compare plans
+            </button>
           )}
         </div>
       )}
 
-      {/* ─── Vendor Compliance ─── */}
-      {section === 'compliance' && (
-        <div>
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <div>
-              <p className="text-sm text-slate-600">Track required supplier documents from your vendor register.</p>
-              <p className="text-xs text-slate-400 mt-0.5">Accepting a document here is GEC's internal review — it does not constitute SOKO global supplier verification.</p>
-            </div>
-            {canUpload && (
-              <button type="button" onClick={() => setShowAddCompliance(true)} className={`${btnSecondary} text-sm whitespace-nowrap`}>
-                <Plus className="w-4 h-4" /> Add Compliance Document
-              </button>
+      <section className={`${sokoCard} overflow-hidden`}>
+        <div className="px-5 pt-4 overflow-x-auto">
+          <SokoTabs<DocTab> variant="underline" label="Document sections" active={tab} onChange={changeTab}
+            tabs={[
+              { id: 'internal', label: 'Internal documents', count: ownDocs.length },
+              { id: 'shared', label: 'Supplier shared documents', count: supplierDocs.length },
+              { id: 'compliance', label: 'Compliance reviews', count: complianceDocs.length },
+              { id: 'activity', label: 'Document activity', count: activity.length },
+            ]} />
+        </div>
+
+        <div className="flex flex-col gap-3 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <label className="relative sm:w-72">
+              <span className="sr-only">Search documents</span>
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" aria-hidden />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} type="search"
+                placeholder={tab === 'activity' ? 'Search activity' : tab === 'compliance' ? 'Search type, supplier, reviewer' : 'Search name, file, supplier'}
+                className={`${controlCls} w-full pl-9`} />
+            </label>
+            {(tab === 'internal' || tab === 'shared') && (
+              <>
+                <label>
+                  <span className="sr-only">Category</span>
+                  <select value={category} onChange={(e) => setCategory(e.target.value as 'all' | DocumentCategory)} className={`${controlCls} w-full sm:w-52`}>
+                    <option value="all">All categories</option>
+                    {DOCUMENT_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span className="sr-only">Visibility</span>
+                  <select value={visibility} onChange={(e) => setVisibility(e.target.value as 'all' | DocumentVisibility)} className={`${controlCls} w-full sm:w-48`}>
+                    <option value="all">All visibility</option>
+                    {tab === 'internal' && <option value="private">Private</option>}
+                    <option value="shared">{tab === 'internal' ? 'Shared externally' : `Shared with ${gecName}`}</option>
+                    <option value="public">Public</option>
+                  </select>
+                </label>
+              </>
             )}
           </div>
-
-          {/* Compliance status summary */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-4">
-            {(['submitted', 'missing', 'under-review', 'accepted', 'rejected'] as VendorDocStatus[]).map((s) => {
-              const count = complianceDocs.filter((d) => d.status === s).length;
-              const meta = COMPLIANCE_STATUS_META[s];
-              return (
-                <div key={s} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-center">
-                  <p className="text-lg font-bold text-slate-900 tabular-nums">{count}</p>
-                  <p className="text-[10px] text-slate-500">{meta.label}</p>
-                </div>
-              );
-            })}
-          </div>
-
-          {complianceByVendor.length === 0 ? (
-            <EmptyState icon={<ShieldCheck className="w-5 h-5" />} title="No compliance documents tracked" text="Add compliance documents from your vendor register to track submissions, reviews and expiries." />
-          ) : (
-            <div className="space-y-4">
-              {complianceByVendor.map((group) => (
-                <div key={group.vendorName}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <Building2 className="w-4 h-4 text-slate-400" />
-                    <h3 className="text-sm font-semibold text-slate-900">{group.vendorName}</h3>
-                    <span className="text-xs text-slate-400">({group.docs.length} document{group.docs.length > 1 ? 's' : ''})</span>
-                  </div>
-                  <div className="space-y-2">
-                    {group.docs.map((d) => <ComplianceRow key={d.id} doc={d} sw={sw} />)}
-                  </div>
-                </div>
-              ))}
+          {tab === 'compliance' ? (
+            <div role="group" aria-label="Compliance status" className="flex flex-wrap gap-1.5">
+              {complianceFilters.map((f) => {
+                const on = complianceFilter === f.id;
+                return (
+                  <button key={f.id} type="button" aria-pressed={on} onClick={() => { setComplianceFilter(f.id); setReviewingId(null); }}
+                    className={`${sokoTokens.focus} h-8 px-3 rounded-full border text-xs font-medium transition-colors cursor-pointer ${on ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'}`}>
+                    {f.label} <span className={`ml-0.5 tabular-nums ${on ? 'text-slate-300' : 'text-slate-400'}`}>{f.count}</span>
+                  </button>
+                );
+              })}
             </div>
+          ) : (
+            <p className="text-xs text-slate-500 tabular-nums" aria-live="polite">{resultCount} result{resultCount === 1 ? '' : 's'}</p>
           )}
         </div>
-      )}
 
-      {/* ─── Shared with GEC ─── */}
-      {section === 'shared' && (
-        <div>
-          <div className="mb-3 rounded-xl bg-blue-50 border border-blue-200 px-4 py-3">
-            <p className="text-sm text-blue-900 font-semibold">Documents suppliers have explicitly shared with {sw.company.profile.tradingName}</p>
-            <p className="text-xs text-blue-700 mt-0.5">Access is granted by the supplier and can be revoked at any time. These documents do not consume GEC's storage quota.</p>
+        {tab === 'shared' && (
+          <p className="mx-5 mb-4 flex items-start gap-2 rounded-xl bg-slate-50 px-3 py-2.5 text-xs text-slate-600 leading-relaxed">
+            <Info className="w-3.5 h-3.5 mt-0.5 shrink-0 text-slate-400" aria-hidden />
+            Each supplier controls access and can revoke it at any time. Documents stay in the supplier&apos;s storage and are not copied into {gecName}&apos;s workspace.
+          </p>
+        )}
+        {tab === 'compliance' && (
+          <p className="mx-5 mb-4 flex items-start gap-2 rounded-xl bg-slate-50 px-3 py-2.5 text-xs text-slate-600 leading-relaxed">
+            <ShieldCheck className="w-3.5 h-3.5 mt-0.5 shrink-0 text-slate-400" aria-hidden />
+            Compliance reviews are {gecName}&apos;s internal process. Accepting a document here does not grant SOKO supplier verification.
+          </p>
+        )}
+
+        {tab === 'internal' && (
+          <div className="overflow-x-auto border-t border-slate-200/80">
+            {internalRows.length === 0 ? (
+              <SokoEmptyState icon={FileText} title={ownDocs.length === 0 ? 'No internal documents yet' : 'No documents match these filters'}
+                description={ownDocs.length === 0 ? 'Upload contracts, policies and project records owned by your company.' : 'Try a different search, category or visibility.'}
+                action={ownDocs.length === 0 && canUpload && !isFull ? <button type="button" onClick={openUpload} className={`${btnPrimary} text-sm`}><Upload className="w-4 h-4" aria-hidden /> Upload document</button> : undefined} />
+            ) : (
+              <table className="w-full min-w-[880px]">
+                <thead className="bg-slate-50/70">
+                  <tr>
+                    <th scope="col" className={thCls}>Document</th>
+                    <th scope="col" className={thCls}>Owner</th>
+                    <th scope="col" className={thCls}>Category</th>
+                    <th scope="col" className={thCls}>Visibility</th>
+                    <th scope="col" className={thCls}>Review status</th>
+                    <th scope="col" className={thCls}>Expiry</th>
+                    <th scope="col" className={`${thCls} text-right`}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {internalRows.map((d) => {
+                    const vis = INTERNAL_VISIBILITY[d.visibility];
+                    const shareCount = d.shares.filter((s) => new Date(s.until) > new Date()).length;
+                    return (
+                      <tr key={d.id} className="hover:bg-slate-50/60">
+                        <td className={`${tdCls} max-w-xs`}><DocNameCell doc={d} onPreview={() => setPreviewDoc(d)} /></td>
+                        <td className={`${tdCls} text-sm text-slate-700 whitespace-nowrap`}>{gecName}</td>
+                        <td className={`${tdCls} text-sm text-slate-600 whitespace-nowrap`}>{d.category}</td>
+                        <td className={tdCls}>
+                          <VisibilityBadge icon={vis.icon} label={vis.label} tone={vis.tone}
+                            note={d.visibility === 'shared' ? `${shareCount} active share${shareCount === 1 ? '' : 's'}` : d.visibility === 'private' ? ACCESS_META[d.access].label : undefined} />
+                        </td>
+                        <td className={`${tdCls} text-xs text-slate-400 whitespace-nowrap`}>Not required</td>
+                        <td className={tdCls}><ExpiryCell date={d.expiry} /></td>
+                        <td className={`${tdCls} text-right whitespace-nowrap`}>
+                          <IconAction icon={Eye} label={`Preview ${d.name}`} onClick={() => setPreviewDoc(d)} />
+                          <IconAction icon={Download} label={`Download ${d.name}`} onClick={() => requestDownload(d)} />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
           </div>
-          {sharedBySupplier.length === 0 ? (
-            <EmptyState icon={<ExternalLink className="w-5 h-5" />} title="No shared documents" text="When a supplier shares a document with your company, it will appear here." />
-          ) : (
-            <div className="space-y-4">
-              {sharedBySupplier.map((group) => (
-                <div key={group.supplierId}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <Building2 className="w-4 h-4 text-slate-400" />
-                    <h3 className="text-sm font-semibold text-slate-900">{group.supplierName}</h3>
-                    <span className="text-xs text-slate-400">({group.docs.length} document{group.docs.length > 1 ? 's' : ''})</span>
-                    <button type="button" onClick={() => setProfileSupplierId(group.supplierId)} className={`${btnGhost} text-xs ml-auto`}>
-                      <ExternalLink className="w-3.5 h-3.5" />View Profile
-                    </button>
-                  </div>
-                  <div className="space-y-2">
-                    {group.docs.map((d) => (
-                      <SharedDocRow key={d.id} doc={d} sw={sw} supplierName={group.supplierName} onView={() => setPreviewDoc(d)} />
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+        )}
 
-      {/* ─── Awaiting Review ─── */}
-      {section === 'review' && (
-        <div>
-          <div className="mb-3 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
-            <p className="text-sm text-amber-900 font-semibold flex items-center gap-2"><AlertTriangle className="w-4 h-4" />Documents from vendors pending approval</p>
-            <p className="text-xs text-amber-700 mt-0.5">These documents are from suppliers whose vendor approval status is "Under Review" or "Not Reviewed". Review them as part of your vendor onboarding process.</p>
+        {tab === 'shared' && (
+          <div className="overflow-x-auto border-t border-slate-200/80">
+            {supplierRows.length === 0 ? (
+              <SokoEmptyState icon={ExternalLink} title={supplierDocs.length === 0 ? 'No supplier documents available' : 'No documents match these filters'}
+                description={supplierDocs.length === 0 ? `When a supplier in your vendor register shares or publishes a document, it appears here.` : 'Try a different search, category or visibility.'} />
+            ) : (
+              <table className="w-full min-w-[960px]">
+                <thead className="bg-slate-50/70">
+                  <tr>
+                    <th scope="col" className={thCls}>Document</th>
+                    <th scope="col" className={thCls}>Supplier</th>
+                    <th scope="col" className={thCls}>Category</th>
+                    <th scope="col" className={thCls}>Visibility</th>
+                    <th scope="col" className={thCls}>Review status</th>
+                    <th scope="col" className={thCls}>Expiry</th>
+                    <th scope="col" className={`${thCls} text-right`}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {supplierRows.map((d) => {
+                    const vendor = vendorBySupplier.get(d.companyId)!;
+                    const review = VENDOR_REVIEW_META[vendor.approvalStatus];
+                    const share = d.visibility === 'shared' ? findValidShare(d, gecName) : undefined;
+                    return (
+                      <tr key={d.id} className="hover:bg-slate-50/60">
+                        <td className={`${tdCls} max-w-xs`}><DocNameCell doc={d} onPreview={() => setPreviewDoc(d)} /></td>
+                        <td className={tdCls}>
+                          <button type="button" onClick={() => setProfileSupplierId(d.companyId)}
+                            className={`${sokoTokens.focus} text-sm font-medium text-slate-800 hover:text-blue-700 rounded whitespace-nowrap cursor-pointer`}>
+                            {vendor.supplierName}
+                          </button>
+                          <p className="text-[11px] text-slate-400 whitespace-nowrap">{vendor.tradeCategory}</p>
+                        </td>
+                        <td className={`${tdCls} text-sm text-slate-600 whitespace-nowrap`}>{d.category}</td>
+                        <td className={tdCls}>
+                          {share
+                            ? <VisibilityBadge icon={ExternalLink} label={`Shared with ${gecName}`} tone="shared" note={`Until ${fmtDate(share.until)}`} />
+                            : <VisibilityBadge icon={Eye} label="Public" tone="public" note="All SOKO users" />}
+                        </td>
+                        <td className={tdCls}><SokoStatusIndicator label={review.label} tone={review.tone} /></td>
+                        <td className={tdCls}><ExpiryCell date={d.expiry} /></td>
+                        <td className={`${tdCls} text-right whitespace-nowrap`}>
+                          <IconAction icon={Eye} label={`Preview ${d.name}`} onClick={() => setPreviewDoc(d)} />
+                          <IconAction icon={Download} label={`Download ${d.name}`} onClick={() => requestDownload(d)} />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
           </div>
-          {reviewBySupplier.length === 0 ? (
-            <EmptyState icon={<ShieldCheck className="w-5 h-5" />} title="Nothing to review" text="Documents from vendors pending approval will appear here." />
-          ) : (
-            <div className="space-y-4">
-              {reviewBySupplier.map((group) => (
-                <div key={group.supplierId}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <AlertTriangle className="w-4 h-4 text-amber-500" />
-                    <h3 className="text-sm font-semibold text-slate-900">{group.supplierName}</h3>
-                    <button type="button" onClick={() => setProfileSupplierId(group.supplierId)} className={`${btnGhost} text-xs ml-auto`}>
-                      <ExternalLink className="w-3.5 h-3.5" />View Profile
-                    </button>
-                  </div>
-                  <div className="space-y-2">
-                    {group.docs.map((d) => (
-                      <SharedDocRow key={d.id} doc={d} sw={sw} supplierName={group.supplierName} onView={() => setPreviewDoc(d)} />
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+        )}
 
-      {/* ─── Expiring Compliance ─── */}
-      {section === 'expiring' && (
-        <div>
-          <div className="mb-3 rounded-xl bg-rose-50 border border-rose-200 px-4 py-3">
-            <p className="text-sm text-rose-900 font-semibold flex items-center gap-2"><Clock className="w-4 h-4" />Supplier compliance documents expiring within 30 days</p>
-            <p className="text-xs text-rose-700 mt-0.5">Track which supplier certifications, licenses and compliance documents are about to expire. Request renewals directly from the supplier.</p>
+        {tab === 'compliance' && (
+          <div className="overflow-x-auto border-t border-slate-200/80">
+            {complianceRows.length === 0 ? (
+              <SokoEmptyState icon={ShieldCheck}
+                title={complianceDocs.length === 0 ? 'No compliance documents tracked' : complianceFilter === 'queue' ? 'Review queue is clear' : 'Nothing in this status'}
+                description={complianceDocs.length === 0 ? 'Track required supplier documents from your vendor register to manage submissions, reviews and expiries.' : undefined}
+                action={complianceDocs.length === 0 && canUpload ? <button type="button" onClick={() => setShowAddCompliance(true)} className={`${btnPrimary} text-sm`}><Plus className="w-4 h-4" aria-hidden /> Track compliance document</button> : undefined} />
+            ) : (
+              <table className="w-full min-w-[960px]">
+                <thead className="bg-slate-50/70">
+                  <tr>
+                    <th scope="col" className={thCls}>Document</th>
+                    <th scope="col" className={thCls}>Supplier</th>
+                    <th scope="col" className={thCls}>Review status</th>
+                    <th scope="col" className={thCls}>Issued</th>
+                    <th scope="col" className={thCls}>Expiry</th>
+                    <th scope="col" className={thCls}>Reviewer</th>
+                    <th scope="col" className={`${thCls} text-right`}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {complianceRows.map((d) => {
+                    const meta = COMPLIANCE_STATUS_META[d.status];
+                    const reviewable = canUpload && d.status !== 'accepted' && d.status !== 'rejected';
+                    const open = reviewingId === d.id;
+                    return (
+                      <React.Fragment key={d.id}>
+                        <tr className={open ? 'bg-blue-50/40' : 'hover:bg-slate-50/60'}>
+                          <td className={tdCls}>
+                            <div className="flex items-center gap-3 min-w-0">
+                              <span className="w-9 h-9 rounded-xl border border-slate-200 bg-slate-50 text-slate-500 flex items-center justify-center shrink-0">
+                                <ShieldCheck className="w-4 h-4" aria-hidden />
+                              </span>
+                              <span className="min-w-0">
+                                <span className="block text-sm font-medium text-slate-900 truncate">{d.documentType}</span>
+                                <span className="block text-[11px] text-slate-500 truncate font-mono">{d.fileName ?? 'No file attached'}</span>
+                              </span>
+                            </div>
+                          </td>
+                          <td className={`${tdCls} text-sm text-slate-700 whitespace-nowrap`}>{d.supplierName}</td>
+                          <td className={tdCls}><SokoStatusIndicator label={meta.label} tone={meta.tone} /></td>
+                          <td className={`${tdCls} text-sm text-slate-600 tabular-nums whitespace-nowrap`}>{d.issueDate ? fmtDate(d.issueDate) : <span className="text-slate-400">—</span>}</td>
+                          <td className={tdCls}><ExpiryCell date={d.expiryDate} /></td>
+                          <td className={tdCls}>
+                            {d.reviewer ? (
+                              <>
+                                <p className="text-sm text-slate-700 whitespace-nowrap">{d.reviewer}</p>
+                                {d.reviewedAt && <p className="text-[11px] text-slate-400 whitespace-nowrap">{fmtDate(d.reviewedAt)}</p>}
+                              </>
+                            ) : <span className="text-xs text-slate-400">Unassigned</span>}
+                          </td>
+                          <td className={`${tdCls} text-right whitespace-nowrap`}>
+                            {reviewable && !open && (
+                              <button type="button" onClick={() => startReview(d)} className={`${btnSecondary} text-xs`}>Review</button>
+                            )}
+                            {canDelete && (
+                              <IconAction icon={Trash2} label={`Stop tracking ${d.documentType}`} danger
+                                onClick={() => sw.run(deleteVendorComplianceDoc(sw.ctx, d.id), 'Removed compliance document')} />
+                            )}
+                            {!reviewable && !canDelete && <span className="text-xs text-slate-400">—</span>}
+                          </td>
+                        </tr>
+                        {open && (
+                          <tr className="bg-blue-50/40">
+                            <td colSpan={7} className="px-4 pb-4">
+                              <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4">
+                                <label className="flex flex-col gap-1.5">
+                                  <span className="text-xs font-medium text-slate-700">Review notes for {d.documentType} · {d.supplierName}</span>
+                                  <textarea value={reviewNotes} onChange={(e) => setReviewNotes(e.target.value)} rows={2} placeholder="Optional notes recorded with this decision" className={inputCls} />
+                                </label>
+                                {d.reviewNotes && <p className="text-[11px] text-slate-500">Previous note: {d.reviewNotes}</p>}
+                                <div className="flex flex-wrap gap-2">
+                                  <button type="button" onClick={() => submitReview(d, 'accepted')} className={`${btnPrimary} text-xs`}><CheckCircle2 className="w-3.5 h-3.5" aria-hidden /> Accept</button>
+                                  <button type="button" onClick={() => submitReview(d, 'rejected')} className={`${btnSecondary} text-xs`}>Reject</button>
+                                  {d.status !== 'under-review' && (
+                                    <button type="button" onClick={() => submitReview(d, 'under-review')} className={`${btnSecondary} text-xs`}>Mark under review</button>
+                                  )}
+                                  <button type="button" onClick={() => setReviewingId(null)} className={`${btnGhost} text-xs`}>
+                                    <X className="w-3.5 h-3.5" aria-hidden /> Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
           </div>
-          {expiringBySupplier.length === 0 ? (
-            <EmptyState icon={<ShieldCheck className="w-5 h-5" />} title="No expiring documents" text="Supplier compliance documents expiring within 30 days will appear here." />
-          ) : (
-            <div className="space-y-4">
-              {expiringBySupplier.map((group) => (
-                <div key={group.supplierId}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <Clock className="w-4 h-4 text-rose-500" />
-                    <h3 className="text-sm font-semibold text-slate-900">{group.supplierName}</h3>
-                    <button type="button" onClick={() => setProfileSupplierId(group.supplierId)} className={`${btnGhost} text-xs ml-auto`}>
-                      <ExternalLink className="w-3.5 h-3.5" />View Profile
-                    </button>
-                  </div>
-                  <div className="space-y-2">
-                    {group.docs.map((d) => (
-                      <SharedDocRow key={d.id} doc={d} sw={sw} supplierName={group.supplierName} onView={() => setPreviewDoc(d)} />
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        )}
+
+        {tab === 'activity' && (
+          <div className="border-t border-slate-200/80 px-5 py-4">
+            {activityRows.length === 0 ? (
+              <SokoEmptyState icon={History} title={activity.length === 0 ? 'No document activity yet' : 'No activity matches this search'}
+                description={activity.length === 0 ? 'Uploads, new versions and compliance reviews will be listed here.' : undefined} />
+            ) : (
+              <ol className="max-w-3xl">
+                {activityRows.map((e, i) => (
+                  <SokoTimelineItem key={e.id} actor={e.actor} tag={e.tag} timestamp={fmtDate(e.at)} last={i === activityRows.length - 1}>
+                    <span className="font-medium text-slate-900">{e.actor}</span> {e.text.charAt(0).toLowerCase() + e.text.slice(1)}
+                  </SokoTimelineItem>
+                ))}
+              </ol>
+            )}
+          </div>
+        )}
+      </section>
+
+      {expiringTotal > 0 && tab !== 'compliance' && (
+        <p className="flex items-center gap-2 text-xs text-slate-500">
+          <Clock className="w-3.5 h-3.5 text-amber-500" aria-hidden />
+          {expiringTotal} document{expiringTotal === 1 ? '' : 's'} expire within 30 days.
+        </p>
       )}
 
-      <div className="mt-4">
-        <DemoNote>Document sharing and access control are prototype demonstrations using centralized sample records. Real file storage, secure download links and server-enforced access revocation require backend integration with access-controlled storage (e.g. Supabase Storage with RLS policies). Company documents are isolated between workspaces — ABC Waterproofing cannot access GEC's internal files.</DemoNote>
-      </div>
+      <DemoNote>
+        File selection, previews and downloads are simulated. Secure storage, signed download links and server-enforced access revocation require backend integration. Company documents stay isolated between workspaces: suppliers cannot see {gecName}&apos;s internal files.
+      </DemoNote>
 
       {showUpload && <UploadDialog sw={sw} onClose={() => setShowUpload(false)} />}
       {showUpgrade && <UpgradeModal sw={sw} onClose={() => setShowUpgrade(false)} />}
       {showAddCompliance && <AddComplianceDialog sw={sw} onClose={() => setShowAddCompliance(false)} />}
-      {previewDoc && <DocPreviewDialog doc={previewDoc} onClose={() => setPreviewDoc(null)} />}
+      {previewDoc && <DocPreviewDialog doc={previewDoc} onClose={() => setPreviewDoc(null)} onDownload={() => requestDownload(previewDoc)} />}
       {profileSupplierId && <SupplierProfileModal supplierId={profileSupplierId} onClose={() => setProfileSupplierId(null)} />}
     </div>
   );
 };
+
