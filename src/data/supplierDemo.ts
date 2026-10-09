@@ -1,7 +1,7 @@
 import { BuyerSupplier, IMG } from './buyerSuppliers';
 import { CompanyContact, CompanyDocument, CompanyKind, CompanyMembership, CompanyProduct, CompanyRecord, DocumentCategory, SupplierStore, AuditEntry, SupplierVisit, VisitFollowUp, VisitTask, VendorRecord, VendorNote, DocumentVisibility } from './supplierTypes';
 
-export const SUPPLIER_STORE_VERSION = 8;
+export const SUPPLIER_STORE_VERSION = 9;
 export const DEMO_USER = { id: 'usr_me_01', name: 'Mohamed Sadiq', email: 'mohamed.sadiq@soko.demo', title: 'Director of Strategic Sourcing' };
 
 const day = 86400000;
@@ -244,6 +244,14 @@ export const buildSupplierDemo = (directory: BuyerSupplier[]): SupplierStore => 
   return {
     version: SUPPLIER_STORE_VERSION,
     previewRole: {},
+    savedProducts: [
+      { id: 'sp_gec_1', companyId: GEC, productId: 'prd_sikaproof_a_plus', savedBy: 'Mohamed Sadiq', savedById: 'usr_me_01', at: ago(8) },
+      { id: 'sp_gec_2', companyId: GEC, productId: 'prd_es_b500b', savedBy: 'Hassan Qureshi', savedById: 'usr_hassan_q', at: ago(5) },
+    ],
+    recentlyViewedProducts: [
+      { id: 'rv_gec_1', companyId: GEC, productId: 'prd_abc_cementitious', viewedBy: 'Mohamed Sadiq', viewedById: 'usr_me_01', at: ago(3) },
+      { id: 'rv_gec_2', companyId: GEC, productId: 'prd_es_heavy', viewedBy: 'Mohamed Sadiq', viewedById: 'usr_me_01', at: ago(1) },
+    ],
     companies: [companyFromDirectory(abc, 'free'), companyFromDirectory(es, 'premium'), gec],
     memberships: [
       // ABC Waterproofing — Ahmed Khan is admin

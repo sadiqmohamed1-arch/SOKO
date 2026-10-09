@@ -1,5 +1,5 @@
 import { companyById, documentsOf, findDuplicateCompanies, membersOf, storageAllocationMb, storageUsedMb } from './supplierStore';
-import { can, CompanyContact, CompanyDocument, CompanyMembership, CompanyProduct, CompanyProfile, CompanyRecord, DocumentAccessLevel, DocumentCategory, Permission, SessionUser, SupplierResult, CompanyRole, SupplierStore, SupplierTier, TIER_CONFIG, AuditEntry, roleMeta, SupplierVisit, VisitFollowUp, VisitTask, VendorRecord, VendorApprovalStatus, VendorNote } from './supplierTypes';
+import { can, CompanyContact, CompanyDocument, CompanyMembership, CompanyProduct, CompanyProfile, CompanyRecord, DocumentAccessLevel, DocumentCategory, Permission, SessionUser, SupplierResult, CompanyRole, SupplierStore, SupplierTier, TIER_CONFIG, AuditEntry, roleMeta, SupplierVisit, VisitFollowUp, VisitTask, VendorRecord, VendorApprovalStatus, VendorNote, SavedProduct, RecentlyViewedProduct } from './supplierTypes';
 
 export interface SupplierCtx {
   store: SupplierStore;
@@ -470,6 +470,28 @@ export const setTier = (ctx: SupplierCtx, tier: SupplierTier): SupplierResult<Co
 };
 
 export const setPreviewRole = (store: SupplierStore, companyId: string, role?: CompanyRole): SupplierStore => ({ ...store, previewRole: { ...store.previewRole, [companyId]: role } });
+
+export const toggleSavedProduct = (ctx: SupplierCtx, productId: string): SupplierResult => {
+  const product = ctx.store.products.find((p) => p.id === productId && p.status === 'active');
+  if (!product) return fail('Product not found or not published.');
+  const existing = ctx.store.savedProducts.find((s) => s.companyId === ctx.companyId && s.productId === productId);
+  if (existing) {
+    const savedProducts = ctx.store.savedProducts.filter((s) => s.id !== existing.id);
+    return done(touch(ctx.store, ctx, `Removed saved product "${product.name}"`, 'product', { savedProducts }), undefined);
+  }
+  const entry: SavedProduct = { id: uid('sp'), companyId: ctx.companyId, productId, savedBy: ctx.user.name, savedById: ctx.user.id, at: now() };
+  return done(touch(ctx.store, ctx, `Saved product "${product.name}" to company workspace`, 'product', { savedProducts: [entry, ...ctx.store.savedProducts] }), undefined);
+};
+
+export const isProductSaved = (store: SupplierStore, companyId: string, productId: string): boolean =>
+  store.savedProducts.some((s) => s.companyId === companyId && s.productId === productId);
+
+export const trackProductView = (ctx: SupplierCtx, productId: string): SupplierStore => {
+  const existing = ctx.store.recentlyViewedProducts.find((r) => r.companyId === ctx.companyId && r.productId === productId);
+  const entry: RecentlyViewedProduct = { id: existing?.id ?? uid('rv'), companyId: ctx.companyId, productId, viewedBy: ctx.user.name, viewedById: ctx.user.id, at: now() };
+  const recentlyViewedProducts = [entry, ...ctx.store.recentlyViewedProducts.filter((r) => r.id !== entry.id)].slice(0, 50);
+  return { ...ctx.store, recentlyViewedProducts };
+};
 
 export interface RegistrationInput {
   profile: CompanyProfile;

@@ -321,6 +321,24 @@ export interface VisitTask {
 }
 
 
+export interface SavedProduct {
+  id: string;
+  companyId: string;
+  productId: string;
+  savedBy: string;
+  savedById: string;
+  at: string;
+}
+
+export interface RecentlyViewedProduct {
+  id: string;
+  companyId: string;
+  productId: string;
+  viewedBy: string;
+  viewedById: string;
+  at: string;
+}
+
 export type VendorApprovalStatus = 'not-reviewed' | 'under-review' | 'approved' | 'conditionally-approved' | 'rejected' | 'suspended';
 
 export interface VendorNote {
@@ -373,6 +391,8 @@ export interface SupplierStore {
   visitTasks: VisitTask[];
   audit: AuditEntry[];
   vendorRecords: VendorRecord[];
+  savedProducts: SavedProduct[];
+  recentlyViewedProducts: RecentlyViewedProduct[];
   previewRole: Record<string, CompanyRole | undefined>;
 }
 

@@ -253,6 +253,70 @@ export const ContractorDashboard: React.FC<{ sw: SW }> = ({ sw }) => {
         </Card>
       </div>
 
+      {/* Product Discovery + Saved + Recently Viewed */}
+      <div className="grid lg:grid-cols-3 gap-4 mb-6">
+        {/* Saved Products */}
+        <Card title="Saved Products" action={<button type="button" onClick={() => sw.go('sw-products')} className="text-xs text-blue-700 font-semibold hover:underline">Discover</button>}>
+          <div className="space-y-2">
+            {(() => {
+              const saved = store.savedProducts.filter((s) => s.companyId === company.id);
+              if (saved.length === 0) return <p className="text-xs text-slate-500">No saved products yet. Discover and save products from the Product Discovery page.</p>;
+              return saved.slice(0, 4).map((s) => {
+                const p = store.products.find((pr) => pr.id === s.productId);
+                if (!p) return null;
+                const supplier = store.companies.find((c) => c.id === p.companyId);
+                return (
+                  <div key={s.id} className="text-xs py-1.5 border-b border-slate-50 last:border-0">
+                    <p className="text-slate-800 truncate font-medium">{p.name}</p>
+                    <p className="text-[10px] text-slate-400">{supplier?.profile.tradingName ?? 'Unknown'} · {p.category}</p>
+                  </div>
+                );
+              });
+            })()}
+          </div>
+        </Card>
+
+        {/* Recently Viewed */}
+        <Card title="Recently Viewed">
+          <div className="space-y-2">
+            {(() => {
+              const recent = store.recentlyViewedProducts.filter((r) => r.companyId === company.id).slice(0, 4);
+              if (recent.length === 0) return <p className="text-xs text-slate-500">No recently viewed products.</p>;
+              return recent.map((r) => {
+                const p = store.products.find((pr) => pr.id === r.productId);
+                if (!p) return null;
+                const supplier = store.companies.find((c) => c.id === p.companyId);
+                return (
+                  <div key={r.id} className="text-xs py-1.5 border-b border-slate-50 last:border-0">
+                    <p className="text-slate-800 truncate font-medium">{p.name}</p>
+                    <p className="text-[10px] text-slate-400">{supplier?.profile.tradingName ?? 'Unknown'} · {fmtDate(r.at)}</p>
+                  </div>
+                );
+              });
+            })()}
+          </div>
+        </Card>
+
+        {/* Popular Categories */}
+        <Card title="Popular Categories" action={<button type="button" onClick={() => sw.go('sw-products')} className="text-xs text-blue-700 font-semibold hover:underline">Browse all</button>}>
+          <div className="space-y-2">
+            {(() => {
+              const products = store.products.filter((p) => p.status === 'active' && p.companyId !== company.id);
+              const catMap = new Map<string, number>();
+              products.forEach((p) => catMap.set(p.category, (catMap.get(p.category) ?? 0) + 1));
+              const cats = Array.from(catMap.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5);
+              if (cats.length === 0) return <p className="text-xs text-slate-500">No product categories available.</p>;
+              return cats.map(([cat, count]) => (
+                <div key={cat} className="flex items-center justify-between text-xs py-1.5 border-b border-slate-50 last:border-0">
+                  <span className="text-slate-700">{cat}</span>
+                  <span className="font-semibold text-slate-900">{count} products</span>
+                </div>
+              ));
+            })()}
+          </div>
+        </Card>
+      </div>
+
       <div className="mt-4">
         <DemoNote>Dashboard metrics are derived from simulated demo data. Vendor approvals and SOKO verification are independent processes.</DemoNote>
       </div>
