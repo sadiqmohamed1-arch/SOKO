@@ -263,7 +263,7 @@ export const BuyerNavbar: React.FC<BuyerNavbarProps> = ({
           <SokoLogo size="md" className="shadow-xs" />
         </button>
 
-        <nav className="flex items-center gap-0.5 sm:gap-1 overflow-x-auto">
+        <nav aria-label="Workspace navigation" className={`flex items-center gap-0.5 sm:gap-1 overflow-x-auto ${companyMode ? 'lg:hidden' : ''}`}>
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
@@ -291,8 +291,8 @@ export const BuyerNavbar: React.FC<BuyerNavbarProps> = ({
                     </span>
                   )}
                 </div>
-                <span className={`hidden ${companyMode ? 'xl:inline' : 'lg:inline'} mt-1 whitespace-nowrap`}>{item.label}</span>
-                {isActive && <span className={`absolute bottom-0 left-2 right-2 h-0.5 rounded-t-full bg-blue-700 hidden ${companyMode ? 'xl:block' : 'lg:block'}`} />}
+                <span className={`hidden ${companyMode ? '' : 'lg:inline'} mt-1 whitespace-nowrap`}>{item.label}</span>
+                {isActive && !companyMode && <span className="absolute bottom-0 left-2 right-2 h-0.5 rounded-t-full bg-blue-700 hidden lg:block" />}
               </button>
             );
           })}
@@ -301,7 +301,7 @@ export const BuyerNavbar: React.FC<BuyerNavbarProps> = ({
         {tip && (
           <div
             role="tooltip"
-            className={`fixed z-50 -translate-x-1/2 pointer-events-none px-2 py-1 rounded-md bg-slate-900 text-white text-xs font-medium whitespace-nowrap shadow-lg ${companyMode ? 'xl:hidden' : 'lg:hidden'}`}
+            className={`fixed z-50 -translate-x-1/2 pointer-events-none px-2 py-1 rounded-md bg-slate-900 text-white text-xs font-medium whitespace-nowrap shadow-lg lg:hidden`}
             style={{ left: tip.x, top: tip.y }}
           >
             {tip.label}
@@ -316,7 +316,7 @@ export const BuyerNavbar: React.FC<BuyerNavbarProps> = ({
                 onClick={() => toggle('sections')}
                 aria-expanded={openMenu === 'sections'}
                 aria-label="Show all workspace sections"
-                className={`xl:hidden inline-flex items-center gap-1.5 p-2 sm:px-2.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${openMenu === 'sections' ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-100'}`}
+                className={`lg:hidden inline-flex items-center gap-1.5 p-2 sm:px-2.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${openMenu === 'sections' ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-100'}`}
               >
                 <LayoutGrid className="w-5 h-5" />
                 <span className="hidden sm:inline">Menu</span>
@@ -648,6 +648,31 @@ export const BuyerNavbar: React.FC<BuyerNavbarProps> = ({
           )}
         </div>
       </div>
+      {companyMode && (
+        <div className="hidden lg:block border-t border-slate-100">
+          <nav aria-label="Workspace sections" className="max-w-7xl mx-auto px-4 sm:px-6 h-11 flex items-center gap-1">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setActiveTab(item.id)}
+                  aria-current={isActive ? 'page' : undefined}
+                  className={`relative h-full inline-flex items-center gap-2 px-3 text-[13px] whitespace-nowrap transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 ${
+                    isActive ? 'text-slate-900 font-semibold' : 'text-slate-500 font-medium hover:text-slate-900'
+                  }`}
+                >
+                  <Icon className={`w-4 h-4 ${isActive ? 'text-blue-600' : 'text-slate-400'}`} />
+                  {item.label}
+                  {isActive && <span className="absolute bottom-0 left-3 right-3 h-0.5 rounded-t-full bg-blue-600" />}
+                </button>
+              );
+            })}
+          </nav>
+        </div>
+      )}
     </header>
   );
 };
