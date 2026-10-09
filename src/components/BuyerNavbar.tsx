@@ -18,6 +18,7 @@ import {
   Check,
   Building2,
   LayoutGrid,
+  Search,
   Award,
   LayoutDashboard,
   FolderLock,
@@ -278,8 +279,8 @@ export const BuyerNavbar: React.FC<BuyerNavbarProps> = ({
                 onMouseLeave={hideTip}
                 onFocus={showTip(item.label)}
                 onBlur={hideTip}
-                className={`relative flex flex-col focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 items-center justify-center px-2 sm:px-3 py-1.5 rounded-lg text-xs transition-colors cursor-pointer shrink-0 ${
-                  isActive ? 'text-blue-700 font-semibold' : 'text-slate-600 font-medium hover:text-slate-900 hover:bg-slate-100'
+                className={`relative flex flex-col focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 items-center justify-center px-2.5 sm:px-3 py-1.5 rounded-xl text-xs transition-all duration-200 cursor-pointer shrink-0 ${
+                  isActive ? 'text-blue-700 font-semibold bg-blue-50' : 'text-slate-600 font-medium hover:text-slate-900 hover:bg-slate-100'
                 }`}
               >
                 <div className="relative">
@@ -344,10 +345,12 @@ export const BuyerNavbar: React.FC<BuyerNavbarProps> = ({
               <button
                 id="nav-btn-soko-ai"
                 onClick={() => setActiveTab('soko-ai')}
-                title="SOKO AI"
-                className={`p-2 rounded-lg transition-colors cursor-pointer ${activeTab === 'soko-ai' ? 'bg-violet-50 text-violet-700' : 'text-violet-600 hover:bg-violet-50'}`}
+                aria-label="Search with SOKO AI"
+                className={`flex items-center gap-2 p-2 2xl:pl-3 2xl:pr-4 2xl:w-56 rounded-xl border transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${activeTab === 'soko-ai' ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-blue-300 hover:bg-white'}`}
               >
-                <Sparkles className="w-5 h-5" />
+                <Search className="w-5 h-5 2xl:w-4 2xl:h-4 shrink-0" />
+                <span className="hidden 2xl:inline flex-1 text-left text-xs truncate">Search or ask SOKO AI</span>
+                <Sparkles className="hidden 2xl:inline w-3.5 h-3.5 text-blue-500 shrink-0" />
               </button>
               <button
                 id="nav-btn-messages"
@@ -386,9 +389,9 @@ export const BuyerNavbar: React.FC<BuyerNavbarProps> = ({
             id="nav-btn-notifications"
             onClick={() => toggle('notifications')}
             aria-expanded={openMenu === 'notifications'}
-            title="Notifications"
-            className={`relative p-2 rounded-lg transition-colors cursor-pointer ${
-              openMenu === 'notifications' ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-100'
+            aria-label="Notifications"
+            className={`relative p-2 rounded-xl transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+              openMenu === 'notifications' ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-100'
             }`}
           >
             <Bell className="w-5 h-5" />
@@ -406,13 +409,26 @@ export const BuyerNavbar: React.FC<BuyerNavbarProps> = ({
               openMenu === 'profile' ? 'border-blue-300 bg-blue-50' : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
             }`}
           >
-            <img src={currentUser.avatarUrl} alt={currentUser.name} className="w-8 h-8 rounded-full object-cover" />
-            <div className="hidden md:flex flex-col items-start leading-tight text-left">
+            {companyMode && activeWorkspace && (
+              <>
+                <span className="hidden md:flex items-center gap-2 pl-1">
+                  {activeWorkspace.logoUrl ? (
+                    <img src={activeWorkspace.logoUrl} alt="" className="w-7 h-7 rounded-lg object-cover" />
+                  ) : (
+                    <span className="w-7 h-7 rounded-lg bg-blue-600 text-white flex items-center justify-center"><Building2 className="w-3.5 h-3.5" /></span>
+                  )}
+                  <span className="flex flex-col items-start leading-tight text-left">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Workspace</span>
+                    <span className="text-xs font-semibold text-slate-900 max-w-[110px] truncate">{activeWorkspace.name}</span>
+                  </span>
+                </span>
+                <span aria-hidden className="hidden md:block w-px h-7 bg-slate-200 mx-1" />
+              </>
+            )}
+            <img src={currentUser.avatarUrl} alt={currentUser.name} className="w-8 h-8 rounded-full object-cover ring-2 ring-white" />
+            <div className={`hidden ${companyMode ? 'lg:flex' : 'md:flex'} flex-col items-start leading-tight text-left`}>
               <span className="text-xs font-semibold text-slate-900 max-w-[120px] truncate">{currentUser.name}</span>
-              <span className="text-[10px] text-slate-500 max-w-[120px] truncate">{companyMode ? activeWorkspace?.roleLabel : 'Buyer'}</span>
-              <span className="text-[10px] text-blue-700 max-w-[120px] truncate">
-                {activeWorkspace?.kind === 'corporate' ? activeWorkspace.name : 'Personal Workspace'}
-              </span>
+              <span className="text-[10px] text-slate-500 max-w-[120px] truncate">{companyMode ? activeWorkspace?.roleLabel : 'Personal Workspace'}</span>
             </div>
             <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${openMenu === 'profile' ? 'rotate-180' : ''}`} />
           </button>
