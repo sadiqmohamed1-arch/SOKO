@@ -1,17 +1,23 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Users, Search, Plus, Trash2, ExternalLink, Lock,
-  ShieldCheck, ShieldQuestion, ChevronRight, ArrowLeft,
+  ShieldCheck, ShieldQuestion, ChevronRight, ChevronDown, ArrowLeft,
   FileText, Download, Eye, EyeOff, Clock, X,
+  Building2, Check, Info, MapPin, StickyNote, UserCheck,
 } from 'lucide-react';
+import {
+  sokoCard, sokoTokens, initialsOf, SokoChip, SokoEmptyState, SokoKpiCell,
+  SokoStatusIndicator, SokoStatusTone, SokoTab, SokoTabs,
+} from '../sokoDesignSystem/SokoComponents';
+import { SokoBreadcrumb } from '../sokoDesignSystem/SokoBreadcrumb';
 import { VendorRecord, VendorApprovalStatus, CompanyDocument, DocumentVisibility } from '../../data/supplierTypes';
 import { addVendor, updateVendorStatus, removeVendor, addVendorNote, deleteVendorNote, saveCompanyContact, isSavedCorporateContact } from '../../data/supplierService';
 import { membersOf } from '../../data/supplierStore';
 import { Bookmark, BookmarkCheck } from 'lucide-react';
 import { StatusPill, btnPrimary, btnSecondary, btnGhost, inputCls, labelCls } from '../NetworkShared';
 import { ProfileDialog } from '../ProfileDialog';
-import { DemoNote, EmptyState, Field, KpiCard, SubTabs, fmtDate } from '../marketHub/MarketHubShared';
-import { PageHeader, SW } from './SupplierShared';
+import { DemoNote, Field, fmtDate } from '../marketHub/MarketHubShared';
+import { SW } from './SupplierShared';
 import { BUYER_SUPPLIERS, BuyerSupplier } from '../../data/buyerSuppliers';
 import { BuyerSupplierProfile, ProfileTab } from '../BuyerSupplierProfile';
 
@@ -161,9 +167,8 @@ const SupplierProfileModal: React.FC<{ supplierId: string; onClose: () => void }
 };
 
 // ─── Vendor Detail Modal ───────────────────────────────────────────
-const VendorDetailModal: React.FC<{ sw: SW; vendor: VendorRecord; onClose: () => void; onOpenSupplierProfile: (id: string) => void }> = ({ sw, vendor, onClose, onOpenSupplierProfile }) => {
+const VendorDetailPage: React.FC<{ sw: SW; vendor: VendorRecord; onClose: () => void; onOpenSupplierProfile: (id: string) => void }> = ({ sw, vendor, onClose, onOpenSupplierProfile }) => {
   const [note, setNote] = useState('');
-  const [showApproval, setShowApproval] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<CompanyDocument | null>(null);
   const canManage = sw.can('contacts.manage');
 
@@ -181,7 +186,6 @@ const VendorDetailModal: React.FC<{ sw: SW; vendor: VendorRecord; onClose: () =>
 
   const changeStatus = (status: VendorApprovalStatus) => {
     sw.run(updateVendorStatus(sw.ctx, vendor.id, status), `Vendor status updated to ${APPROVAL_META[status].label}`);
-    setShowApproval(false);
   };
 
   // Find visit history for this vendor
@@ -207,53 +211,36 @@ const VendorDetailModal: React.FC<{ sw: SW; vendor: VendorRecord; onClose: () =>
     : [];
 
   return (
-    <ProfileDialog
-      title={vendor.supplierName}
-      subtitle={vendor.tradeCategory}
-      onClose={onClose}
-      size="lg"
-      footer={
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-xs text-slate-500">Vendor ID: {vendor.id}</span>
-          <button type="button" onClick={onClose} className={`${btnGhost} text-sm`}>Close</button>
-        </div>
-      }
-    >
-      <div className="px-5 py-4 space-y-5">
-        {/* Overview */}
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <StatusPill tone={APPROVAL_META[vendor.approvalStatus].tone}>{APPROVAL_META[vendor.approvalStatus].label}</StatusPill>
-            {vendor.sokoVerified ? (
-              <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold">
-                <ShieldCheck className="w-3 h-3" />SOKO Verified
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-slate-50 text-slate-500 border border-slate-200 font-semibold">
-                <ShieldQuestion className="w-3 h-3" />Not SOKO Verified
-              </span>
-            )}
-            {vendor.external && <span className="text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">External</span>}
+    <div className="flex flex-col gap-4">
+      <SokoBreadcrumb
+        onBack={onClose}
+        backLabel="Back to Vendors"
+        trail={[
+          { label: sw.company.profile.tradingName, onClick: () => sw.go('sw-dashboard') },
+          { label: 'Vendors', onClick: onClose },
+          { label: vendor.supplierName },
+        ]}
+      />
+      <section className={sokoCard}>
+        <header className="flex flex-col gap-4 border-b border-slate-100 px-5 py-6 sm:flex-row sm:items-start sm:justify-between sm:px-7">
+          <div className="flex min-w-0 items-start gap-4">
+            <VendorLogo vendor={vendor} size="lg" />
+            <div className="min-w-0">
+              <p className={sokoTokens.eyebrow}>Vendor profile · {vendor.tradeCategory}</p>
+              <h1 className="mt-1.5 text-2xl font-semibold leading-tight tracking-tight text-slate-900 text-balance">{vendor.supplierName}</h1>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <NetworkBadge vendor={vendor} />
+                <ApprovalBadge status={vendor.approvalStatus} company={sw.company.profile.tradingName} />
+                <SokoChip icon={MapPin}>{vendor.location}</SokoChip>
+              </div>
+            </div>
           </div>
           {canManage && (
-            <div className="relative">
-              <button type="button" onClick={() => setShowApproval(!showApproval)} className={`${btnSecondary} text-xs`}>
-                Change Approval <ChevronRight className={`w-3.5 h-3.5 transition-transform ${showApproval ? 'rotate-90' : ''}`} />
-              </button>
-              {showApproval && (
-                <div className="absolute right-0 top-full mt-1 z-10 bg-white rounded-lg border border-slate-200 shadow-xl py-1 min-w-[200px]">
-                  {APPROVAL_OPTIONS.map((st) => (
-                    <button key={st} type="button" onClick={() => changeStatus(st)} className="w-full text-left px-3 py-1.5 text-xs hover:bg-slate-50 cursor-pointer">
-                      {APPROVAL_META[st].label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            <ApprovalMenu current={vendor.approvalStatus} company={sw.company.profile.tradingName} vendorName={vendor.supplierName} onChange={changeStatus} />
           )}
-        </div>
-
-        <div className="grid sm:grid-cols-2 gap-x-4 gap-y-2 rounded-xl border border-slate-200 p-3">
+        </header>
+      <div className="flex flex-col gap-6 px-5 py-6 sm:px-7">
+        <div className="grid sm:grid-cols-2 gap-x-6 gap-y-3 rounded-xl border border-slate-200/80 bg-slate-50/40 p-4">
           <Field label="Trade Category" value={vendor.tradeCategory} />
           <Field label="Location" value={vendor.location} />
           <Field label="Contact Person" value={vendor.contactPerson} />
@@ -442,9 +429,14 @@ const VendorDetailModal: React.FC<{ sw: SW; vendor: VendorRecord; onClose: () =>
           </div>
         )}
       </div>
+        <footer className="flex items-center justify-between gap-2 border-t border-slate-100 px-5 py-3 sm:px-7">
+          <span className="font-mono text-[10.5px] text-slate-400">Vendor ID · {vendor.id}</span>
+          <span className="text-[11px] text-slate-400">Added {fmtDate(vendor.addedAt)} by {vendor.addedBy}</span>
+        </footer>
+      </section>
 
       {previewDoc && <DocPreviewDialog doc={previewDoc} onClose={() => setPreviewDoc(null)} />}
-    </ProfileDialog>
+    </div>
   );
 };
 
@@ -525,128 +517,460 @@ const AddVendorModal: React.FC<{ sw: SW; onClose: () => void }> = ({ sw, onClose
   );
 };
 
-// ─── Main Component ────────────────────────────────────────────────
-export const VendorDirectory: React.FC<{ sw: SW }> = ({ sw }) => {
-  const [filter, setFilter] = useState<Filter>('all');
-  const [search, setSearch] = useState('');
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [showAdd, setShowAdd] = useState(false);
-  const [profileSupplierId, setProfileSupplierId] = useState<string | null>(null);
+// ─── Directory building blocks ─────────────────────────────────────
+type NetworkStatus = 'verified' | 'listed' | 'external';
 
+const networkStatusOf = (v: VendorRecord): NetworkStatus =>
+  v.sokoVerified ? 'verified' : v.external ? 'external' : 'listed';
+
+const APPROVAL_TONE: Record<VendorApprovalStatus, SokoStatusTone> = {
+  'not-reviewed': 'neutral',
+  'under-review': 'warning',
+  'approved': 'success',
+  'conditionally-approved': 'warning',
+  'rejected': 'critical',
+  'suspended': 'critical',
+};
+
+const VendorLogo: React.FC<{ vendor: VendorRecord; size?: 'md' | 'lg' }> = ({ vendor, size = 'md' }) => {
+  const dims = size === 'lg' ? 'w-14 h-14 text-base rounded-2xl' : 'w-9 h-9 text-[11px] rounded-xl';
+  const onSoko = !vendor.external;
+  return (
+    <span aria-hidden className={`${dims} shrink-0 flex items-center justify-center font-semibold tracking-tight ${
+      onSoko ? 'bg-slate-900 text-white' : 'border border-dashed border-slate-300 bg-white text-slate-500'
+    }`}>
+      {initialsOf(vendor.supplierName) || vendor.supplierName.slice(0, 2).toUpperCase()}
+    </span>
+  );
+};
+
+/** SOKO network status: set by SOKO, independent of the contractor's internal approval. */
+const NetworkBadge: React.FC<{ vendor: VendorRecord }> = ({ vendor }) => {
+  const status = networkStatusOf(vendor);
+  if (status === 'verified') {
+    return (
+      <span className="inline-flex h-6 items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 text-[11px] font-semibold text-blue-700 whitespace-nowrap">
+        <ShieldCheck className="w-3.5 h-3.5" aria-hidden />SOKO Verified
+      </span>
+    );
+  }
+  if (status === 'listed') {
+    return (
+      <span className="inline-flex h-6 items-center gap-1 rounded-md border border-slate-200 bg-white px-2 text-[11px] font-medium text-slate-600 whitespace-nowrap">
+        <ShieldQuestion className="w-3.5 h-3.5 text-slate-400" aria-hidden />On SOKO · unverified
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex h-6 items-center gap-1 rounded-md border border-dashed border-slate-300 bg-white px-2 text-[11px] font-medium text-slate-500 whitespace-nowrap">
+      <Building2 className="w-3.5 h-3.5 text-slate-400" aria-hidden />External vendor
+    </span>
+  );
+};
+
+/** Internal approval: set by the contractor's own team. */
+const ApprovalBadge: React.FC<{ status: VendorApprovalStatus; company?: string }> = ({ status, company }) => (
+  <span className="inline-flex items-center gap-1.5">
+    {company && <span className="sr-only">{company} approval:</span>}
+    <SokoStatusIndicator label={APPROVAL_META[status].label} tone={APPROVAL_TONE[status]} />
+  </span>
+);
+
+const ApprovalMenu: React.FC<{
+  current: VendorApprovalStatus;
+  company: string;
+  vendorName: string;
+  onChange: (s: VendorApprovalStatus) => void;
+  compact?: boolean;
+}> = ({ current, company, vendorName, onChange, compact }) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative shrink-0" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === 'Escape') setOpen(false); }}>
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={compact ? `Manage ${company} approval for ${vendorName}` : undefined}
+        onClick={() => setOpen((o) => !o)}
+        className={`${sokoTokens.focus} inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 transition-colors cursor-pointer ${
+          compact ? 'h-8 px-2 text-xs' : 'h-9 px-3 text-xs font-medium'
+        }`}
+      >
+        <UserCheck className="w-3.5 h-3.5 text-slate-500" aria-hidden />
+        {compact ? <span className="hidden xl:inline">Approval</span> : 'Manage approval'}
+        <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden />
+      </button>
+      {open && (
+        <>
+          <button type="button" tabIndex={-1} aria-hidden className="fixed inset-0 z-20 cursor-default" onClick={() => setOpen(false)} />
+          <div role="menu" aria-label={`${company} approval status`}
+            className={`absolute right-0 top-full z-30 mt-1.5 w-64 rounded-xl border border-slate-200 bg-white p-1.5 ${sokoTokens.shadow.raised}`}>
+            <p className={`${sokoTokens.eyebrow} px-2 pb-1.5 pt-1`}>{company} approval</p>
+            {APPROVAL_OPTIONS.map((st) => {
+              const on = st === current;
+              return (
+                <button key={st} type="button" role="menuitemradio" aria-checked={on}
+                  onClick={() => { setOpen(false); if (!on) onChange(st); }}
+                  className={`${sokoTokens.focus} flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors cursor-pointer ${on ? 'bg-blue-50 text-blue-800 font-semibold' : 'text-slate-700 hover:bg-slate-50'}`}>
+                  <SokoStatusIndicator label={APPROVAL_META[st].label} tone={APPROVAL_TONE[st]} />
+                  {on && <Check className="w-3.5 h-3.5 text-blue-600" aria-hidden />}
+                </button>
+              );
+            })}
+            <p className="mt-1 border-t border-slate-100 px-2 pt-2 pb-1 text-[10.5px] leading-relaxed text-slate-400">
+              Internal only. Does not change the vendor&apos;s SOKO verification.
+            </p>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+const selectCls = `${sokoTokens.focus} h-10 rounded-xl border border-slate-200 bg-white pl-3 pr-8 text-sm text-slate-700 hover:border-slate-300 transition-colors cursor-pointer`;
+
+// ─── Vendor URL state (browser Back / Forward) ─────────────────────
+const VENDOR_PARAM = 'vendor';
+const PROFILE_PARAM = 'vendorProfile';
+
+interface VendorNav { vendorId: string | null; profileId: string | null }
+interface VendorHistoryState { sokoVendorDepth?: number; sokoVendorBase?: number }
+
+const depthOf = (n: VendorNav) => (n.profileId ? 2 : n.vendorId ? 1 : 0);
+
+const readVendorNav = (): VendorNav => {
+  const p = new URLSearchParams(window.location.search);
+  return { vendorId: p.get(VENDOR_PARAM), profileId: p.get(PROFILE_PARAM) };
+};
+
+const writeVendorNav = (n: VendorNav, mode: 'push' | 'replace', base: number) => {
+  const url = new URL(window.location.href);
+  if (n.vendorId) url.searchParams.set(VENDOR_PARAM, n.vendorId); else url.searchParams.delete(VENDOR_PARAM);
+  if (n.profileId) url.searchParams.set(PROFILE_PARAM, n.profileId); else url.searchParams.delete(PROFILE_PARAM);
+  const state: VendorHistoryState = { ...(window.history.state ?? {}), sokoVendorDepth: depthOf(n), sokoVendorBase: base };
+  if (mode === 'push') window.history.pushState(state, '', url);
+  else window.history.replaceState(state, '', url);
+};
+
+/**
+ * Mirrors the open vendor / public profile in the URL so browser Back and Forward
+ * move between the directory, a vendor page and its SOKO profile. Entries this hook
+ * pushed are popped with history.go so the Forward stack stays intact.
+ */
+const useVendorNavigation = () => {
+  const [nav, setNav] = useState<VendorNav>(readVendorNav);
+
+  useEffect(() => {
+    const initial = readVendorNav();
+    const state = (window.history.state ?? {}) as VendorHistoryState;
+    if (state.sokoVendorDepth === undefined) writeVendorNav(initial, 'replace', depthOf(initial));
+    const onPop = () => setNav(readVendorNav());
+    window.addEventListener('popstate', onPop);
+    return () => {
+      window.removeEventListener('popstate', onPop);
+      writeVendorNav({ vendorId: null, profileId: null }, 'replace', 0);
+    };
+  }, []);
+
+  const navigate = (next: VendorNav) => {
+    const state = (window.history.state ?? {}) as VendorHistoryState;
+    const current = state.sokoVendorDepth ?? depthOf(nav);
+    const base = state.sokoVendorBase ?? current;
+    const target = depthOf(next);
+    if (target > current) {
+      writeVendorNav(next, 'push', base);
+      setNav(next);
+    } else if (target < current && target >= base) {
+      window.history.go(target - current);
+    } else {
+      writeVendorNav(next, 'replace', Math.min(base, target));
+      setNav(next);
+    }
+  };
+
+  return { nav, navigate };
+};
+
+// ─── Main Component ────────────────────────────────────────────────
+type ApprovalFilter = 'all' | 'approved' | 'review' | 'new' | 'inactive';
+type NetworkFilter = 'all' | NetworkStatus;
+
+interface DirectoryFilters { search: string; category: string; approval: ApprovalFilter; network: NetworkFilter }
+const NO_FILTERS: DirectoryFilters = { search: '', category: 'all', approval: 'all', network: 'all' };
+
+const matchesApproval = (v: VendorRecord, f: ApprovalFilter) => {
+  switch (f) {
+    case 'approved': return v.approvalStatus === 'approved';
+    case 'review': return v.approvalStatus === 'under-review' || v.approvalStatus === 'conditionally-approved';
+    case 'new': return v.approvalStatus === 'not-reviewed';
+    case 'inactive': return v.approvalStatus === 'rejected' || v.approvalStatus === 'suspended';
+    default: return true;
+  }
+};
+
+export const VendorDirectory: React.FC<{ sw: SW; pageBack?: { label: string; onBack: () => void } }> = ({ sw, pageBack }) => {
+  const [filters, setFilters] = useState<DirectoryFilters>(NO_FILTERS);
+  const [showAdd, setShowAdd] = useState(false);
+  const { nav, navigate } = useVendorNavigation();
+  const listScroll = useRef(0);
+
+  const company = sw.company.profile.tradingName;
+  const canManage = sw.can('contacts.manage');
   const vendors = sw.store.vendorRecords.filter((v) => v.companyId === sw.company.id);
 
-  const approved = vendors.filter((v) => v.approvalStatus === 'approved');
-  const review = vendors.filter((v) => v.approvalStatus === 'under-review' || v.approvalStatus === 'conditionally-approved');
-  const external = vendors.filter((v) => v.external);
-  const newVendors = vendors.filter((v) => v.approvalStatus === 'not-reviewed');
+  const counts = {
+    approved: vendors.filter((v) => matchesApproval(v, 'approved')).length,
+    review: vendors.filter((v) => matchesApproval(v, 'review')).length,
+    new: vendors.filter((v) => matchesApproval(v, 'new')).length,
+    inactive: vendors.filter((v) => matchesApproval(v, 'inactive')).length,
+    verified: vendors.filter((v) => networkStatusOf(v) === 'verified').length,
+    external: vendors.filter((v) => networkStatusOf(v) === 'external').length,
+  };
 
-  const shown = filter === 'approved' ? approved : filter === 'review' ? review : filter === 'external' ? external : filter === 'new' ? newVendors : vendors;
-  const filtered = search
-    ? shown.filter((v) =>
-        v.supplierName.toLowerCase().includes(search.toLowerCase()) ||
-        v.tradeCategory.toLowerCase().includes(search.toLowerCase()) ||
-        v.location.toLowerCase().includes(search.toLowerCase()) ||
-        v.contactPerson.toLowerCase().includes(search.toLowerCase()))
-    : shown;
+  const categories = Array.from(new Set(vendors.map((v) => v.tradeCategory))).sort();
 
-  const open = vendors.find((v) => v.id === openId);
+  const q = filters.search.trim().toLowerCase();
+  const filtered = vendors.filter((v) =>
+    matchesApproval(v, filters.approval) &&
+    (filters.network === 'all' || networkStatusOf(v) === filters.network) &&
+    (filters.category === 'all' || v.tradeCategory === filters.category) &&
+    (!q || [v.supplierName, v.tradeCategory, v.location, v.contactPerson].some((f) => f.toLowerCase().includes(q))));
+
+  const hasFilters = filters.search !== '' || filters.category !== 'all' || filters.approval !== 'all' || filters.network !== 'all';
+  const setFilter = <K extends keyof DirectoryFilters>(key: K, value: DirectoryFilters[K]) => setFilters((f) => ({ ...f, [key]: value }));
+
+  const open = nav.vendorId ? vendors.find((v) => v.id === nav.vendorId) : undefined;
+
+  useEffect(() => {
+    window.scrollTo({ top: nav.vendorId ? 0 : listScroll.current });
+  }, [nav.vendorId]);
+
+  const openVendor = (id: string) => {
+    listScroll.current = window.scrollY;
+    navigate({ vendorId: id, profileId: null });
+  };
+  const closeVendor = () => navigate({ vendorId: null, profileId: null });
+
+  const changeStatus = (v: VendorRecord, status: VendorApprovalStatus) =>
+    sw.run(updateVendorStatus(sw.ctx, v.id, status), `${v.supplierName}: ${company} approval set to ${APPROVAL_META[status].label}`);
 
   // Count expiring documents from linked suppliers
   const linkedSupplierIds = vendors.filter((v) => v.supplierCompanyId).map((v) => v.supplierCompanyId!);
-  const expiringDocs = sw.store.documents.filter((d) => linkedSupplierIds.includes(d.companyId) && d.expiry && d.shares.some((s) => s.company === sw.company.profile.tradingName) && new Date(d.expiry) < new Date(Date.now() + 30 * 86400000));
+  const expiringDocs = sw.store.documents.filter((d) => linkedSupplierIds.includes(d.companyId) && d.expiry && d.shares.some((s) => s.company === company) && new Date(d.expiry) < new Date(Date.now() + 30 * 86400000));
+
+  if (open) {
+    return (
+      <>
+        <VendorDetailPage
+          sw={sw}
+          vendor={open}
+          onClose={closeVendor}
+          onOpenSupplierProfile={(id) => navigate({ vendorId: open.id, profileId: id })}
+        />
+        {nav.profileId && (
+          <SupplierProfileModal supplierId={nav.profileId} onClose={() => navigate({ vendorId: open.id, profileId: null })} />
+        )}
+      </>
+    );
+  }
+
+  const approvalTabs: SokoTab<ApprovalFilter>[] = [
+    { id: 'all', label: 'All', count: vendors.length },
+    { id: 'approved', label: 'Approved', count: counts.approved },
+    { id: 'review', label: 'Under review', count: counts.review },
+    { id: 'new', label: 'Not reviewed', count: counts.new },
+    { id: 'inactive', label: 'Rejected / suspended', count: counts.inactive },
+  ];
 
   return (
-    <div>
-      <PageHeader
-        eyebrow="Vendor Management"
-        title="Vendor Register"
-        subtitle="Manage your internal supplier directory, approvals and vendor relationships."
-        actions={sw.can('contacts.manage') && <button type="button" onClick={() => setShowAdd(true)} className={`${btnPrimary} text-sm`}><Plus className="w-4 h-4" />Add Vendor</button>}
-      />
-
-      {/* KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
-        <KpiCard label="Total Vendors" value={vendors.length} />
-        <KpiCard label="Approved" value={approved.length} />
-        <KpiCard label="Under Review" value={review.length} />
-        <KpiCard label="Not Reviewed" value={newVendors.length} />
-        <KpiCard label="External" value={external.length} />
-        <KpiCard label="Expiring Docs" value={expiringDocs.length} />
-      </div>
-
-      {/* Filters */}
-      <div className="mb-3 flex flex-col sm:flex-row sm:items-center gap-2">
-        <SubTabs
-          tabs={[
-            { id: 'all' as Filter, label: 'All', count: vendors.length },
-            { id: 'approved' as Filter, label: 'Approved', count: approved.length },
-            { id: 'review' as Filter, label: 'Under Review', count: review.length },
-            { id: 'new' as Filter, label: 'New', count: newVendors.length },
-            { id: 'external' as Filter, label: 'External', count: external.length },
-          ]}
-          value={filter}
-          onChange={setFilter}
+    <div className="flex flex-col gap-5">
+      {pageBack && (
+        <SokoBreadcrumb
+          onBack={pageBack.onBack}
+          backLabel={pageBack.label}
+          trail={[{ label: company, onClick: () => sw.go('sw-dashboard') }, { label: 'Vendors' }]}
         />
-        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search vendors…" className={`${inputCls} sm:w-56 sm:ml-auto`} />
-      </div>
-
-      {/* Table */}
-      {filtered.length === 0 ? (
-        <EmptyState icon={<Users className="w-5 h-5" />} title="No vendors" text="Add suppliers to your internal vendor register to track approvals and relationships." />
-      ) : (
-        <div className="rounded-2xl border border-slate-200 bg-white overflow-x-auto">
-          <table className="w-full text-sm min-w-[860px]">
-            <thead>
-              <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500 border-b border-slate-100 bg-slate-50/60">
-                <th className="px-4 py-2.5 font-semibold">Supplier Name</th>
-                <th className="px-3 py-2.5 font-semibold">Category</th>
-                <th className="px-3 py-2.5 font-semibold">Location</th>
-                <th className="px-3 py-2.5 font-semibold">SOKO Status</th>
-                <th className="px-3 py-2.5 font-semibold">Approval</th>
-                <th className="px-3 py-2.5 font-semibold">Contact</th>
-                <th className="px-3 py-2.5 font-semibold">Last Visit</th>
-                <th className="px-4 py-2.5 font-semibold">Notes</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filtered.map((v) => (
-                <tr key={v.id} onClick={() => setOpenId(v.id)} className="hover:bg-slate-50 cursor-pointer transition-colors">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center shrink-0 text-[10px] font-bold">{v.supplierName.slice(0, 2).toUpperCase()}</div>
-                      <div>
-                        <p className="font-medium text-slate-900">{v.supplierName}</p>
-                        {v.external && <p className="text-[10px] text-amber-600">External</p>}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-3 py-3 text-slate-700">{v.tradeCategory}</td>
-                  <td className="px-3 py-3 text-slate-600">{v.location}</td>
-                  <td className="px-3 py-3">
-                    {v.sokoVerified ? (
-                      <span className="inline-flex items-center gap-1 text-xs text-emerald-700"><ShieldCheck className="w-3.5 h-3.5" />Verified</span>
-                    ) : (
-                      <span className="text-xs text-slate-400">—</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-3"><StatusPill tone={APPROVAL_META[v.approvalStatus].tone}>{APPROVAL_META[v.approvalStatus].label}</StatusPill></td>
-                  <td className="px-3 py-3 text-slate-700">{v.contactPerson}</td>
-                  <td className="px-3 py-3 text-xs text-slate-500">{v.lastVisitDate ? fmtDate(v.lastVisitDate) : '—'}</td>
-                  <td className="px-4 py-3 text-xs font-semibold text-blue-700">{v.notes.length > 0 ? `${v.notes.length} note${v.notes.length > 1 ? 's' : ''}` : '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
       )}
 
-      <div className="mt-4">
-        <DemoNote>SOKO Verification and internal vendor approval are independent. SOKO Verified does not imply GEC Dubai approval, and vice versa. Document sharing is a prototype — real access-controlled storage requires backend integration.</DemoNote>
-      </div>
+      {/* Header */}
+      <section className={`${sokoCard} overflow-hidden`}>
+        <div className="flex flex-col gap-5 px-5 py-6 sm:px-8 sm:py-7 md:flex-row md:items-end md:justify-between">
+          <div className="min-w-0">
+            <p className={sokoTokens.eyebrow}>Vendor management · {company}</p>
+            <h1 className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[28px] font-semibold leading-tight tracking-tight text-slate-900">
+              Vendor Directory
+              <span className="text-base font-medium text-slate-400 tabular-nums">{vendors.length} {vendors.length === 1 ? 'vendor' : 'vendors'}</span>
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-500 text-pretty">
+              Your internal register of suppliers and subcontractors. SOKO verification comes from SOKO; approval status is set by your team.
+            </p>
+          </div>
+          {canManage && (
+            <button type="button" onClick={() => setShowAdd(true)}
+              className={`${sokoTokens.focus} inline-flex h-10 shrink-0 items-center justify-center gap-2 self-start rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-[0_1px_2px_rgba(37,99,235,0.3)] hover:bg-blue-700 transition-colors cursor-pointer md:self-auto`}>
+              <Plus className="w-4 h-4" aria-hidden />Add vendor
+            </button>
+          )}
+        </div>
+        <div className="grid grid-cols-2 gap-px border-t border-slate-100 bg-slate-100 lg:grid-cols-5">
+          <div className="bg-white"><SokoKpiCell label="Approved" value={counts.approved} detail={`by ${company}`} onClick={() => setFilter('approval', 'approved')} /></div>
+          <div className="bg-white"><SokoKpiCell label="Under review" value={counts.review} detail="Incl. conditional" onClick={() => setFilter('approval', 'review')} /></div>
+          <div className="bg-white"><SokoKpiCell label="Not reviewed" value={counts.new} detail="Awaiting first review" onClick={() => setFilter('approval', 'new')} /></div>
+          <div className="bg-white"><SokoKpiCell label="SOKO Verified" value={counts.verified} detail={`${counts.external} external`} onClick={() => setFilter('network', 'verified')} /></div>
+          <div className="col-span-2 bg-white lg:col-span-1"><SokoKpiCell label="Expiring documents" value={expiringDocs.length} detail="Shared with you · 30 days" onClick={() => sw.go('sw-documents')} /></div>
+        </div>
+      </section>
 
-      {open && <VendorDetailModal sw={sw} vendor={open} onClose={() => setOpenId(null)} onOpenSupplierProfile={(id) => { setOpenId(null); setProfileSupplierId(id); }} />}
+      {/* Directory */}
+      <section className={sokoCard} aria-label="Vendor list">
+        <div className="flex flex-col gap-4 border-b border-slate-100 px-5 pt-5 sm:px-6">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center">
+            <label className="relative flex-1">
+              <span className="sr-only">Search vendors</span>
+              <Search className="pointer-events-none absolute left-3 top-1/2 w-4 h-4 -translate-y-1/2 text-slate-400" aria-hidden />
+              <input value={filters.search} onChange={(e) => setFilter('search', e.target.value)} placeholder="Search by vendor, category, location or contact"
+                className={`${sokoTokens.focus} h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-400 hover:border-slate-300 transition-colors`} />
+            </label>
+            <div className="grid grid-cols-2 gap-2 md:flex">
+              <label>
+                <span className="sr-only">Trade category</span>
+                <select value={filters.category} onChange={(e) => setFilter('category', e.target.value)} className={`${selectCls} w-full md:w-44`}>
+                  <option value="all">All categories</option>
+                  {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </label>
+              <label>
+                <span className="sr-only">SOKO network status</span>
+                <select value={filters.network} onChange={(e) => setFilter('network', e.target.value as NetworkFilter)} className={`${selectCls} w-full md:w-48`}>
+                  <option value="all">Any SOKO status</option>
+                  <option value="verified">SOKO Verified</option>
+                  <option value="listed">On SOKO · unverified</option>
+                  <option value="external">External vendor</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div className="flex items-end justify-between gap-4">
+            <div className="min-w-0 overflow-x-auto">
+              <SokoTabs variant="underline" label={`${company} approval status`} tabs={approvalTabs} active={filters.approval} onChange={(id) => setFilter('approval', id)} />
+            </div>
+            {hasFilters && (
+              <button type="button" onClick={() => setFilters(NO_FILTERS)}
+                className={`${sokoTokens.focus} mb-1.5 inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-slate-500 hover:text-blue-700 cursor-pointer`}>
+                <X className="w-3.5 h-3.5" aria-hidden />Clear filters
+              </button>
+            )}
+          </div>
+        </div>
+
+        {vendors.length === 0 ? (
+          <div className="py-10">
+            <SokoEmptyState icon={Users} title="No vendors yet"
+              description="Add suppliers to your internal vendor register to track approvals, documents and relationships."
+              action={canManage ? <button type="button" onClick={() => setShowAdd(true)} className={`${btnPrimary} text-sm`}><Plus className="w-4 h-4" />Add vendor</button> : undefined} />
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="py-10">
+            <SokoEmptyState icon={Search} title="No vendors match these filters"
+              description="Try a different search term or clear the filters to see all vendors."
+              action={<button type="button" onClick={() => setFilters(NO_FILTERS)} className={`${btnSecondary} text-sm`}>Clear filters</button>} />
+          </div>
+        ) : (
+          <>
+            <p className="px-5 pt-3 text-[11px] text-slate-400 sm:px-6" aria-live="polite">
+              Showing {filtered.length} of {vendors.length}
+            </p>
+
+            {/* Desktop table */}
+            <table className="hidden w-full text-sm lg:table">
+              <thead>
+                <tr className={`${sokoTokens.eyebrow} border-b border-slate-100 text-left`}>
+                  <th scope="col" className="px-6 py-3 font-medium">Vendor</th>
+                  <th scope="col" className="px-3 py-3 font-medium">SOKO network</th>
+                  <th scope="col" className="px-3 py-3 font-medium">{company} approval</th>
+                  <th scope="col" className="px-3 py-3 font-medium">Contact</th>
+                  <th scope="col" className="px-3 py-3 font-medium">Last visit</th>
+                  <th scope="col" className="px-3 py-3 font-medium">Notes</th>
+                  <th scope="col" className="px-6 py-3 font-medium text-right"><span className="sr-only">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filtered.map((v) => (
+                  <tr key={v.id} onClick={() => openVendor(v.id)} className="group cursor-pointer transition-colors hover:bg-slate-50/70">
+                    <td className="px-6 py-3.5">
+                      <div className="flex items-center gap-3">
+                        <VendorLogo vendor={v} />
+                        <div className="min-w-0">
+                          <p className="truncate font-medium text-slate-900 group-hover:text-blue-700 transition-colors">{v.supplierName}</p>
+                          <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-slate-500">
+                            {v.tradeCategory}<span aria-hidden className="text-slate-300">·</span>{v.location}
+                          </p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-3 py-3.5"><NetworkBadge vendor={v} /></td>
+                    <td className="px-3 py-3.5"><ApprovalBadge status={v.approvalStatus} company={company} /></td>
+                    <td className="px-3 py-3.5">
+                      <p className="text-slate-700">{v.contactPerson}</p>
+                      {v.contactEmail && <p className="max-w-[180px] truncate text-xs text-slate-400">{v.contactEmail}</p>}
+                    </td>
+                    <td className="px-3 py-3.5 font-mono text-[11px] text-slate-500 whitespace-nowrap">{v.lastVisitDate ? fmtDate(v.lastVisitDate) : '—'}</td>
+                    <td className="px-3 py-3.5 text-xs text-slate-500 whitespace-nowrap">
+                      {v.notes.length > 0 ? <span className="inline-flex items-center gap-1"><StickyNote className="w-3.5 h-3.5 text-slate-400" aria-hidden />{v.notes.length}</span> : '—'}
+                    </td>
+                    <td className="px-6 py-3.5">
+                      <div className="flex items-center justify-end gap-1.5">
+                        {canManage && (
+                          <ApprovalMenu compact current={v.approvalStatus} company={company} vendorName={v.supplierName} onChange={(s) => changeStatus(v, s)} />
+                        )}
+                        <button type="button" onClick={(e) => { e.stopPropagation(); openVendor(v.id); }}
+                          className={`${sokoTokens.focus} inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-xs font-medium text-blue-700 hover:bg-blue-50 transition-colors cursor-pointer`}>
+                          View<span className="sr-only"> {v.supplierName}</span><ChevronRight className="w-3.5 h-3.5" aria-hidden />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            {/* Mobile / tablet cards */}
+            <ul className="flex flex-col divide-y divide-slate-100 lg:hidden">
+              {filtered.map((v) => (
+                <li key={v.id} className="flex flex-col gap-3 px-5 py-4 sm:px-6">
+                  <button type="button" onClick={() => openVendor(v.id)} className={`${sokoTokens.focus} flex items-start gap-3 rounded-lg text-left cursor-pointer`}>
+                    <VendorLogo vendor={v} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-medium text-slate-900">{v.supplierName}</span>
+                      <span className="mt-0.5 block truncate text-xs text-slate-500">{v.tradeCategory} · {v.location}</span>
+                    </span>
+                    <ChevronRight className="mt-2 w-4 h-4 shrink-0 text-slate-400" aria-hidden />
+                  </button>
+                  <div className="flex flex-wrap items-center gap-2 pl-12">
+                    <NetworkBadge vendor={v} />
+                    <ApprovalBadge status={v.approvalStatus} company={company} />
+                  </div>
+                  <div className="flex items-center justify-between gap-3 pl-12">
+                    <p className="min-w-0 truncate text-xs text-slate-500">
+                      {v.contactPerson}{v.lastVisitDate && <> · Visited {fmtDate(v.lastVisitDate)}</>}
+                    </p>
+                    {canManage && (
+                      <ApprovalMenu compact current={v.approvalStatus} company={company} vendorName={v.supplierName} onChange={(s) => changeStatus(v, s)} />
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </section>
+
+      <p className="flex items-start gap-2 text-[11px] leading-relaxed text-slate-500">
+        <Info className="mt-px w-3.5 h-3.5 shrink-0 text-slate-400" aria-hidden />
+        SOKO Verification and {company} approval are independent. SOKO Verified does not imply {company} approval, and vice versa. Document sharing is a prototype; real access-controlled storage requires backend integration.
+      </p>
+
       {showAdd && <AddVendorModal sw={sw} onClose={() => setShowAdd(false)} />}
-      {profileSupplierId && <SupplierProfileModal supplierId={profileSupplierId} onClose={() => setProfileSupplierId(null)} />}
     </div>
   );
 };

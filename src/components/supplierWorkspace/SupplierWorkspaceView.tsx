@@ -153,7 +153,7 @@ export const SupplierWorkspaceView: React.FC<Props> = ({ tab, store, onStoreChan
           </button>
         </div>
       )}
-      {tab !== 'sw-dashboard' && (
+      {tab !== 'sw-dashboard' && tab !== 'sw-vendors' && (
         <SokoBreadcrumb
           className="mb-4"
           onBack={() => history.back(onNavigate)}
@@ -172,7 +172,12 @@ export const SupplierWorkspaceView: React.FC<Props> = ({ tab, store, onStoreChan
       {tab === 'sw-contacts' && <SupplierContacts sw={sw} onStartMessageWith={onStartMessageWith} />}
       {tab === 'sw-visits' && <SupplierVisits sw={sw} />}
       {tab === 'sw-insights' && (sw.company.kind === 'contractor' ? <ContractorIntelligence sw={sw} /> : <SupplierInsights sw={sw} />)}
-      {tab === 'sw-vendors' && <VendorDirectory sw={sw} />}
+      {tab === 'sw-vendors' && (
+        <VendorDirectory
+          sw={sw}
+          pageBack={{ label: `Back to ${TAB_LABELS[history.previous] ?? 'Dashboard'}`, onBack: () => history.back(onNavigate) }}
+        />
+      )}
       {tab === 'sw-team' && <TeamManagement sw={sw} />}
       {tab === 'sw-plan' && <SupplierPlans sw={sw} />}
       {tab === 'sw-settings' && <CompanySettings sw={sw} onLeaveCompany={onLeaveCompany} />}
