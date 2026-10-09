@@ -30,7 +30,15 @@ const WorkflowSteps: React.FC<{ status: InterestStatus }> = ({ status }) => {
 
 export const ExpressInterestDialog: React.FC<{ hub: Hub; o: OpportunityView; onClose: () => void }> = ({ hub, o, onClose }) => {
   const [message, setMessage] = useState('');
-  const submit = () => hub.run(expressInterest(hub.store, hub.actor, o.id, message), 'Interest sent. The publisher will review it on SOKO.') && onClose();
+  const submit = () => {
+    const result = expressInterest(hub.store, hub.actor, o.id, message);
+    if (hub.run(result, 'Interest sent. The publisher will review it on SOKO.')) {
+      const opp = hub.store.opportunities.find((x) => x.id === o.id);
+      const responderName = hub.actor.workspace.companyName ?? hub.actor.workspace.personName;
+      if (opp) hub.onInterestExpressed?.(o.id, o.title, opp.publisherWorkspaceId, responderName);
+      onClose();
+    }
+  };
   return (
     <ProfileDialog
       title="Express Interest"

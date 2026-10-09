@@ -3,6 +3,7 @@ import { companyById, companyUser, effectiveRole, loadSupplierStore, memberships
 import { DEMO_ACCOUNTS, DemoAccount, roleMeta, SupplierStore } from './data/supplierTypes';
 import { leaveCompany, setTier } from './data/supplierService';
 import { marketWorkspaceFor, planToTier, syncMarketPlans } from './data/supplierMarket';
+import { loadNotificationStore, saveNotificationStore, notificationsForContext, unreadCountForContext, markNotificationRead, markAllRead, marketHubInterestNotification, NotificationStore, NotificationFilter } from './data/notificationStore';
 import { SupplierWorkspaceView } from './components/supplierWorkspace/SupplierWorkspaceView';
 import { SupplierOnboarding } from './components/supplierWorkspace/SupplierOnboarding';
 import { SupplierTab } from './components/supplierWorkspace/SupplierShared';
@@ -215,6 +216,29 @@ function MainApp() {
     const saved = localStorage.getItem('procurelink_conversations');
     return saved ? JSON.parse(saved) : INITIAL_CONVERSATIONS;
   });
+
+  const [notifStore, setNotifStore] = useState<NotificationStore>(() => loadNotificationStore());
+  useEffect(() => { saveNotificationStore(notifStore); }, [notifStore]);
+
+  const notifContextId = activeWorkspaceId;
+  const contextNotifications = useMemo(
+    () => notificationsForContext(notifStore, notifContextId, currentUser.id),
+    [notifStore, notifContextId, currentUser.id],
+  );
+  const contextUnreadCount = useMemo(
+    () => unreadCountForContext(notifStore, notifContextId, currentUser.id),
+    [notifStore, notifContextId, currentUser.id],
+  );
+  const handleMarkNotifRead = useCallback((id: string) => {
+    setNotifStore((prev) => markNotificationRead(prev, id));
+  }, []);
+  const handleMarkAllNotifsRead = useCallback((filter: NotificationFilter) => {
+    setNotifStore((prev) => markAllRead(prev, filter, notifContextId));
+  }, [notifContextId]);
+  const handleInterestExpressed = useCallback((oppId: string, oppTitle: string, publisherWsId: string, responderName: string) => {
+    const recipientWsId = publisherWsId.startsWith('company:') ? publisherWsId : `company:${publisherWsId}`;
+    setNotifStore((prev) => marketHubInterestNotification(prev, recipientWsId, oppId, oppTitle, responderName));
+  }, []);
 
   const [suppliers, setSuppliers] = useState<SupplierItem[]>(() => {
     const saved = localStorage.getItem('procurelink_suppliers_v2');
@@ -851,6 +875,10 @@ function MainApp() {
             setAuthModalMode(mode);
             setAuthModalOpen(true);
           }}
+          notifications={contextNotifications}
+          unreadNotificationCount={contextUnreadCount}
+          onMarkNotificationRead={handleMarkNotifRead}
+          onMarkAllNotificationsRead={handleMarkAllNotifsRead}
         />
       ) : (
       <Navbar
@@ -989,6 +1017,7 @@ function MainApp() {
               setActiveTab('soko-ai');
             }}
             onSwitchRole={handleRoleChange}
+            onInterestExpressed={handleInterestExpressed}
           />
         )}
 

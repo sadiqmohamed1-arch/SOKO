@@ -13,6 +13,7 @@ export interface Hub {
   askAi: (query: string) => void;
   openSupplier: (supplierId: string) => void;
   switchWorkspace?: (role: 'buyer' | 'contractor' | 'supplier' | 'admin') => void;
+  onInterestExpressed?: (opportunityId: string, opportunityTitle: string, publisherWorkspaceId: string, responderCompanyName: string) => void;
 }
 
 export const fmtDate = (iso?: string) => (iso ? new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');

@@ -25,10 +25,16 @@ import {
   UsersRound,
   Crown,
   PlusCircle,
+  CheckCheck,
+  FileText,
+  Handshake,
+  Clock,
+  ShieldCheck,
 } from 'lucide-react';
 import { SokoLogo } from './SokoLogo';
 import { Conversation, UserProfile, UserRole, Workspace } from '../types';
 import { DemoAccount } from '../data/supplierTypes';
+import { NotificationFilter, SokoNotification } from '../data/notificationStore';
 
 interface BuyerNavbarProps {
   activeTab: string;
@@ -49,6 +55,10 @@ interface BuyerNavbarProps {
   onLogout?: () => void;
   onOpenAuthModal?: (mode: 'login' | 'signup') => void;
   onOpenSupplierOnboarding?: () => void;
+  notifications: SokoNotification[];
+  unreadNotificationCount: number;
+  onMarkNotificationRead: (id: string) => void;
+  onMarkAllNotificationsRead: (filter: NotificationFilter) => void;
 }
 
 type OpenMenu = 'none' | 'notifications' | 'profile';
@@ -92,6 +102,53 @@ const COMPANY_MENU = [
   { id: 'sw-settings', label: 'Workspace Settings', icon: Settings },
 ];
 
+const NOTIF_FILTERS: { id: NotificationFilter; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'messages', label: 'Messages' },
+  { id: 'market_hub', label: 'Market Hub' },
+  { id: 'visits', label: 'Visits' },
+  { id: 'vendors', label: 'Vendors' },
+  { id: 'documents', label: 'Documents' },
+];
+
+const NOTIF_EVENT_ICON: Record<SokoNotification['eventType'], typeof Bell> = {
+  message: MessageSquare,
+  market_hub_interest: Handshake,
+  market_hub_update: FolderKanban,
+  visit_request: CalendarCheck,
+  visit_confirmation: Check,
+  vendor_review: ShieldCheck,
+  document_shared: FileText,
+  compliance_expiry: Clock,
+  team_invite: UsersRound,
+  team_change: UsersRound,
+};
+
+const NOTIF_EVENT_FILTER: Record<SokoNotification['eventType'], NotificationFilter> = {
+  message: 'messages',
+  market_hub_interest: 'market_hub',
+  market_hub_update: 'market_hub',
+  visit_request: 'visits',
+  visit_confirmation: 'visits',
+  vendor_review: 'vendors',
+  document_shared: 'documents',
+  compliance_expiry: 'documents',
+  team_invite: 'all',
+  team_change: 'all',
+};
+
+const fmtRelative = (iso: string): string => {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString();
+};
+
 export const BuyerNavbar: React.FC<BuyerNavbarProps> = ({
   activeTab,
   setActiveTab,
@@ -111,8 +168,13 @@ export const BuyerNavbar: React.FC<BuyerNavbarProps> = ({
   onLogout,
   onOpenAuthModal,
   onOpenSupplierOnboarding,
+  notifications,
+  unreadNotificationCount,
+  onMarkNotificationRead,
+  onMarkAllNotificationsRead,
 }) => {
   const [openMenu, setOpenMenu] = useState<OpenMenu>('none');
+  const [notifFilter, setNotifFilter] = useState<NotificationFilter>('all');
   const rightRef = useRef<HTMLDivElement>(null);
 
   const personalWorkspace = workspaces.find((w) => w.kind === 'personal');
@@ -124,6 +186,11 @@ export const BuyerNavbar: React.FC<BuyerNavbarProps> = ({
 
   const unreadConversations = conversations.filter((c) => c.unreadCount > 0);
   const unreadTotal = unreadConversations.reduce((sum, c) => sum + c.unreadCount, 0);
+  const totalUnreadBadge = unreadTotal + unreadNotificationCount;
+
+  const filteredNotifications = notifFilter === 'all'
+    ? notifications
+    : notifications.filter((n) => NOTIF_EVENT_FILTER[n.eventType] === notifFilter);
 
   useEffect(() => {
     if (openMenu === 'none') return;
@@ -272,8 +339,8 @@ export const BuyerNavbar: React.FC<BuyerNavbarProps> = ({
             }`}
           >
             <Bell className="w-5 h-5" />
-            {unreadConversations.length > 0 && (
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-600 ring-2 ring-white" />
+            {totalUnreadBadge > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 bg-red-600 text-white text-[10px] font-bold px-1.5 rounded-full ring-2 ring-white">{totalUnreadBadge}</span>
             )}
           </button>
 
@@ -298,35 +365,65 @@ export const BuyerNavbar: React.FC<BuyerNavbarProps> = ({
           </button>
 
           {openMenu === 'notifications' && (
-            <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
+            <div className="absolute right-0 top-full mt-2 w-96 bg-white rounded-2xl shadow-2xl border border-slate-200 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
               <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
                 <span className="text-sm font-semibold text-slate-900">Notifications</span>
-                {unreadTotal > 0 && <span className="text-xs text-slate-500">{unreadTotal} unread</span>}
+                <div className="flex items-center gap-2">
+                  {totalUnreadBadge > 0 && <span className="text-xs text-slate-500">{totalUnreadBadge} unread</span>}
+                  {totalUnreadBadge > 0 && (
+                    <button type="button" onClick={() => onMarkAllNotificationsRead(notifFilter)} className="text-[11px] text-blue-600 hover:text-blue-800 font-medium cursor-pointer flex items-center gap-1">
+                      <CheckCheck className="w-3.5 h-3.5" /> Mark all read
+                    </button>
+                  )}
+                </div>
               </div>
-              {unreadConversations.length === 0 ? (
-                <p className="px-4 py-8 text-center text-sm text-slate-500">You're all caught up.</p>
+              <div className="px-2 py-1.5 border-b border-slate-100 flex gap-1 flex-wrap">
+                {NOTIF_FILTERS.map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => setNotifFilter(f.id)}
+                    className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors cursor-pointer ${
+                      notifFilter === f.id ? 'bg-blue-100 text-blue-700' : 'text-slate-500 hover:bg-slate-100'
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+              {filteredNotifications.length === 0 ? (
+                <p className="px-4 py-8 text-center text-sm text-slate-500">No notifications in this category.</p>
               ) : (
-                <ul className="max-h-80 overflow-y-auto">
-                  {unreadConversations.map((c) => (
-                    <li key={c.id}>
-                      <button
-                        type="button"
-                        onClick={() => go(() => setActiveTab('messages'))}
-                        className="w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-slate-50 transition-colors cursor-pointer"
-                      >
-                        <img src={c.participant.avatar} alt={c.participant.name} className="w-9 h-9 rounded-full object-cover shrink-0" />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm text-slate-900 truncate">
-                            <span className="font-semibold">{c.participant.name}</span> sent you a message
-                          </p>
-                          <p className="text-xs text-slate-500 truncate">{c.lastMessage}</p>
-                          <p className="text-[11px] text-slate-400 mt-0.5">{c.lastMessageTime}</p>
-                        </div>
-                      </button>
-                    </li>
-                  ))}
+                <ul className="max-h-96 overflow-y-auto">
+                  {filteredNotifications.slice(0, 20).map((n) => {
+                    const Icon = NOTIF_EVENT_ICON[n.eventType] ?? Bell;
+                    return (
+                      <li key={n.id}>
+                        <button
+                          type="button"
+                          onClick={() => { onMarkNotificationRead(n.id); go(() => setActiveTab(n.route)); }}
+                          className={`w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-slate-50 transition-colors cursor-pointer ${n.read ? 'opacity-60' : ''}`}
+                        >
+                          <span className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${n.read ? 'bg-slate-100 text-slate-400' : 'bg-blue-50 text-blue-600'}`}>
+                            <Icon className="w-4 h-4" />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm text-slate-900 truncate">
+                              <span className="font-semibold">{n.title}</span>
+                            </p>
+                            <p className="text-xs text-slate-500 truncate">{n.description}</p>
+                            <p className="text-[11px] text-slate-400 mt-0.5">{fmtRelative(n.createdAt)}</p>
+                          </div>
+                          {!n.read && <span className="w-2 h-2 rounded-full bg-blue-600 shrink-0 mt-2" />}
+                        </button>
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
+              <div className="px-4 py-2 border-t border-slate-100">
+                <p className="text-[10px] text-slate-400 text-center">Prototype notification feed. Real-time delivery requires backend integration.</p>
+              </div>
             </div>
           )}
 
