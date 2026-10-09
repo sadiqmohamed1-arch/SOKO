@@ -1009,6 +1009,7 @@ function MainApp() {
           <MarketHubView
             key={`${activeMarketWorkspace?.id ?? 'personal'}-${marketNonce}`}
             companyWorkspace={activeMarketWorkspace}
+            contractorMode={activeCompany?.kind === 'contractor'}
             onPlanChange={activeMarketWorkspace ? handleCompanyPlanChange : undefined}
             currentUser={currentUser}
             onNavigateToTab={(tab) => setActiveTab(tab)}

@@ -8,6 +8,7 @@ import { CampaignDraftInput, CampaignKind, MarketHubStore, MarketWorkspace, Oppo
 import { ProfileDialog } from '../ProfileDialog';
 import { Toast, VerifiedCompanyBadge, btnPrimary } from '../NetworkShared';
 import { CampaignCenter, CampaignNav } from './CampaignCenter';
+import { ContractorMarketHub } from './ContractorMarketHub';
 import { CampaignWizard } from './CampaignWizard';
 import { EMPTY_EXPLORE, ExploreState, ExploreTab } from './ExploreTab';
 import { Hub } from './MarketHubShared';
@@ -32,9 +33,10 @@ interface MarketHubViewProps {
   companyWorkspace?: MarketWorkspace;
   onPlanChange?: (plan: PlanId) => void;
   onInterestExpressed?: (opportunityId: string, opportunityTitle: string, publisherWorkspaceId: string, responderCompanyName: string) => void;
+  contractorMode?: boolean;
 }
 
-export const MarketHubView: React.FC<MarketHubViewProps> = ({ currentUser, onNavigateToTab, onAskSokoAi, onSwitchRole, companyWorkspace, onPlanChange, onInterestExpressed }) => {
+export const MarketHubView: React.FC<MarketHubViewProps> = ({ currentUser, onNavigateToTab, onAskSokoAi, onSwitchRole, companyWorkspace, onPlanChange, onInterestExpressed, contractorMode }) => {
   const [store, setStore] = useState<MarketHubStore>(loadMarketStore);
   const [dest, setDest] = useState<Destination>('explore');
   const [explore, setExplore] = useState<ExploreState>(EMPTY_EXPLORE);
@@ -96,8 +98,36 @@ export const MarketHubView: React.FC<MarketHubViewProps> = ({ currentUser, onNav
   const save = (o: OpportunityView) => run(toggleSaveOpportunity(store, actor, o.id), (saved) => (saved ? 'Saved to My Activity' : 'Removed from saved'));
   const supplier = BUYER_SUPPLIERS.find((s) => s.id === supplierId);
 
+  const isContractor = !!(contractorMode && companyWorkspace);
+
   return (
     <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6">
+      {isContractor ? (
+        <ContractorMarketHub
+          hub={hub}
+          all={all}
+          companyName={ws.companyName ?? ws.displayName}
+          openId={openOpp}
+          onOpen={setOpenOpp}
+          onPost={() => setPosting(true)}
+          onInterest={setInterestOpp}
+          campaignKind={campaignKind}
+          canCreateCampaign={canCreateCampaign}
+          planLabel={PLANS[actor.plan].label}
+          unreadCampaigns={unread}
+          onCreateCampaign={createCampaign}
+          renderCampaigns={() => (
+            <CampaignCenter
+              hub={hub}
+              nav={campaignNav}
+              onNav={setCampaignNav}
+              onCreate={createCampaign}
+              onEdit={(v) => setWizard({ kind: v.campaign.kind, draft: { id: v.campaign.id, input: draftInputOf(v.campaign) } })}
+            />
+          )}
+        />
+      ) : (
+      <>
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
@@ -189,8 +219,10 @@ export const MarketHubView: React.FC<MarketHubViewProps> = ({ currentUser, onNav
           <MyActivityTab hub={hub} list={all} onOpen={(o) => setOpenOpp(o.id)} onPost={() => setPosting(true)} onOpenCampaign={(section, id) => openCampaigns({ section, id })} />
         )}
       </div>
+      </>
+      )}
 
-      {byId(openOpp) && <OpportunityDetailDialog hub={hub} o={byId(openOpp)!} onClose={() => setOpenOpp(null)} onInterest={() => setInterestOpp(openOpp)} />}
+      {!isContractor && byId(openOpp) && <OpportunityDetailDialog hub={hub} o={byId(openOpp)!} onClose={() => setOpenOpp(null)} onInterest={() => setInterestOpp(openOpp)} />}
       {byId(interestOpp) && <ExpressInterestDialog hub={hub} o={byId(interestOpp)!} onClose={() => setInterestOpp(null)} />}
       {posting && (
         <PostOpportunityDialog

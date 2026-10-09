@@ -14,7 +14,7 @@ const STEPS: { id: InterestStatus; label: string }[] = [
   { id: 'connected', label: 'Connected' },
 ];
 
-const WorkflowSteps: React.FC<{ status: InterestStatus }> = ({ status }) => {
+export const WorkflowSteps: React.FC<{ status: InterestStatus }> = ({ status }) => {
   const idx = STEPS.findIndex((s) => s.id === status);
   return (
     <ol className="flex items-center gap-1">
@@ -178,7 +178,7 @@ export const OpportunityDetailDialog: React.FC<{ hub: Hub; o: OpportunityView; o
   );
 };
 
-const InterestReview: React.FC<{ hub: Hub; o: OpportunityView }> = ({ hub, o }) => {
+export const InterestReview: React.FC<{ hub: Hub; o: OpportunityView }> = ({ hub, o }) => {
   const list = o.interests ?? [];
   const act = (id: string, action: 'review' | 'approve' | 'decline', msg: string) => hub.run(reviewInterest(hub.store, hub.actor, o.id, id, action), msg);
   return (
