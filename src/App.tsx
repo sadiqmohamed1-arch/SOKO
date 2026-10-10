@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { companyById, companyUser, effectiveRole, loadSupplierStore, membershipsOfUser, saveSupplierStore, syncDirectory } from './data/supplierStore';
-import { DemoAccount, roleMeta, SupplierStore } from './data/supplierTypes';
+import { DEMO_ACCOUNTS, DemoAccount, roleMeta, SupplierStore } from './data/supplierTypes';
+import { DEMO_MODE_ENABLED } from './demoMode';
+import { DemoAccountSwitcher } from './components/DemoAccountSwitcher';
 import { leaveCompany, setTier } from './data/supplierService';
 import { marketWorkspaceFor, planToTier, syncMarketPlans } from './data/supplierMarket';
 import { PLANS } from './data/marketHubCatalog';
@@ -500,11 +502,14 @@ function MainApp() {
     }
   }, [currentUser.role, activeTab]);
 
-  // Retained for a future authorized internal demo mechanism; it is intentionally not exposed in the user menu.
+  // Client-only demo identity: issues no token and is refused whenever a real session exists.
   const switchDemoAccount = useCallback((account: DemoAccount) => {
-    localStorage.setItem('soko_demo_account', account.id);
-    setCurrentUser((prev) => ({
-      ...prev,
+    if (!DEMO_MODE_ENABLED || authUser) return;
+    setGlobalSearch('');
+    setCardMode('preview');
+    // Start from the base profile so no field of the previous person carries over.
+    setCurrentUser({
+      ...INITIAL_CURRENT_USER,
       id: account.userId,
       name: account.name,
       email: account.email,
@@ -512,7 +517,7 @@ function MainApp() {
       role: account.role,
       company: account.company,
       avatarUrl: account.avatarUrl,
-    }));
+    });
     const m = membershipsOfUser(loadSupplierStore(), account.userId);
     const firstCompany = m[0];
     if (firstCompany) {
@@ -522,7 +527,7 @@ function MainApp() {
       setActiveWorkspaceId('personal');
       setActiveTab('feed');
     }
-  }, []);
+  }, [authUser]);
 
   // Handle Persona / Role Switcher
   const handleRoleChange = (role: UserRole) => {
@@ -1289,6 +1294,10 @@ function MainApp() {
         initialMode={authModalMode}
         onSuccess={handleAuthSuccess}
       />
+
+      {DEMO_MODE_ENABLED && !isAuthenticated && (
+        <DemoAccountSwitcher accounts={DEMO_ACCOUNTS} activeUserId={currentUser.id} onSwitch={switchDemoAccount} />
+      )}
     </div>
   );
 }

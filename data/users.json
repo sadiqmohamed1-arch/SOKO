@@ -1,5 +1,25 @@
 [
   {
+    "id": "usr_1791655347158_yoz3b",
+    "name": "Real Tester",
+    "email": "qa.real.1791655347@example.com",
+    "passwordHash": "$2b$10$DIulpvN4h0YxrNVId.B3l.GgT8UaNIuXh/5cjUCM8NvFY8f/24e2q",
+    "role": "buyer",
+    "company": "",
+    "title": "Procurement Lead",
+    "phone": "",
+    "tradeLicenseNo": "CN-6926859",
+    "vatTrn": "100114204587577",
+    "avatarUrl": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
+    "location": "Dubai, UAE",
+    "isVerified": true,
+    "rewardPoints": 100,
+    "streakDays": 1,
+    "createdAt": "2026-10-10T18:02:27.158Z",
+    "updatedAt": "2026-10-10T18:02:27.158Z",
+    "lastLoginAt": "2026-10-10T18:02:27.158Z"
+  },
+  {
     "id": "usr_1791654547089_b99ue",
     "name": "Nadia Rahman",
     "email": "nadia.qa.1791654546@example.com",
