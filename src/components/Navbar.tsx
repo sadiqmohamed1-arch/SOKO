@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { SokoLogo } from './SokoLogo';
+import { SokoLogo, SokoLockup } from './SokoLogo';
 import {
   Building2,
   Home,
@@ -113,8 +113,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             onClick={() => setActiveTab('feed')}
             className="flex items-center gap-2.5 group cursor-pointer text-left"
           >
-            <SokoLogo size="md" className="shadow-xs" />
-            <div className="hidden sm:flex flex-col"></div>
+            <SokoLogo size="md" className="lg:hidden" />
+            <SokoLockup className="hidden lg:block h-7" />
           </button>
 
           {onOpenLanding && (

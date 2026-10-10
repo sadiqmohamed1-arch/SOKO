@@ -33,7 +33,7 @@ import {
   Clock,
   ShieldCheck,
 } from 'lucide-react';
-import { SokoLogo } from './SokoLogo';
+import { SokoLogo, SokoLockup } from './SokoLogo';
 import { Conversation, UserProfile, Workspace } from '../types';
 import { NotificationFilter, SokoNotification } from '../data/notificationStore';
 
@@ -263,7 +263,8 @@ export const BuyerNavbar: React.FC<BuyerNavbarProps> = ({
           className="flex items-center shrink-0 cursor-pointer"
           title={companyMode ? 'Company dashboard' : 'Home'}
         >
-          <SokoLogo size="md" className="shadow-xs" />
+          <SokoLogo size="md" className="lg:hidden" />
+          <SokoLockup className="hidden lg:block h-7" />
         </button>
 
         <nav aria-label="Workspace navigation" className={`flex items-center gap-0.5 sm:gap-1 overflow-x-auto ${companyMode ? 'lg:hidden' : ''}`}>

@@ -20,39 +20,34 @@ export const SokoLogo: React.FC<SokoLogoProps> = ({
   className = '',
   size = 'md',
   rounded,
-  ariaLabel = 'SOKO Logo',
+  ariaLabel = 'SOKO',
 }) => {
   const sizeClasses = sizeMap[size] || sizeMap.md;
-  const customRounded = rounded ?? '';
 
   return (
-    <div
-      role="img"
-      aria-label={ariaLabel}
-      className={`relative inline-flex items-center justify-center shrink-0 overflow-hidden select-none transition-transform group-hover:scale-102 ${sizeClasses} ${customRounded} ${className}`}
-    >
-      <svg
-        viewBox="0 0 240 240"
-        className="w-full h-full block"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <rect width="240" height="240" rx="52" fill="#000000" />
-        <text
-          x="120"
-          y="146"
-          textAnchor="middle"
-          fill="#FFFFFF"
-          fontFamily="'Plus Jakarta Sans', 'Outfit', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif"
-          fontWeight="900"
-          fontSize="68"
-          letterSpacing="-1px"
-        >
-          SOKO
-        </text>
-      </svg>
-    </div>
+    <img
+      src="/soko-logo.png"
+      alt={ariaLabel}
+      width={512}
+      height={512}
+      draggable={false}
+      className={`shrink-0 select-none bg-white object-contain ring-1 ring-slate-200 transition-transform group-hover:scale-102 ${sizeClasses} ${rounded ?? ''} ${className}`}
+    />
   );
 };
+
+export const SokoLockup: React.FC<{ className?: string; ariaLabel?: string }> = ({
+  className = 'h-8',
+  ariaLabel = 'SOKO.ae',
+}) => (
+  <img
+    src="/soko-lockup.png"
+    alt={ariaLabel}
+    width={720}
+    height={156}
+    draggable={false}
+    className={`w-auto shrink-0 select-none ${className}`}
+  />
+);
 
 export default SokoLogo;
