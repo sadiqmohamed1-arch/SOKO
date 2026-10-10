@@ -78,82 +78,56 @@ const contractorPlans: PlanCard[] = [
   },
 ];
 
-const Card: React.FC<{ plan: PlanCard; onSelect: () => void }> = ({ plan, onSelect }) => (
-  <li className={`flex flex-col rounded-2xl border p-6 sm:p-7 ${plan.highlighted ? 'border-soko-ink bg-soko-ink text-white' : 'border-soko-line bg-white text-soko-ink'}`}>
-    <h3 className="text-lg font-semibold">{plan.name}</h3>
-    <p className={`mt-1 text-sm leading-relaxed ${plan.highlighted ? 'text-white/70' : 'text-soko-muted'}`}>{plan.tagline}</p>
-    <p className="mt-6 font-[Outfit] text-3xl font-bold tracking-tight">{plan.price}</p>
-    <p className={`text-sm ${plan.highlighted ? 'text-white/70' : 'text-soko-muted'}`}>{plan.priceNote}</p>
-
-    <ul className="mt-6 flex flex-1 flex-col gap-2.5">
+const PlanColumn: React.FC<{ plan: PlanCard }> = ({ plan }) => (
+  <li className={`rounded-xl border p-4 ${plan.highlighted ? 'border-soko-ink' : 'border-soko-line'}`}>
+    <div className="flex items-baseline justify-between gap-3">
+      <h4 className="font-semibold text-soko-ink">{plan.name}</h4>
+      <span className={`shrink-0 text-sm font-semibold ${plan.price === 'Free' ? 'text-soko-blue' : 'text-soko-muted'}`}>{plan.price}</span>
+    </div>
+    <p className="mt-0.5 text-xs text-soko-muted">{plan.priceNote}</p>
+    <ul className="mt-3 flex flex-col gap-1.5">
       {plan.features.map((f) => (
-        <li key={f} className="flex items-start gap-2.5 text-sm leading-relaxed">
-          <Check className={`mt-0.5 h-4 w-4 shrink-0 ${plan.highlighted ? 'text-white' : 'text-soko-blue'}`} aria-hidden="true" />
+        <li key={f} className="flex items-start gap-2 text-sm leading-relaxed text-soko-ink">
+          <Check className="mt-1 h-3.5 w-3.5 shrink-0 text-soko-blue" aria-hidden="true" />
           <span>{f}</span>
         </li>
       ))}
     </ul>
-
-    <button
-      type="button"
-      onClick={onSelect}
-      className={`mt-8 rounded-lg py-3 text-sm font-semibold transition-colors ${
-        plan.highlighted ? 'bg-white text-soko-ink hover:bg-white/90' : 'bg-soko-blue text-white hover:bg-soko-blue/90'
-      }`}
-    >
-      {plan.price === 'Free' ? 'Get started free' : 'Join and register interest'}
-    </button>
   </li>
 );
 
-export const PricingOverview: React.FC<{ onGetStarted: () => void }> = ({ onGetStarted }) => {
+export const PlanDetails: React.FC = () => {
   const [segment, setSegment] = useState<Segment>('suppliers');
   const plans = segment === 'suppliers' ? supplierPlans : contractorPlans;
 
   return (
-    <section id="pricing" aria-labelledby="pricing-heading" className="scroll-mt-20 border-t border-soko-line py-20 lg:py-28">
-      <div className="mx-auto max-w-7xl px-5 lg:px-8">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-2xl">
-            <p className="text-sm font-semibold text-soko-blue">Pricing</p>
-            <h2 id="pricing-heading" className="mt-2 text-4xl font-bold tracking-tight text-soko-ink text-balance">
-              Start free. Upgrade when your company needs more.
-            </h2>
-            <p className="mt-4 text-lg leading-relaxed text-soko-muted text-pretty">
-              Personal accounts are free. Company workspaces start on a free plan, and Premium pricing will be published before launch.
-            </p>
-          </div>
-
-          <div role="radiogroup" aria-label="Company type" className="inline-flex w-full rounded-lg border border-soko-line bg-white p-1 sm:w-auto">
-            {(['suppliers', 'contractors'] as Segment[]).map((s) => (
-              <button
-                key={s}
-                type="button"
-                role="radio"
-                aria-checked={segment === s}
-                onClick={() => setSegment(s)}
-                className={`flex-1 rounded-md px-4 py-2 text-sm font-semibold capitalize transition-colors sm:flex-none ${
-                  segment === s ? 'bg-soko-ink text-white' : 'text-soko-muted hover:text-soko-ink'
-                }`}
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <ul className="mt-12 grid gap-4 md:grid-cols-3">
-          <Card plan={personalPlan} onSelect={onGetStarted} />
-          {plans.map((p) => (
-            <Card key={p.name} plan={p} onSelect={onGetStarted} />
+    <div className="rounded-2xl border border-soko-line bg-white p-4 sm:p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-soko-muted">Plan features reflect the current product and may change before launch.</p>
+        <div role="radiogroup" aria-label="Company type" className="inline-flex rounded-lg border border-soko-line bg-soko-mist p-1">
+          {(['suppliers', 'contractors'] as Segment[]).map((s) => (
+            <button
+              key={s}
+              type="button"
+              role="radio"
+              aria-checked={segment === s}
+              onClick={() => setSegment(s)}
+              className={`flex-1 rounded-md px-3 py-1.5 text-sm font-semibold capitalize transition-colors ${
+                segment === s ? 'bg-white text-soko-ink shadow-sm' : 'text-soko-muted hover:text-soko-ink'
+              }`}
+            >
+              {s}
+            </button>
           ))}
-        </ul>
-
-        <p className="mt-6 text-sm text-soko-muted">
-          Plan features reflect the current product and may change before launch. Need something larger?{' '}
-          <span className="font-medium text-soko-ink">Enterprise plans: contact details coming soon.</span>
-        </p>
+        </div>
       </div>
-    </section>
+      <ul className="mt-4 grid gap-3 md:grid-cols-3">
+        <PlanColumn plan={personalPlan} />
+        {plans.map((p) => (
+          <PlanColumn key={p.name} plan={p} />
+        ))}
+      </ul>
+      <p className="mt-3 text-xs text-soko-muted">Enterprise plans: contact details coming soon.</p>
+    </div>
   );
 };

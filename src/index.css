@@ -85,3 +85,21 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+
+@keyframes soko-flow {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+
+.soko-flow-line {
+  stroke-dasharray: 4 6;
+  animation: soko-flow 0.9s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .soko-flow-line {
+    animation: none;
+    stroke-dasharray: none;
+  }
+}
