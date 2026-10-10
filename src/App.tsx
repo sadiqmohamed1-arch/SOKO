@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { companyById, companyUser, effectiveRole, loadSupplierStore, membershipsOfUser, saveSupplierStore, syncDirectory } from './data/supplierStore';
-import { DEMO_ACCOUNTS, DemoAccount, roleMeta, SupplierStore } from './data/supplierTypes';
+import { DemoAccount, roleMeta, SupplierStore } from './data/supplierTypes';
 import { leaveCompany, setTier } from './data/supplierService';
 import { marketWorkspaceFor, planToTier, syncMarketPlans } from './data/supplierMarket';
 import { PLANS } from './data/marketHubCatalog';
@@ -253,9 +253,16 @@ function MainApp() {
     }
   };
 
-  // Sync authUser to currentUser when authenticated
+  // Sync authUser to currentUser when authenticated. The authenticated user id is the single source of identity.
+  const identityIdRef = React.useRef(currentUser.id);
+  identityIdRef.current = currentUser.id;
   useEffect(() => {
     if (authUser) {
+      // A different person must never inherit the previous person's company workspace or tab.
+      if (authUser.id !== identityIdRef.current) {
+        setActiveWorkspaceId('personal');
+        setActiveTab('feed');
+      }
       setCurrentUser((prev) => ({
         ...prev,
         id: authUser.id,
@@ -493,15 +500,9 @@ function MainApp() {
     }
   }, [currentUser.role, activeTab]);
 
-  const [activeDemoAccountId, setActiveDemoAccountId] = useState<string>(() => {
-    const saved = localStorage.getItem('soko_demo_account');
-    // Retired personas (e.g. the duplicate GEC entry) resolve to their canonical account.
-    return saved && DEMO_ACCOUNTS.some((a) => a.id === saved) ? saved : 'demo_mohamed';
-  });
-
+  // Retained for a future authorized internal demo mechanism; it is intentionally not exposed in the user menu.
   const switchDemoAccount = useCallback((account: DemoAccount) => {
     localStorage.setItem('soko_demo_account', account.id);
-    setActiveDemoAccountId(account.id);
     setCurrentUser((prev) => ({
       ...prev,
       id: account.userId,
@@ -901,12 +902,14 @@ function MainApp() {
 
   // Corporate workspaces get appended here once the Buyer joins a Contractor/Developer company.
   const buyerWorkspaces: Workspace[] = [
-    { id: 'personal', kind: 'personal', name: currentUser.name, roleLabel: 'Buyer' },
-    ...companyMemberships.flatMap((m): Workspace[] => {
-      const c = companyById(supplierStore, m.companyId);
-      if (!c) return [];
-      return [{ id: `company:${c.id}`, kind: 'corporate', name: c.profile.tradingName, roleLabel: `${c.kind === 'contractor' ? 'Contractor' : 'Supplier'} · ${roleMeta(m.role).label}${c.tier === 'premium' ? ' · Premium' : ''}` }];
-    }),
+    { id: 'personal', kind: 'personal', name: currentUser.name, roleLabel: 'Personal Workspace' },
+    ...companyMemberships
+      .filter((m, i, all) => all.findIndex((other) => other.companyId === m.companyId) === i)
+      .flatMap((m): Workspace[] => {
+        const c = companyById(supplierStore, m.companyId);
+        if (!c) return [];
+        return [{ id: `company:${c.id}`, kind: 'corporate', name: c.profile.tradingName, roleLabel: `${c.kind === 'contractor' ? 'Contractor' : 'Supplier'} / ${roleMeta(m.role).label}${c.tier === 'premium' ? ' · Premium' : ''}` }];
+      }),
   ];
 
   if (viewMode === 'landing') {
@@ -942,16 +945,12 @@ function MainApp() {
           workspaces={buyerWorkspaces}
           activeWorkspaceId={activeWorkspaceId}
           onSwitchWorkspace={switchWorkspace}
-          onOpenSupplierOnboarding={() => { setOnboardingIntent('supplier'); setActiveTab('supplier-onboarding'); }}
+          onOpenCompanyOnboarding={(intent) => { setOnboardingIntent(intent); setActiveTab('supplier-onboarding'); }}
           onOpenProfile={() => {
             setCardMode('edit');
             setActiveTab('card');
           }}
           onOpenBusinessCard={() => openNetwork('cards')}
-          onSwitchDemoRole={handleRoleChange}
-          demoAccounts={DEMO_ACCOUNTS}
-          activeDemoAccountId={activeDemoAccountId}
-          onSwitchDemoAccount={switchDemoAccount}
           isAuthenticated={isAuthenticated}
           onLogout={logout}
           onOpenAuthModal={(mode) => {
