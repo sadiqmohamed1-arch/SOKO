@@ -8,8 +8,8 @@ interface PublicHeaderProps {
   onSelectAudience: (id: AudienceId) => void;
 }
 
-export const Wordmark: React.FC<{ className?: string }> = ({ className = '' }) => (
-  <span className={`font-[Outfit] text-2xl font-extrabold tracking-tight text-soko-ink ${className}`}>SOKO</span>
+export const Wordmark: React.FC<{ className?: string }> = ({ className = 'h-9' }) => (
+  <img src="/soko-lockup.png" alt="SOKO" width={720} height={197} className={`w-auto select-none ${className}`} draggable={false} />
 );
 
 export const PublicHeader: React.FC<PublicHeaderProps> = ({ onLogin, onGetStarted, onSelectAudience }) => {

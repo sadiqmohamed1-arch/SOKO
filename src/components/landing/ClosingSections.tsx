@@ -94,7 +94,7 @@ export const PublicFooter: React.FC<PublicFooterProps> = ({ onLogin, onRegister,
     <footer className="border-t border-soko-line bg-white">
       <div className="mx-auto grid max-w-7xl gap-10 px-5 py-14 sm:grid-cols-2 lg:grid-cols-[1.4fr_repeat(4,1fr)] lg:px-8">
         <div>
-          <Wordmark />
+          <Wordmark className="h-11" />
           <p className="mt-3 max-w-xs text-sm leading-relaxed text-soko-muted">The Intelligence Network for Construction.</p>
           <p className="mt-2 text-sm text-soko-muted">so.co.ae</p>
         </div>
