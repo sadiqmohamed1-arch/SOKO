@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Building2, Eye, EyeOff, HardHat, Loader2, Truck, User, UserPlus, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Building2, Check, Eye, EyeOff, HardHat, Loader2, Truck, User, UserPlus, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export type AuthIntent = 'personal' | 'join' | 'supplier' | 'contractor';
@@ -20,8 +20,10 @@ const CHOICES: { intent: AuthIntent; icon: React.ElementType; title: string; bod
   { intent: 'contractor', icon: HardHat, title: 'Register a contractor or developer company', body: 'Source materials, run RFQs and manage approved suppliers for your projects.' },
 ];
 
+const SIGNUP_STEPS = ['Account', 'Get Started'] as const;
+
 const inputCls =
-  'w-full rounded-lg border border-soko-line bg-background px-3.5 py-2.5 text-sm text-soko-ink placeholder:text-soko-muted/70 outline-none transition focus:border-soko-blue focus:ring-2 focus:ring-soko-blue/20 aria-[invalid=true]:border-red-500';
+  'w-full rounded-lg border border-soko-line bg-white px-3.5 py-2.5 text-sm text-soko-ink placeholder:text-soko-muted/70 outline-none transition focus:border-soko-blue focus:ring-2 focus:ring-soko-blue/20 aria-[invalid=true]:border-red-500';
 const labelCls = 'mb-1.5 block text-sm font-medium text-soko-ink';
 const primaryBtn =
   'inline-flex w-full items-center justify-center gap-2 rounded-lg bg-soko-blue px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-soko-blue/90 disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer';
@@ -171,13 +173,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-end justify-center bg-soko-ink/60 p-0 backdrop-blur-sm sm:items-center sm:p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="fixed inset-0 z-[100] isolate flex items-end justify-center p-0 sm:items-center sm:p-4">
+      <div aria-hidden="true" className="absolute inset-0 -z-10 bg-soko-ink/60 backdrop-blur-sm" onMouseDown={onClose} />
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className={`relative max-h-[100dvh] w-full overflow-y-auto rounded-t-2xl bg-background shadow-2xl sm:max-h-[92vh] sm:rounded-2xl ${view === 'choose' ? 'sm:max-w-xl' : 'sm:max-w-md'}`}
+        className={`relative max-h-[100dvh] w-full overflow-y-auto rounded-t-2xl bg-white shadow-2xl sm:max-h-[92vh] sm:rounded-2xl ${view === 'choose' ? 'sm:max-w-xl' : 'sm:max-w-md'}`}
       >
         <button type="button" onClick={onClose} aria-label="Close" className="absolute right-3 top-3 rounded-lg p-2 text-soko-muted transition hover:bg-soko-mist hover:text-soko-ink cursor-pointer">
           <X className="h-5 w-5" />
@@ -187,13 +190,33 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           <div className="flex flex-col gap-4">
             <img src="/soko-lockup.png" alt="SOKO" width={720} height={156} className="h-7 w-auto self-start" draggable={false} />
             {view === 'signup' || view === 'choose' ? (
-              <ol className="flex items-center gap-2 text-xs font-medium text-soko-muted" aria-label="Sign-up progress">
-                <li className={`flex items-center gap-1.5 ${view === 'signup' ? 'text-soko-blue' : ''}`} aria-current={view === 'signup' ? 'step' : undefined}>
-                  <span className={`h-1.5 w-8 rounded-full ${view === 'signup' || view === 'choose' ? 'bg-soko-blue' : 'bg-soko-line'}`} /> Account
-                </li>
-                <li className={`flex items-center gap-1.5 ${view === 'choose' ? 'text-soko-blue' : ''}`} aria-current={view === 'choose' ? 'step' : undefined}>
-                  <span className={`h-1.5 w-8 rounded-full ${view === 'choose' ? 'bg-soko-blue' : 'bg-soko-line'}`} /> Get started
-                </li>
+              <ol className="flex items-center gap-3 text-sm font-medium" aria-label={`Sign-up progress, step ${view === 'signup' ? 1 : 2} of 2`}>
+                {SIGNUP_STEPS.map((label, i) => {
+                  const current = (view === 'signup' ? 0 : 1) === i;
+                  const done = view === 'choose' && i === 0;
+                  return (
+                    <React.Fragment key={label}>
+                      {i > 0 && <li aria-hidden="true" className={`h-0.5 w-10 rounded-full ${view === 'choose' ? 'bg-soko-blue' : 'bg-soko-line'}`} />}
+                      <li className="flex items-center gap-2" aria-current={current ? 'step' : undefined}>
+                        <span
+                          className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${
+                            done
+                              ? 'bg-soko-blue text-white'
+                              : current
+                                ? 'bg-soko-blue text-white ring-4 ring-soko-blue/15'
+                                : 'border border-soko-line bg-white text-soko-muted'
+                          }`}
+                        >
+                          {done ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : i + 1}
+                        </span>
+                        <span className={current || done ? 'text-soko-ink' : 'text-soko-muted'}>
+                          {label}
+                          {done && <span className="sr-only"> (completed)</span>}
+                        </span>
+                      </li>
+                    </React.Fragment>
+                  );
+                })}
               </ol>
             ) : null}
             <div>
@@ -266,9 +289,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                       type="button"
                       data-autofocus={i === 0 ? '' : undefined}
                       onClick={() => choose(intent)}
-                      className="group flex w-full items-start gap-3.5 rounded-xl border border-soko-line bg-background p-4 text-left transition hover:border-soko-blue hover:bg-soko-mist focus-visible:border-soko-blue focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-soko-blue/20 cursor-pointer"
+                      className="group flex w-full items-start gap-3.5 rounded-xl border border-soko-line bg-white p-4 text-left transition hover:border-soko-blue hover:bg-soko-mist focus-visible:border-soko-blue focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-soko-blue/20 cursor-pointer"
                     >
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-soko-mist text-soko-blue transition group-hover:bg-background">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-soko-mist text-soko-blue transition group-hover:bg-white">
                         <Icon className="h-5 w-5" aria-hidden="true" />
                       </span>
                       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
