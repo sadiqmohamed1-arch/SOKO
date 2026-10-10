@@ -206,6 +206,24 @@ export const marketHubInterestNotification = (
   route: 'opportunities',
 });
 
+export const marketHubConnectionNotification = (
+  store: NotificationStore,
+  responderWorkspaceId: string,
+  opportunityId: string,
+  opportunityTitle: string,
+  publisherName: string,
+): NotificationStore => addNotification(store, {
+  recipientWorkspaceId: responderWorkspaceId,
+  eventType: 'market_hub_interest',
+  actorName: publisherName,
+  actorCompany: publisherName,
+  relatedRecordId: opportunityId,
+  relatedRecordTitle: opportunityTitle,
+  title: `Connection approved by ${publisherName}`,
+  description: `${publisherName} approved your response to "${opportunityTitle}". Contact details are now visible.`,
+  route: 'opportunities',
+});
+
 export const visitRequestNotification = (
   store: NotificationStore,
   recipientWorkspaceId: string,

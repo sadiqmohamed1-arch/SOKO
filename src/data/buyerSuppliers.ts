@@ -218,8 +218,8 @@ export const BUYER_SUPPLIERS: BuyerSupplier[] = [
       p('prd_abc_tape', 'Mapeband Easy', 'Sealing Tape', 'Waterproofing', 'Mapei', IMG.membrane, true, false, 69),
     ],
     contacts: [
-      { id: 'ct_ahmed_khan', name: 'Ahmed Khan', title: 'Commercial Manager', category: 'Waterproofing', location: 'Dubai, UAE', phone: '+971501234567', email: 'ahmed.khan@abcwaterproofing.ae', visibility: 'public' },
-      { id: 'ct_sarah_thomas', name: 'Sarah Thomas', title: 'Technical Sales Engineer', category: 'Waterproofing', location: 'Dubai, UAE', phone: '+971502345678', email: 'sarah.thomas@abcwaterproofing.ae', visibility: 'public' },
+      { id: 'ct_ahmed_khan', name: 'Ahmed Khan', title: 'Commercial Manager', category: 'Waterproofing', location: 'Dubai, UAE', phone: '+971501234567', email: 'a.khan@abcwaterproofing.ae', visibility: 'public' },
+      { id: 'ct_sarah_thomas_abc', name: 'Sarah Thomas', title: 'Technical Sales Engineer', category: 'Waterproofing', location: 'Dubai, UAE', phone: '+971502345678', email: 's.thomas@abcwaterproofing.ae', visibility: 'public' },
       { id: 'ct_rajesh_nair', name: 'Rajesh Nair', title: 'Projects Coordinator', category: 'Construction Chemicals', location: 'Abu Dhabi, UAE', visibility: 'on-request' },
     ],
     intelligenceScore: 82,

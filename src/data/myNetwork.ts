@@ -481,7 +481,7 @@ const demoRecords = (): CommunityContact[] => {
       sharedVia: 'nfc',
       relationshipType: 'Manufacturer',
     }),
-    withMeta(supplierContact('sup_abc_waterproofing', 'ct_sarah_thomas'), {
+    withMeta(supplierContact('sup_abc_waterproofing', 'ct_sarah_thomas_abc'), {
       isMaintained: false,
       source: 'soko',
       specialization: 'Waterproofing membranes and technical sales',

@@ -146,14 +146,21 @@ export const OpportunityDetailDialog: React.FC<{ hub: Hub; o: OpportunityView; o
                 <User className="w-4 h-4 text-slate-400" />
                 {o.contact.name}
               </li>
-              <li className="flex items-center gap-2">
-                <Mail className="w-4 h-4 text-slate-400" />
-                {o.contact.email}
-              </li>
-              <li className="flex items-center gap-2">
-                <Phone className="w-4 h-4 text-slate-400" />
-                {o.contact.phone}
-              </li>
+              {o.contact.email && (
+                <li className="flex items-center gap-2">
+                  <Mail className="w-4 h-4 text-slate-400" />
+                  {o.contact.email}
+                </li>
+              )}
+              {o.contact.phone && (
+                <li className="flex items-center gap-2">
+                  <Phone className="w-4 h-4 text-slate-400" />
+                  {o.contact.phone}
+                </li>
+              )}
+              {!o.contact.email && !o.contact.phone && (
+                <li className="text-xs text-slate-500 leading-relaxed">No direct email or phone was shared. Use SOKO Messages to reach {o.contact.name}.</li>
+              )}
             </ul>
           ) : (
             <p className="mt-2 flex items-start gap-2 text-xs text-slate-500 leading-relaxed">
@@ -180,7 +187,11 @@ export const OpportunityDetailDialog: React.FC<{ hub: Hub; o: OpportunityView; o
 
 export const InterestReview: React.FC<{ hub: Hub; o: OpportunityView }> = ({ hub, o }) => {
   const list = o.interests ?? [];
-  const act = (id: string, action: 'review' | 'approve' | 'decline', msg: string) => hub.run(reviewInterest(hub.store, hub.actor, o.id, id, action), msg);
+  const act = (id: string, action: 'review' | 'approve' | 'decline', msg: string) => {
+    const done = hub.run(reviewInterest(hub.store, hub.actor, o.id, id, action), msg);
+    const target = list.find((x) => x.id === id);
+    if (done && action === 'approve' && target) hub.onConnectionApproved?.(o.id, o.title, target.workspaceId, hub.actor.workspace.companyName ?? hub.actor.workspace.personName);
+  };
   return (
     <section>
       <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Interest received ({list.length})</h3>

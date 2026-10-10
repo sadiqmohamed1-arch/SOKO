@@ -33,10 +33,11 @@ interface MarketHubViewProps {
   companyWorkspace?: MarketWorkspace;
   onPlanChange?: (plan: PlanId) => void;
   onInterestExpressed?: (opportunityId: string, opportunityTitle: string, publisherWorkspaceId: string, responderCompanyName: string) => void;
+  onConnectionApproved?: (opportunityId: string, opportunityTitle: string, responderWorkspaceId: string, publisherName: string) => void;
   contractorMode?: boolean;
 }
 
-export const MarketHubView: React.FC<MarketHubViewProps> = ({ currentUser, onNavigateToTab, onAskSokoAi, onSwitchRole, companyWorkspace, onPlanChange, onInterestExpressed, contractorMode }) => {
+export const MarketHubView: React.FC<MarketHubViewProps> = ({ currentUser, onNavigateToTab, onAskSokoAi, onSwitchRole, companyWorkspace, onPlanChange, onInterestExpressed, onConnectionApproved, contractorMode }) => {
   const [store, setStore] = useState<MarketHubStore>(loadMarketStore);
   const [dest, setDest] = useState<Destination>('explore');
   const [explore, setExplore] = useState<ExploreState>(EMPTY_EXPLORE);
@@ -70,7 +71,7 @@ export const MarketHubView: React.FC<MarketHubViewProps> = ({ currentUser, onNav
     return true;
   };
 
-  const hub: Hub = { store, actor, run, notify, askAi: onAskSokoAi, openSupplier: setSupplierId, switchWorkspace: companyWorkspace ? undefined : onSwitchRole, onInterestExpressed };
+  const hub: Hub = { store, actor, run, notify, askAi: onAskSokoAi, openSupplier: setSupplierId, switchWorkspace: companyWorkspace ? undefined : onSwitchRole, onInterestExpressed, onConnectionApproved };
 
   const all = useMemo(() => listOpportunities(store, actor), [store, actor]);
   const byId = (id: string | null) => all.find((o) => o.id === id);

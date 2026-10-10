@@ -13,6 +13,7 @@ import { SokoBreadcrumb } from '../sokoDesignSystem/SokoBreadcrumb';
 import { VendorRecord, VendorApprovalStatus, CompanyDocument, DocumentVisibility, SupplierVisit } from '../../data/supplierTypes';
 import { addVendor, updateVendorStatus, removeVendor, addVendorNote, deleteVendorNote, saveCompanyContact, isSavedCorporateContact } from '../../data/supplierService';
 import { membersOf } from '../../data/supplierStore';
+import { findShareFor, findValidShare, isShareExpired, ShareTarget } from '../../data/documentShares';
 import { Bookmark, BookmarkCheck } from 'lucide-react';
 import { StatusPill, btnPrimary, btnSecondary, btnGhost, inputCls, labelCls } from '../NetworkShared';
 import { ProfileDialog } from '../ProfileDialog';
@@ -40,28 +41,6 @@ const VISIBILITY_META: Record<DocumentVisibility, { label: string; icon: typeof 
 
 type Filter = 'all' | 'approved' | 'review' | 'external' | 'new';
 
-// ─── Document Access Check ─────────────────────────────────────────
-/**
- * Checks if a contractor company can access a supplier document.
- * Access is granted if:
- * - The document is shared with the contractor's trading name
- * - The share has not expired
- * Returns the matching share if access is granted, undefined otherwise.
- */
-const findValidShare = (doc: CompanyDocument, companyTradingName: string) => {
-  return doc.shares.find((s) => {
-    if (s.company !== companyTradingName) return false;
-    const until = new Date(s.until);
-    return until > new Date();
-  });
-};
-
-const isShareExpired = (doc: CompanyDocument, companyTradingName: string) => {
-  const share = doc.shares.find((s) => s.company === companyTradingName);
-  if (!share) return false;
-  return new Date(share.until) <= new Date();
-};
-
 /**
  * Resolves how a contractor may see a supplier document. Categories are exclusive:
  * - 'shared': an unexpired share names this company
@@ -70,11 +49,21 @@ const isShareExpired = (doc: CompanyDocument, companyTradingName: string) => {
  * - 'restricted': private, or shared only with other companies — never listed by name
  */
 type DocAccess = 'shared' | 'public' | 'expired' | 'restricted';
-export const docAccessFor = (doc: CompanyDocument, companyTradingName: string): DocAccess => {
-  if (findValidShare(doc, companyTradingName)) return 'shared';
+export const docAccessFor = (doc: CompanyDocument, target: ShareTarget): DocAccess => {
+  if (findValidShare(doc, target)) return 'shared';
   if (doc.visibility === 'public') return 'public';
-  if (isShareExpired(doc, companyTradingName)) return 'expired';
+  if (isShareExpired(doc, target)) return 'expired';
   return 'restricted';
+};
+
+/** Badge reflects what this company can actually see, not the document's raw visibility setting. */
+const effectiveVisibilityBadge = (access: DocAccess, companyName: string) => {
+  switch (access) {
+    case 'shared': return { ...VISIBILITY_META.shared, label: `Shared with ${companyName}` };
+    case 'public': return VISIBILITY_META.public;
+    case 'expired': return { label: 'Access expired', icon: Lock, cls: 'text-rose-700 bg-rose-50 border-rose-200' };
+    default: return VISIBILITY_META.private;
+  }
 };
 
 // ─── Visit Summary ─────────────────────────────────────────────────
@@ -87,7 +76,7 @@ const VISIT_STATUS_LABEL: Partial<Record<SupplierVisit['status'], string>> = {
 const visitsForVendor = (sw: SW, vendor: VendorRecord) =>
   sw.store.visits.filter((v) =>
     (v.companyId === sw.company.id || v.hostCompanyId === sw.company.id) &&
-    (v.hostCompany === vendor.supplierName || v.companyId === vendor.supplierCompanyId));
+    (vendor.supplierCompanyId ? v.companyId === vendor.supplierCompanyId : v.hostCompany === vendor.supplierName));
 
 interface VisitSummary { last?: string; next?: { date: string; status?: string } }
 
@@ -116,12 +105,12 @@ const visitSummaryFor = (sw: SW, vendor: VendorRecord): VisitSummary => {
 
 // ─── Shared Document Row ───────────────────────────────────────────
 const SharedDocRow: React.FC<{ doc: CompanyDocument; sw: SW; onView: () => void }> = ({ doc, sw, onView }) => {
-  const access = docAccessFor(doc, sw.company.profile.tradingName);
-  const share = access === 'shared' ? findValidShare(doc, sw.company.profile.tradingName) : undefined;
+  const access = docAccessFor(doc, sw.company);
+  const share = access === 'shared' ? findValidShare(doc, sw.company) : undefined;
   const expired = access === 'expired';
-  const expiredShare = expired ? doc.shares.find((s) => s.company === sw.company.profile.tradingName) : undefined;
+  const expiredShare = expired ? findShareFor(doc, sw.company) : undefined;
   const canAccess = access === 'shared' || access === 'public';
-  const visMeta = VISIBILITY_META[doc.visibility];
+  const visMeta = effectiveVisibilityBadge(access, sw.company.profile.tradingName);
 
   return (
     <div className={`rounded-lg border px-3 py-2.5 text-sm ${canAccess ? 'border-slate-200 bg-white' : 'border-rose-200 bg-rose-50/50'}`}>
@@ -265,10 +254,10 @@ const VendorDetailPage: React.FC<{ sw: SW; vendor: VendorRecord; onClose: () => 
     : [];
 
   const tradingName = sw.company.profile.tradingName;
-  const sharedWithUs = supplierDocs.filter((d) => docAccessFor(d, tradingName) === 'shared');
-  const publicDocs = supplierDocs.filter((d) => docAccessFor(d, tradingName) === 'public');
-  const expiredShared = supplierDocs.filter((d) => docAccessFor(d, tradingName) === 'expired');
-  const restrictedCount = supplierDocs.filter((d) => docAccessFor(d, tradingName) === 'restricted').length;
+  const sharedWithUs = supplierDocs.filter((d) => docAccessFor(d, sw.company) === 'shared');
+  const publicDocs = supplierDocs.filter((d) => docAccessFor(d, sw.company) === 'public');
+  const expiredShared = supplierDocs.filter((d) => docAccessFor(d, sw.company) === 'expired');
+  const restrictedCount = supplierDocs.filter((d) => docAccessFor(d, sw.company) === 'restricted').length;
 
   // Products from this supplier
   const supplierProducts = vendor.supplierCompanyId
@@ -815,7 +804,7 @@ export const VendorDirectory: React.FC<{ sw: SW; pageBack?: { label: string; onB
 
   // Count expiring documents from linked suppliers
   const linkedSupplierIds = vendors.filter((v) => v.supplierCompanyId).map((v) => v.supplierCompanyId!);
-  const expiringDocs = sw.store.documents.filter((d) => linkedSupplierIds.includes(d.companyId) && !d.archived && d.expiry && ['shared', 'public'].includes(docAccessFor(d, company)) && new Date(d.expiry) < new Date(Date.now() + 30 * 86400000));
+  const expiringDocs = sw.store.documents.filter((d) => linkedSupplierIds.includes(d.companyId) && !d.archived && d.expiry && ['shared', 'public'].includes(docAccessFor(d, sw.company)) && new Date(d.expiry) < new Date(Date.now() + 30 * 86400000));
 
   if (open) {
     return (

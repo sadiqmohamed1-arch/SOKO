@@ -156,7 +156,7 @@ export const shareDocument = (ctx: SupplierCtx, id: string, companyName: string,
     ? editDoc(
         ctx,
         id,
-        (d) => ({ ...d, visibility: d.visibility === 'private' ? 'shared' : d.visibility, shares: [...d.shares, { id: uid('sh'), company: companyName.trim(), at: now(), until: new Date(Date.now() + days * 86400000).toISOString().slice(0, 10), by: ctx.user.name }] }),
+        (d) => ({ ...d, visibility: d.visibility === 'private' ? 'shared' : d.visibility, shares: [...d.shares, { id: uid('sh'), companyId: ctx.store.companies.find((c) => c.id !== ctx.companyId && c.profile.tradingName.trim().toLowerCase() === companyName.trim().toLowerCase())?.id, company: companyName.trim(), at: now(), until: new Date(Date.now() + days * 86400000).toISOString().slice(0, 10), by: ctx.user.name }] }),
         (d) => `Shared "${d.name}" with ${companyName.trim()} for ${days} days`,
         'documents.share',
       )

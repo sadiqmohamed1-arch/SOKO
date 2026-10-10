@@ -251,6 +251,9 @@ export const ACCESS_META: Record<DocumentAccessLevel, { label: string; roles: Co
 
 export interface DocumentShare {
   id: string;
+  /** Recipient company ID. Absent only on shares saved before IDs were recorded. */
+  companyId?: string;
+  /** Recipient trading name at the time of sharing, for display. */
   company: string;
   at: string;
   until: string;
@@ -494,17 +497,5 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
     avatarUrl: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150&auto=format&fit=crop&q=80',
     label: 'Sarah Thomas — Emirates Steel — Supplier Premium',
     description: 'Supplier Premium Workspace',
-  },
-  {
-    id: 'demo_mohamed_gec',
-    userId: 'usr_me_01',
-    name: 'Mohamed Sadiq',
-    email: 'mohamed.sadiq@gec-dubai.ae',
-    title: 'Procurement Manager / Authorized Buyer',
-    role: 'contractor',
-    company: 'GEC Dubai',
-    avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-    label: 'Mohamed Sadiq — GEC Dubai — Contractor (Step 7B)',
-    description: 'Contractor / Developer Workspace',
   },
 ];

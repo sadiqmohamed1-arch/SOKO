@@ -14,6 +14,7 @@ export interface Hub {
   openSupplier: (supplierId: string) => void;
   switchWorkspace?: (role: 'buyer' | 'contractor' | 'supplier' | 'admin') => void;
   onInterestExpressed?: (opportunityId: string, opportunityTitle: string, publisherWorkspaceId: string, responderCompanyName: string) => void;
+  onConnectionApproved?: (opportunityId: string, opportunityTitle: string, responderWorkspaceId: string, publisherName: string) => void;
 }
 
 export const fmtDate = (iso?: string) => (iso ? new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');

@@ -1,3 +1,4 @@
+import { shareIsFor } from '../../data/documentShares';
 import { useMemo } from 'react';
 import { SW } from './SupplierShared';
 import { SupplierVisit, VendorApprovalStatus, VendorDocStatus, VendorRecord } from '../../data/supplierTypes';
@@ -84,7 +85,7 @@ export const useContractorDashboardData = (sw: SW) => {
     const seen = new Set<string>();
     const expiring: ExpiringItem[] = [
       ...store.documents
-        .filter((d) => linkedIds.includes(d.companyId) && d.expiry && d.shares.some((s) => s.company === company.profile.tradingName))
+        .filter((d) => linkedIds.includes(d.companyId) && d.expiry && d.shares.some((s) => shareIsFor(s, company)))
         .map((d) => ({ id: d.id, supplier: companyName(d.companyId) ?? 'Supplier', name: d.name, days: daysFrom(today, d.expiry!) })),
       ...complianceDocs
         .filter((d) => d.expiryDate && d.status !== 'missing')

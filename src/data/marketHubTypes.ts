@@ -97,8 +97,8 @@ export interface MarketOpportunity {
   publisherWorkspaceId: string;
   publisherLabel: string;
   contactName: string;
-  contactEmail: string;
-  contactPhone: string;
+  contactEmail?: string;
+  contactPhone?: string;
   projectName?: string;
   postedAt: string;
   status: 'open' | 'closed';
@@ -124,7 +124,7 @@ export interface OpportunityView {
   status: 'open' | 'closed';
   publisherDisplay: string;
   isConfidential: boolean;
-  contact: { name: string; email: string; phone: string } | null;
+  contact: { name: string; email?: string; phone?: string } | null;
   projectName?: string;
   interestedCount: number;
   isMine: boolean;

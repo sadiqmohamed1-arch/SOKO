@@ -17,6 +17,7 @@ import { BUYER_SUPPLIERS } from '../../data/buyerSuppliers';
 import { BuyerSupplierProfile, ProfileTab } from '../BuyerSupplierProfile';
 import { uploadDocument, addVendorComplianceDoc, reviewVendorComplianceDoc, deleteVendorComplianceDoc } from '../../data/supplierService';
 import { storageAllocationMb, storageUsedMb } from '../../data/supplierStore';
+import { findValidShare, shareIsFor, ShareTarget } from '../../data/documentShares';
 
 type DocTab = 'internal' | 'shared' | 'compliance' | 'activity';
 type ComplianceFilter = 'queue' | 'all' | VendorDocStatus;
@@ -42,12 +43,9 @@ const VENDOR_REVIEW_META: Record<VendorApprovalStatus, { label: string; tone: So
 const PENDING_APPROVAL: VendorApprovalStatus[] = ['not-reviewed', 'under-review'];
 const REVIEW_QUEUE: VendorDocStatus[] = ['submitted', 'under-review'];
 
-const findValidShare = (doc: CompanyDocument, companyTradingName: string) =>
-  doc.shares.find((s) => s.company === companyTradingName && new Date(s.until) > new Date());
-
 /** Public documents, or documents explicitly shared with this company within their access window. Private documents never qualify. */
-const isVisibleToCompany = (doc: CompanyDocument, companyTradingName: string) =>
-  doc.visibility === 'public' || (doc.visibility === 'shared' && !!findValidShare(doc, companyTradingName));
+const isVisibleToCompany = (doc: CompanyDocument, target: ShareTarget) =>
+  doc.visibility === 'public' || (doc.visibility === 'shared' && !!findValidShare(doc, target));
 
 const daysUntil = (date: string) => Math.ceil((new Date(date).getTime() - Date.now()) / 86400000);
 
@@ -463,7 +461,7 @@ export const ContractorDocumentCenter: React.FC<{ sw: SW }> = ({ sw }) => {
     .filter((v) => v.companyId === sw.company.id && v.supplierCompanyId)
     .forEach((v) => vendorBySupplier.set(v.supplierCompanyId!, v));
 
-  const supplierDocs = sw.store.documents.filter((d) => vendorBySupplier.has(d.companyId) && !d.archived && isVisibleToCompany(d, gecName));
+  const supplierDocs = sw.store.documents.filter((d) => vendorBySupplier.has(d.companyId) && !d.archived && isVisibleToCompany(d, sw.company));
   const sharedWithGec = supplierDocs.filter((d) => d.visibility === 'shared');
   const publicSupplierDocs = supplierDocs.length - sharedWithGec.length;
   const pendingVendorDocs = supplierDocs.filter((d) => PENDING_APPROVAL.includes(vendorBySupplier.get(d.companyId)!.approvalStatus));
@@ -770,7 +768,7 @@ export const ContractorDocumentCenter: React.FC<{ sw: SW }> = ({ sw }) => {
                   {supplierRows.map((d) => {
                     const vendor = vendorBySupplier.get(d.companyId)!;
                     const review = VENDOR_REVIEW_META[vendor.approvalStatus];
-                    const share = d.visibility === 'shared' ? findValidShare(d, gecName) : undefined;
+                    const share = d.visibility === 'shared' ? findValidShare(d, sw.company) : undefined;
                     return (
                       <tr key={d.id} className="hover:bg-slate-50/60">
                         <td className={`${tdCls} max-w-xs`}><DocNameCell doc={d} onPreview={() => setPreviewDoc(d)} /></td>

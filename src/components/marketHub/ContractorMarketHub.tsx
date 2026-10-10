@@ -310,7 +310,10 @@ const OpportunityCard: React.FC<{ hub: Hub; o: OpportunityView; onOpen: () => vo
 };
 
 const ResponseRow: React.FC<{ hub: Hub; o: OpportunityView; i: OpportunityInterest; onOpen: () => void }> = ({ hub, o, i, onOpen }) => {
-  const act = (action: 'review' | 'approve' | 'decline', msg: string) => hub.run(reviewInterest(hub.store, hub.actor, o.id, i.id, action), msg);
+  const act = (action: 'review' | 'approve' | 'decline', msg: string) => {
+    const done = hub.run(reviewInterest(hub.store, hub.actor, o.id, i.id, action), msg);
+    if (done && action === 'approve') hub.onConnectionApproved?.(o.id, o.title, i.workspaceId, hub.actor.workspace.companyName ?? hub.actor.workspace.personName);
+  };
   const open = i.status !== 'connected' && i.status !== 'declined';
   return (
     <li className={`${sokoCard} flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:gap-4`}>
@@ -447,8 +450,9 @@ const OpportunityDetail: React.FC<{ hub: Hub; o: OpportunityView; fromTab: HubTa
             {o.contact ? (
               <ul className="mt-3 flex flex-col gap-1.5 text-sm text-slate-700">
                 <li className="flex items-center gap-2"><User className="w-4 h-4 text-slate-400" aria-hidden />{o.contact.name}</li>
-                <li className="flex min-w-0 items-center gap-2"><Mail className="w-4 h-4 shrink-0 text-slate-400" aria-hidden /><span className="truncate">{o.contact.email}</span></li>
-                <li className="flex items-center gap-2"><Phone className="w-4 h-4 text-slate-400" aria-hidden />{o.contact.phone}</li>
+                {o.contact.email && <li className="flex min-w-0 items-center gap-2"><Mail className="w-4 h-4 shrink-0 text-slate-400" aria-hidden /><span className="truncate">{o.contact.email}</span></li>}
+                {o.contact.phone && <li className="flex items-center gap-2"><Phone className="w-4 h-4 text-slate-400" aria-hidden />{o.contact.phone}</li>}
+                {!o.contact.email && !o.contact.phone && <li className="text-xs leading-relaxed text-slate-500">No direct email or phone was shared. Use SOKO Messages to reach {o.contact.name}.</li>}
               </ul>
             ) : (
               <p className="mt-2 flex items-start gap-2 text-xs leading-relaxed text-slate-500">

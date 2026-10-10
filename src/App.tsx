@@ -4,7 +4,7 @@ import { DEMO_ACCOUNTS, DemoAccount, roleMeta, SupplierStore } from './data/supp
 import { leaveCompany, setTier } from './data/supplierService';
 import { marketWorkspaceFor, planToTier, syncMarketPlans } from './data/supplierMarket';
 import { PLANS } from './data/marketHubCatalog';
-import { loadNotificationStore, saveNotificationStore, notificationsForContext, unreadCountForContext, markNotificationRead, markAllRead, marketHubInterestNotification, NotificationStore, NotificationFilter } from './data/notificationStore';
+import { loadNotificationStore, saveNotificationStore, notificationsForContext, unreadCountForContext, markNotificationRead, markAllRead, marketHubInterestNotification, marketHubConnectionNotification, NotificationStore, NotificationFilter } from './data/notificationStore';
 import { SupplierWorkspaceView } from './components/supplierWorkspace/SupplierWorkspaceView';
 import { SupplierOnboarding } from './components/supplierWorkspace/SupplierOnboarding';
 import { SupplierTab } from './components/supplierWorkspace/SupplierShared';
@@ -159,6 +159,46 @@ function MainApp() {
     setActiveTab(id === 'personal' ? 'feed' : 'sw-dashboard');
   };
 
+  // Browser history: each tab/workspace change becomes a history entry so Back/Forward stay in-app.
+  const restoringFromHistory = React.useRef(false);
+  const historyInitialised = React.useRef(false);
+  useEffect(() => {
+    const state = { sokoTab: activeTab, sokoWorkspace: activeWorkspaceId };
+    const url = window.location.pathname + window.location.search;
+    if (!historyInitialised.current) {
+      historyInitialised.current = true;
+      window.history.replaceState(state, '', url);
+      return;
+    }
+    if (restoringFromHistory.current) {
+      restoringFromHistory.current = false;
+      return;
+    }
+    const current = window.history.state as typeof state | null;
+    if (current?.sokoTab === activeTab && current?.sokoWorkspace === activeWorkspaceId) return;
+    window.history.pushState(state, '', url);
+  }, [activeTab, activeWorkspaceId]);
+
+  useEffect(() => {
+    const onPop = (e: PopStateEvent) => {
+      const s = e.state as { sokoTab?: string; sokoWorkspace?: string } | null;
+      if (!s?.sokoTab || !s.sokoWorkspace) return;
+      // Never restore a company workspace the current user is no longer a member of.
+      const companyId = s.sokoWorkspace.startsWith('company:') ? s.sokoWorkspace.slice(8) : null;
+      const allowed = !companyId || membershipsOfUser(loadSupplierStore(), sessionUser.id).some((m) => m.companyId === companyId);
+      restoringFromHistory.current = true;
+      if (allowed) {
+        setActiveWorkspaceId(s.sokoWorkspace);
+        setActiveTab(s.sokoTab);
+      } else {
+        setActiveWorkspaceId('personal');
+        setActiveTab('feed');
+      }
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [sessionUser.id]);
+
   useEffect(() => {
     if (requestedCompanyId && !activeCompanyId) {
       setActiveWorkspaceId('personal');
@@ -255,6 +295,10 @@ function MainApp() {
   const handleInterestExpressed = useCallback((oppId: string, oppTitle: string, publisherWsId: string, responderName: string) => {
     const recipientWsId = publisherWsId.startsWith('company:') ? publisherWsId : `company:${publisherWsId}`;
     setNotifStore((prev) => marketHubInterestNotification(prev, recipientWsId, oppId, oppTitle, responderName));
+  }, []);
+  const handleConnectionApproved = useCallback((oppId: string, oppTitle: string, responderWsId: string, publisherName: string) => {
+    const recipientWsId = responderWsId.startsWith('company:') || responderWsId === 'personal' ? responderWsId : `company:${responderWsId}`;
+    setNotifStore((prev) => marketHubConnectionNotification(prev, recipientWsId, oppId, oppTitle, publisherName));
   }, []);
 
   const [suppliers, setSuppliers] = useState<SupplierItem[]>(() => {
@@ -429,7 +473,11 @@ function MainApp() {
     }
   }, [currentUser.role, activeTab]);
 
-  const [activeDemoAccountId, setActiveDemoAccountId] = useState<string>(() => localStorage.getItem('soko_demo_account') || 'demo_mohamed');
+  const [activeDemoAccountId, setActiveDemoAccountId] = useState<string>(() => {
+    const saved = localStorage.getItem('soko_demo_account');
+    // Retired personas (e.g. the duplicate GEC entry) resolve to their canonical account.
+    return saved && DEMO_ACCOUNTS.some((a) => a.id === saved) ? saved : 'demo_mohamed';
+  });
 
   const switchDemoAccount = useCallback((account: DemoAccount) => {
     localStorage.setItem('soko_demo_account', account.id);
@@ -1036,6 +1084,7 @@ function MainApp() {
             }}
             onSwitchRole={handleRoleChange}
             onInterestExpressed={handleInterestExpressed}
+            onConnectionApproved={handleConnectionApproved}
           />
         )}
 

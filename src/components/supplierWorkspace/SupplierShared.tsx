@@ -94,11 +94,16 @@ export const PlanBadge: React.FC<{ premium: boolean; kind?: CompanyRecord['kind'
   );
 };
 
-export const Card: React.FC<{ title?: string; action?: React.ReactNode; children: React.ReactNode; className?: string }> = ({ title, action, children, className = '' }) => (
+export const Card: React.FC<{ title?: string; subtitle?: string; action?: React.ReactNode; children: React.ReactNode; className?: string }> = ({ title, subtitle, action, children, className = '' }) => (
   <section className={`rounded-2xl border border-slate-200 bg-white p-5 ${className}`}>
     {(title || action) && (
       <div className="flex items-center justify-between gap-3 mb-4">
-        {title && <h2 className="text-sm font-semibold text-slate-900">{title}</h2>}
+        {title && (
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
+            {subtitle && <p className="mt-0.5 text-xs leading-relaxed text-slate-500">{subtitle}</p>}
+          </div>
+        )}
         {action}
       </div>
     )}

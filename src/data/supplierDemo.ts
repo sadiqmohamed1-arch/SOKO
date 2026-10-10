@@ -281,8 +281,8 @@ export const buildSupplierDemo = (directory: BuyerSupplier[]): SupplierStore => 
     products: [...productsFor(abc, false), ...productsFor(es, true)],
     documents: [
       doc(ABC, 'license', 'Trade License 2025-2027', 'Trade Licenses', 1.2, 60, { expiry: abc.tradeLicense.expiry, forVerification: true, access: 'admins', uploadedBy: 'Ahmed Khan', visibility: 'private' as DocumentVisibility }),
-      doc(ABC, 'datasheet_mapeproof', 'Mapelastic Cementitious Coating – Technical Datasheet', 'Technical Datasheets', 1.8, 8, { uploadedBy: 'Ahmed Khan', visibility: 'shared' as DocumentVisibility, shares: [{ id: 'sh_abc_gec_1', company: 'GEC Dubai', at: ago(8), until: ahead(22), by: 'Ahmed Khan' }] }),
-      doc(ABC, 'icv_cert', 'ICV Certificate 2026', 'Company Registrations', 0.5, 3, { uploadedBy: 'Ahmed Khan', visibility: 'shared' as DocumentVisibility, shares: [{ id: 'sh_abc_gec_2', company: 'GEC Dubai', at: ago(3), until: ahead(27), by: 'Ahmed Khan' }] }),
+      doc(ABC, 'datasheet_mapeproof', 'Mapelastic Cementitious Coating – Technical Datasheet', 'Technical Datasheets', 1.8, 8, { uploadedBy: 'Ahmed Khan', visibility: 'shared' as DocumentVisibility, shares: [{ id: 'sh_abc_gec_1', companyId: GEC, company: 'GEC Dubai', at: ago(8), until: ahead(22), by: 'Ahmed Khan' }] }),
+      doc(ABC, 'icv_cert', 'ICV Certificate 2026', 'Company Registrations', 0.5, 3, { uploadedBy: 'Ahmed Khan', visibility: 'shared' as DocumentVisibility, shares: [{ id: 'sh_abc_gec_2', companyId: GEC, company: 'GEC Dubai', at: ago(3), until: ahead(27), by: 'Ahmed Khan' }] }),
       doc(ABC, 'company_brochure', 'ABC Waterproofing Company Profile', 'Company Brochures', 4.2, 12, { uploadedBy: 'Ahmed Khan', visibility: 'public' as DocumentVisibility }),
       doc(ES, 'license', 'Trade License', 'Trade Licenses', 1.4, 300, {
         expiry: '2026-12-12',
