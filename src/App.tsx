@@ -79,9 +79,21 @@ import {
   Workspace,
 } from './types';
 
+const PUBLIC_LANDING_PATH = '/welcome';
+
 function MainApp() {
   const { user: authUser, isAuthenticated, logout } = useAuth();
-  const [viewMode, setViewMode] = useState<'app' | 'landing'>('app');
+  const [viewMode, setViewMode] = useState<'app' | 'landing'>(() =>
+    window.location.pathname === PUBLIC_LANDING_PATH ? 'landing' : 'app',
+  );
+  const openLanding = () => {
+    window.history.pushState(window.history.state, '', PUBLIC_LANDING_PATH);
+    setViewMode('landing');
+  };
+  const enterApp = () => {
+    if (window.location.pathname === PUBLIC_LANDING_PATH) window.history.pushState(window.history.state, '', '/');
+    setViewMode('app');
+  };
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'signup'>('login');
 
@@ -181,6 +193,7 @@ function MainApp() {
 
   useEffect(() => {
     const onPop = (e: PopStateEvent) => {
+      setViewMode(window.location.pathname === PUBLIC_LANDING_PATH ? 'landing' : 'app');
       const s = e.state as { sokoTab?: string; sokoWorkspace?: string } | null;
       if (!s?.sokoTab || !s.sokoWorkspace) return;
       // Never restore a company workspace the current user is no longer a member of.
@@ -897,15 +910,13 @@ function MainApp() {
             setAuthModalMode(mode);
             setAuthModalOpen(true);
           }}
-          onEnterApp={() => setViewMode('app')}
+          onEnterApp={enterApp}
         />
         <AuthModal
           isOpen={authModalOpen}
           onClose={() => setAuthModalOpen(false)}
           initialMode={authModalMode}
-          onSuccess={() => {
-            setViewMode('app');
-          }}
+          onSuccess={enterApp}
         />
       </>
     );
@@ -954,7 +965,7 @@ function MainApp() {
         unreadCount={unreadMessagesCount}
         rewardPoints={rewardProfile.totalPoints}
         streakDays={rewardProfile.currentStreakDays}
-        onOpenLanding={() => setViewMode('landing')}
+        onOpenLanding={openLanding}
         onOpenAuthModal={(mode) => {
           setAuthModalMode(mode);
           setAuthModalOpen(true);

@@ -9,6 +9,12 @@
   --color-gold-600: #ad8f3b;
   --color-gold-700: #8a702f;
   --color-gold-900: #4f4019;
+
+  --color-soko-ink: #0b0d12;
+  --color-soko-blue: #2563eb;
+  --color-soko-muted: #5b6170;
+  --color-soko-line: #e4e7ec;
+  --color-soko-mist: #f6f7f9;
 }
 
 @layer base {
