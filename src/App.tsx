@@ -3,6 +3,7 @@ import { companyById, companyUser, effectiveRole, loadSupplierStore, memberships
 import { DEMO_ACCOUNTS, DemoAccount, roleMeta, SupplierStore } from './data/supplierTypes';
 import { leaveCompany, setTier } from './data/supplierService';
 import { marketWorkspaceFor, planToTier, syncMarketPlans } from './data/supplierMarket';
+import { PLANS } from './data/marketHubCatalog';
 import { loadNotificationStore, saveNotificationStore, notificationsForContext, unreadCountForContext, markNotificationRead, markAllRead, marketHubInterestNotification, NotificationStore, NotificationFilter } from './data/notificationStore';
 import { SupplierWorkspaceView } from './components/supplierWorkspace/SupplierWorkspaceView';
 import { SupplierOnboarding } from './components/supplierWorkspace/SupplierOnboarding';
@@ -114,7 +115,23 @@ function MainApp() {
     setSupplierStoreState(next);
   }, []);
   useEffect(() => {
-    syncMarketPlans(supplierStore.companies);
+    const corrections = syncMarketPlans(supplierStore.companies);
+    if (corrections.length === 0) return;
+    const at = new Date().toISOString();
+    updateSupplierStore({
+      ...supplierStore,
+      audit: [
+        ...corrections.map((c, i) => ({
+          id: `aud_plan_fix_${Date.now().toString(36)}_${i}`,
+          companyId: c.companyId,
+          at,
+          actor: 'SOKO system',
+          action: `Market Hub plan corrected from ${PLANS[c.from].label} to ${PLANS[c.to].label} to match the company type`,
+          kind: 'plan' as const,
+        })),
+        ...supplierStore.audit,
+      ],
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [marketNonce, setMarketNonce] = useState(0);

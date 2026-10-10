@@ -218,11 +218,37 @@ export const inviteMember = (ctx: SupplierCtx, name: string, email: string, role
   if (g) return g;
   if (!name.trim()) return fail('Enter the person\u2019s name.');
   if (!/^\S+@\S+\.\S+$/.test(email)) return fail('Enter a valid email address.');
+  const normalizedEmail = normalizeEmail(email);
+  const existing = findUserByEmail(ctx.store, normalizedEmail);
   const team = membersOf(ctx.store, ctx.companyId);
-  if (team.some((m) => m.email.toLowerCase() === email.toLowerCase())) return fail('This person is already a member or has a pending invitation.');
+  if (team.some((m) => normalizeEmail(m.email) === normalizedEmail || (existing && m.userId === existing.userId))) return fail('This person is already a member or has a pending invitation.');
   if (team.filter((m) => m.status !== 'pending_approval').length >= TIER_CONFIG[company(ctx).tier].teamSeats) return fail('All team seats on your plan are in use.');
-  const m: CompanyMembership = { id: uid('mem'), companyId: ctx.companyId, userId: uid('inv'), name: name.trim(), email: email.trim(), title: title.trim(), role, status: 'invited', at: now() };
-  return done(touch(ctx.store, ctx, `Invited ${m.name} as ${roleMeta(role).label}`, 'team', { memberships: [...ctx.store.memberships, m] }), m);
+  // Existing SOKO users keep their canonical identity; the invitation only adds a company membership.
+  // The membership stays 'invited' until the invited user accepts.
+  const m: CompanyMembership = {
+    id: uid('mem'),
+    companyId: ctx.companyId,
+    userId: existing?.userId ?? uid('inv'),
+    name: existing?.name ?? name.trim(),
+    email: existing?.email ?? email.trim(),
+    title: title.trim(),
+    role,
+    status: 'invited',
+    at: now(),
+  };
+  const label = existing?.verified ? `Invited existing SOKO user ${m.name} as ${roleMeta(role).label}` : `Invited ${m.name} as ${roleMeta(role).label}`;
+  return done(touch(ctx.store, ctx, label, 'team', { memberships: [...ctx.store.memberships, m] }), m);
+};
+
+const normalizeEmail = (e: string) => e.trim().toLowerCase();
+
+/** Resolves a SOKO identity by normalized email. Active memberships count as verified; a prior pending invite reuses the same pending identity. */
+export const findUserByEmail = (store: SupplierStore, email: string): { userId: string; name: string; email: string; verified: boolean } | undefined => {
+  const target = normalizeEmail(email);
+  const matches = store.memberships.filter((m) => normalizeEmail(m.email) === target);
+  const verified = matches.find((m) => m.status === 'active' || m.status === 'pending_approval');
+  const pick = verified ?? matches[0];
+  return pick ? { userId: pick.userId, name: pick.name, email: pick.email, verified: !!verified } : undefined;
 };
 
 const editMember = (ctx: SupplierCtx, id: string, fn: (m: CompanyMembership) => CompanyMembership | null, action: (m: CompanyMembership) => string): SupplierResult => {

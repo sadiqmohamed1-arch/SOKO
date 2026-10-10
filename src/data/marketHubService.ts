@@ -180,10 +180,22 @@ export const requestOpportunityConnection = (store: MarketHubStore, actor: Actor
   return ok(updateOpp(store, id, (x) => ({ ...x, interests: x.interests.map((i) => (i.id === mine.id ? { ...i, status: 'connection_requested' } : i)) })), undefined);
 };
 
+/**
+ * Prototype-level role check for publisher-side opportunity actions (approve, decline, close, reopen).
+ * Company workspaces require the owner or campaign-manager role; personal workspaces act for themselves.
+ * This runs in the browser only and is not a substitute for server-side authorization.
+ */
+export const canManageOpportunity = (actor: Actor) =>
+  actor.workspace.kind === 'personal_buyer' || ['owner', 'campaign_manager'].includes(actor.workspace.memberRole);
+
+const MANAGE_DENIED = 'Your role in this company does not allow managing opportunity responses.';
+
 export const reviewInterest = (store: MarketHubStore, actor: Actor, id: string, interestId: string, action: 'review' | 'approve' | 'decline'): ServiceResult => {
   const o = store.opportunities.find((x) => x.id === id);
   if (!o) return fail('Opportunity not found.');
   if (o.publisherWorkspaceId !== actor.workspace.id) return fail('Only the publisher can review interest.');
+  if (action !== 'review' && !canManageOpportunity(actor)) return fail(MANAGE_DENIED);
+  if (!o.interests.some((i) => i.id === interestId)) return fail('Response not found.');
   const status = { review: 'under_review', approve: 'connected', decline: 'declined' } as const;
   return ok(updateOpp(store, id, (x) => ({ ...x, interests: x.interests.map((i) => (i.id === interestId ? { ...i, status: status[action] } : i)) })), undefined);
 };
@@ -191,6 +203,7 @@ export const reviewInterest = (store: MarketHubStore, actor: Actor, id: string, 
 export const closeOpportunity = (store: MarketHubStore, actor: Actor, id: string): ServiceResult => {
   const o = store.opportunities.find((x) => x.id === id);
   if (!o || o.publisherWorkspaceId !== actor.workspace.id) return fail('Only the publisher can close this opportunity.');
+  if (!canManageOpportunity(actor)) return fail(MANAGE_DENIED);
   return ok(updateOpp(store, id, (x) => ({ ...x, status: 'closed' })), undefined);
 };
 

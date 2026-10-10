@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Bookmark, BookmarkCheck, Check, Lock, Mail, Paperclip, Phone, User } from 'lucide-react';
 import { EMIRATES, OPPORTUNITY_TYPES, TRADE_CATEGORIES, URGENCY_LABEL, opportunityTypeLabel, subcategoriesOf } from '../../data/marketHubCatalog';
-import { OpportunityInput, closeOpportunity, expressInterest, postOpportunity, requestOpportunityConnection, reviewInterest, toggleSaveOpportunity } from '../../data/marketHubService';
+import { OpportunityInput, canManageOpportunity, closeOpportunity, expressInterest, postOpportunity, requestOpportunityConnection, reviewInterest, toggleSaveOpportunity } from '../../data/marketHubService';
 import { InterestStatus, OpportunityView } from '../../data/marketHubTypes';
 import { ProfileDialog } from '../ProfileDialog';
 import { StatusPill, btnGhost, btnPrimary, btnSecondary, inputCls, labelCls } from '../NetworkShared';
@@ -93,7 +93,7 @@ export const OpportunityDetailDialog: React.FC<{ hub: Hub; o: OpportunityView; o
             {o.saved ? <BookmarkCheck className="w-4 h-4 text-blue-700" /> : <Bookmark className="w-4 h-4" />}
             {o.saved ? 'Saved' : 'Save'}
           </button>
-          {o.isMine && o.status === 'open' && (
+          {o.isMine && o.status === 'open' && canManageOpportunity(hub.actor) && (
             <button type="button" onClick={() => hub.run(closeOpportunity(hub.store, hub.actor, o.id), 'Opportunity closed')} className={btnSecondary}>
               Close Opportunity
             </button>
@@ -200,7 +200,7 @@ export const InterestReview: React.FC<{ hub: Hub; o: OpportunityView }> = ({ hub
                   Review
                 </button>
               )}
-              {i.status !== 'connected' && i.status !== 'declined' && (
+              {i.status !== 'connected' && i.status !== 'declined' && canManageOpportunity(hub.actor) && (
                 <>
                   <button type="button" onClick={() => act(i.id, 'approve', `Connected with ${i.companyName}. Your contact details are now shared with them.`)} className={`${btnPrimary} !min-h-8 !px-2.5 text-xs`}>
                     <Check className="w-3.5 h-3.5" />

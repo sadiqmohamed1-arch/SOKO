@@ -4,7 +4,7 @@ import {
   MapPin, Megaphone, Paperclip, Phone, Plus, Search, User, Users, Briefcase,
 } from 'lucide-react';
 import { EMIRATES, TRADE_CATEGORIES, URGENCY_LABEL, opportunityTypeLabel } from '../../data/marketHubCatalog';
-import { closeOpportunity, requestOpportunityConnection, reviewInterest, toggleSaveOpportunity } from '../../data/marketHubService';
+import { canManageOpportunity, closeOpportunity, requestOpportunityConnection, reviewInterest, toggleSaveOpportunity } from '../../data/marketHubService';
 import { InterestStatus, OpportunityInterest, OpportunityView } from '../../data/marketHubTypes';
 import { SokoBreadcrumb } from '../sokoDesignSystem/SokoBreadcrumb';
 import { SokoChip, SokoEmptyState, SokoKpiCell, SokoStatusIndicator, SokoStatusTone, SokoTabs, sokoCard, sokoTokens } from '../sokoDesignSystem/SokoComponents';
@@ -328,10 +328,16 @@ const ResponseRow: React.FC<{ hub: Hub; o: OpportunityView; i: OpportunityIntere
       {open && o.status === 'open' && (
         <div className="flex flex-wrap items-center gap-1.5">
           {i.status === 'interested' && <button type="button" onClick={() => act('review', 'Marked as under review')} className={secondaryBtn}>Review</button>}
+          {canManageOpportunity(hub.actor) ? (
+          <>
           <button type="button" onClick={() => act('approve', `Connected with ${i.companyName}. Your contact details are now shared with them.`)} className={primaryBtn}>
             <Check className="w-4 h-4" aria-hidden />Approve connection
           </button>
           <button type="button" onClick={() => act('decline', 'Interest not progressed')} className={ghostBtn}>Decline</button>
+          </>
+          ) : (
+            <span className="text-xs text-slate-500">Only Company Admins and Campaign Managers can approve or decline.</span>
+          )}
         </div>
       )}
     </li>
@@ -377,7 +383,7 @@ const OpportunityDetail: React.FC<{ hub: Hub; o: OpportunityView; fromTab: HubTa
               {o.saved ? 'Saved' : 'Save'}
             </button>
           )}
-          {o.isMine && o.status === 'open' && (
+          {o.isMine && o.status === 'open' && canManageOpportunity(hub.actor) && (
             <button type="button" onClick={() => hub.run(closeOpportunity(hub.store, hub.actor, o.id), 'Opportunity closed')} className={secondaryBtn}>
               <Archive className="w-4 h-4" aria-hidden />Close opportunity
             </button>
