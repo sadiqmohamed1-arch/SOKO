@@ -6,4 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+# Dev-server only (loaded in Vite development mode, never by `vite build`); holds no secrets.
+!.env.development
 .env

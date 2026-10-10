@@ -39,7 +39,7 @@ export function DemoAccountSwitcher({ accounts, activeUserId, onSwitch }: DemoAc
           <div className="flex items-start justify-between gap-2 px-2 pt-1 pb-2">
             <div>
               <p className="text-sm font-semibold text-slate-900">Demo accounts</p>
-              <p className="text-xs leading-relaxed text-slate-500">Local development only. Not a real sign-in.</p>
+              <p className="text-xs leading-relaxed text-slate-500">Development preview only. Not a real sign-in.</p>
             </div>
             <button
               type="button"
