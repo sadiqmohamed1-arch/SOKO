@@ -9,7 +9,7 @@ interface PublicHeaderProps {
 }
 
 export const Wordmark: React.FC<{ className?: string }> = ({ className = 'h-9' }) => (
-  <img src="/soko-lockup.png" alt="SOKO" width={720} height={197} className={`w-auto select-none ${className}`} draggable={false} />
+  <img src="/soko-lockup.png" alt="SOKO" width={720} height={156} className={`w-auto select-none ${className}`} draggable={false} />
 );
 
 const LINKS = [
