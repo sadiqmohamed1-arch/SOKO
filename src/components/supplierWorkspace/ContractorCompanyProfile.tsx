@@ -1,46 +1,126 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { Award, Building2, CheckCircle2, Copy, ExternalLink, Globe, Mail, MapPin, Phone, Plus, ShieldCheck, Trash2, UserRound, Users } from 'lucide-react';
-import { CompanyProfile, CompanyMembership } from '../../data/supplierTypes';
+import {
+  Award, Building2, CalendarDays, ChevronRight, Copy, CreditCard, Eye, EyeOff, FileText, Globe, Handshake, Lock, Mail,
+  MapPin, Megaphone, Pencil, Phone, Plus, Settings, ShieldCheck, Trash2, UserRound, Users,
+} from 'lucide-react';
+import { CompanyProfile, CONTRACTOR_TIER_CONFIG, roleMeta } from '../../data/supplierTypes';
 import { BUYER_SUPPLIERS, SupplierContact, supplierShareUrl } from '../../data/buyerSuppliers';
+import { marketSnapshot } from '../../data/supplierMarket';
 import { profileCompletion } from '../../data/supplierStore';
 import { updateProfile } from '../../data/supplierService';
-import { btnPrimary, btnSecondary, iconBtn, inputCls, labelCls, StatusPill } from '../NetworkShared';
-import { DemoNote, Field, SubTabs, fmtDate } from '../marketHub/MarketHubShared';
-import { Card, CompanyLogo, Meter, NoPermission, PageHeader, PlanBadge, SW, VerificationBadge } from './SupplierShared';
+import { fmtDate } from '../marketHub/MarketHubShared';
+import {
+  SokoAvatar, SokoChip, SokoEmptyState, SokoKpiCell, SokoPanel, SokoPanelLink, SokoProgress, SokoStatusIndicator,
+  SokoStatusTone, SokoTabs, sokoCard, sokoTokens,
+} from '../sokoDesignSystem/SokoComponents';
+import { CompanyLogo, SW } from './SupplierShared';
 import { OverviewDialog, CompanyInfoDialog, LocationsDialog, CertificationDialog, ContactDialog } from './ProfileEditors';
 
-type Section = 'overview' | 'information' | 'categories' | 'representatives' | 'certifications' | 'verification' | 'share';
-
-const SECTIONS: { id: Section; label: string }[] = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'information', label: 'Company Information' },
-  { id: 'categories', label: 'Trade Categories' },
-  { id: 'representatives', label: 'Authorized Representatives' },
-  { id: 'certifications', label: 'Certifications' },
-  { id: 'verification', label: 'Verification' },
-  { id: 'share', label: 'Share Profile' },
-];
-
+type Section = 'information' | 'workspace' | 'administration' | 'public';
 type Dialog = 'overview' | 'information' | 'locations' | 'cert' | { contact?: SupplierContact } | null;
 
+const VERIFICATION: Record<string, { label: string; tone: SokoStatusTone }> = {
+  verified: { label: 'SOKO verified', tone: 'success' },
+  pending: { label: 'Verification pending', tone: 'warning' },
+  not_submitted: { label: 'Not verified', tone: 'neutral' },
+};
+
+const VISIBILITY_LABEL: Record<string, string> = {
+  public: 'Public',
+  network: 'Connected companies',
+  request: 'On request',
+};
+
+const btn = `${sokoTokens.focus} inline-flex items-center justify-center gap-2 h-9 px-3.5 rounded-xl text-sm font-medium transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed`;
+const btnPrimary = `${btn} bg-blue-600 text-white hover:bg-blue-700`;
+const btnSecondary = `${btn} border border-slate-200 bg-white text-slate-700 hover:bg-slate-50`;
+const iconBtn = `${sokoTokens.focus} w-8 h-8 inline-flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors cursor-pointer`;
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+const InfoRow: React.FC<{ label: string; value?: React.ReactNode; mono?: boolean }> = ({ label, value, mono }) => (
+  <div className="flex flex-col gap-1 min-w-0">
+    <dt className="text-xs text-slate-500">{label}</dt>
+    <dd className={`text-sm text-slate-900 break-words ${mono ? 'font-mono text-[13px]' : ''}`}>{value || <span className="text-slate-400">Not provided</span>}</dd>
+  </div>
+);
+
+const TagList: React.FC<{ items: string[]; empty: string; tone?: 'neutral' | 'blue' }> = ({ items, empty, tone = 'neutral' }) =>
+  items.length === 0 ? (
+    <p className="text-sm text-slate-400">{empty}</p>
+  ) : (
+    <ul className="flex flex-wrap gap-2">
+      {items.map((c) => <li key={c}><SokoChip tone={tone}>{c}</SokoChip></li>)}
+    </ul>
+  );
+
+const AdminRow: React.FC<{ icon: React.ElementType; title: string; description: string; meta?: React.ReactNode; onClick?: () => void; locked?: string }> = ({
+  icon: Icon, title, description, meta, onClick, locked,
+}) => {
+  const body = (
+    <>
+      <span className="w-9 h-9 rounded-xl border border-slate-200 bg-white text-slate-600 flex items-center justify-center shrink-0">
+        <Icon className="w-4 h-4" />
+      </span>
+      <span className="flex-1 min-w-0 text-left">
+        <span className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-medium text-slate-900">{title}</span>
+          {meta}
+        </span>
+        <span className="mt-0.5 block text-xs text-slate-500 leading-relaxed">{locked ?? description}</span>
+      </span>
+      {onClick ? <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" /> : <Lock className="w-4 h-4 text-slate-300 shrink-0" aria-label="No access" />}
+    </>
+  );
+  return onClick ? (
+    <button type="button" onClick={onClick} className={`${sokoTokens.focus} w-full flex items-center gap-3 px-5 py-3.5 hover:bg-slate-50 transition-colors cursor-pointer`}>{body}</button>
+  ) : (
+    <div className="w-full flex items-center gap-3 px-5 py-3.5">{body}</div>
+  );
+};
+
 export const ContractorCompanyProfile: React.FC<{ sw: SW }> = ({ sw }) => {
-  const [section, setSection] = useState<Section>('overview');
+  const [section, setSection] = useState<Section>('information');
   const [dialog, setDialog] = useState<Dialog>(null);
-  const { company, products, members } = sw;
+  const { company, products, members, store } = sw;
   const p = company.profile;
   const editable = sw.can('profile.edit');
+  const canViewDocs = sw.can('documents.view');
   const save = (patch: Partial<CompanyProfile>, label: string) =>
     sw.run(updateProfile(sw.ctx, patch, label), 'Saved — company profile updated');
   const completion = profileCompletion(company, products);
-  const directory = BUYER_SUPPLIERS.find((s) => s.id === company.id);
+  const verification = VERIFICATION[company.verification.status] ?? VERIFICATION.not_submitted;
+  const plan = CONTRACTOR_TIER_CONFIG[company.tier];
+  const location = [p.emirate, p.country].filter(Boolean).join(', ');
 
-  const editBtn = (d: Dialog) =>
-    editable ? (
-      <button type="button" onClick={() => setDialog(d)} className={btnSecondary}>
-        Edit
-      </button>
-    ) : undefined;
+  const directory = BUYER_SUPPLIERS.find((s) => s.id === company.id);
+  const companyShareUrl = directory ? supplierShareUrl(directory) : `${window.location.origin}/company/${company.id}`;
+
+  const market = useMemo(() => marketSnapshot(sw.marketWorkspace), [sw.marketWorkspace]);
+  const summary = useMemo(() => {
+    const vendors = store.vendorRecords.filter((v) => v.companyId === company.id);
+    const visits = store.visits.filter((v) => v.companyId === company.id || v.hostCompanyId === company.id);
+    const upcoming = visits.filter((v) => v.status === 'scheduled' || v.status === 'pending-confirmation').length;
+    const contacts = store.contacts.filter((c) => c.companyId === company.id);
+    const activeMembers = members.filter((m) => m.status === 'active');
+    const docs = sw.documents.filter((d) => !d.archived);
+    return {
+      vendors: vendors.length,
+      approved: vendors.filter((v) => v.approvalStatus === 'approved').length,
+      visits: visits.length,
+      upcoming,
+      contacts: contacts.length,
+      contactCompanies: new Set(contacts.map((c) => c.company)).size,
+      activeMembers,
+      pendingMembers: members.length - activeMembers.length,
+      docs: docs.length,
+      publicDocs: docs.filter((d) => d.visibility === 'public'),
+    };
+  }, [store, company.id, members, sw.documents]);
+
+  const publicReps = p.contacts.filter((c) => c.visibility === 'public');
+  const activeCerts = p.certifications.filter((c) => c.status === 'active');
 
   const saveContact = (c: SupplierContact) => {
     const exists = p.contacts.some((x) => x.id === c.id);
@@ -48,317 +128,413 @@ export const ContractorCompanyProfile: React.FC<{ sw: SW }> = ({ sw }) => {
   };
 
   const copyLink = () => {
-    if (!directory) return;
-    navigator.clipboard?.writeText(supplierShareUrl(directory)).then(
+    navigator.clipboard?.writeText(companyShareUrl).then(
       () => sw.notify('Company profile link copied'),
       () => sw.notify('Copy failed — select the link manually'),
     );
   };
 
-  const companyShareUrl = directory ? supplierShareUrl(directory) : `${window.location.origin}/company/${company.id}`;
+  const editLink = (d: Dialog, label = 'Edit') => (editable ? <SokoPanelLink label={label} onClick={() => setDialog(d)} /> : undefined);
+
+  const tabs = [
+    { id: 'information' as const, label: 'Company information' },
+    { id: 'workspace' as const, label: 'Workspace' },
+    { id: 'administration' as const, label: 'Administration' },
+    { id: 'public' as const, label: 'Public profile' },
+  ];
 
   return (
-    <div>
-      <PageHeader
-        eyebrow={`Corporate Profile · ${company.sokoId}`}
-        title={p.tradingName}
-        subtitle="This is GEC Dubai's corporate identity on SOKO. It is separate from any team member's personal profile and digital business card."
-        actions={
-          <button type="button" onClick={() => setSection('share')} className={btnPrimary}>
-            <ExternalLink className="w-4 h-4" /> Share Company Profile
+    <div className="flex flex-col gap-6">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <p className={sokoTokens.eyebrow}>Contractor workspace · Company</p>
+          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 text-balance">Company Profile</h1>
+          <p className="mt-1.5 text-sm text-slate-600 leading-relaxed max-w-2xl text-pretty">
+            {p.tradingName}&apos;s identity on SOKO as a business entity. It is separate from any team member&apos;s personal profile or digital business card.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => setSection('public')} className={btnSecondary}>
+            <Eye className="w-4 h-4" /> Preview public profile
           </button>
-        }
-      />
-      {!editable && <div className="mb-4"><NoPermission text="Your role can view the company profile but not edit it." /></div>}
+          {editable && (
+            <button type="button" onClick={() => setDialog('overview')} className={btnPrimary}>
+              <Pencil className="w-4 h-4" /> Edit company
+            </button>
+          )}
+        </div>
+      </header>
 
-      <SubTabs tabs={SECTIONS} value={section} onChange={setSection} />
-
-      <div className="mt-5">
-        {section === 'overview' && (
-          <div className="grid lg:grid-cols-3 gap-6">
-            <Card className="lg:col-span-2" title="Company Identity" action={editBtn('overview')}>
-              <div className="flex items-start gap-4">
-                <CompanyLogo company={company} size="lg" />
-                <div className="min-w-0">
-                  <p className="text-lg font-semibold text-slate-900">{p.tradingName}</p>
-                  <p className="text-sm text-slate-500">{[p.descriptor, p.types.join(' · ')].filter(Boolean).join(' — ')}</p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <VerificationBadge company={company} />
-                    <PlanBadge premium={sw.premium} />
-                  </div>
-                </div>
-              </div>
-              <p className="mt-4 text-sm text-slate-700 leading-relaxed whitespace-pre-line">{p.description || 'No company description yet.'}</p>
-              <div className="mt-4 grid sm:grid-cols-2 gap-4">
-                <Field label="Classification" value={p.types.join(', ')} />
-                <Field label="Primary trade category" value={p.categories[0]} />
-                <Field label="Headquarters" value={`${p.emirate}, ${p.country}`} />
-                <Field label="Established" value={p.established ? String(p.established) : '—'} />
-              </div>
-            </Card>
-            <Card title="Profile Completion">
-              <p className="text-3xl font-semibold text-slate-900 tabular-nums">{completion}%</p>
-              <div className="mt-2"><Meter value={completion} tone={completion >= 80 ? 'green' : 'blue'} /></div>
-              <p className="mt-4 text-xs text-slate-500 leading-relaxed">
-                Company profile completion is based on corporate information, trade categories, certifications and authorized representatives — not on any individual's personal profile.
-              </p>
-            </Card>
-          </div>
-        )}
-
-        {section === 'information' && (
-          <Card title="Corporate Information" action={editBtn('information')}>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-              <Field label="Legal name" value={p.legalName} />
-              <Field label="Trading name" value={p.tradingName} />
-              <Field label="Classification" value={p.types.join(', ')} />
-              <Field label="Trade license no." value={p.licenseNo || '—'} />
-              <Field label="Issuing authority" value={p.issuingAuthority || '—'} />
-              <Field label="License expiry" value={fmtDate(p.licenseExpiry || undefined)} />
-              <Field label="Country" value={p.country} />
-              <Field label="Emirate / city" value={p.emirate} />
-              <Field label="Year established" value={p.established ? String(p.established) : '—'} />
-            </div>
-            <div className="mt-4 pt-4 border-t border-slate-100">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-3">Authorized Contact Channels</p>
-              <div className="grid sm:grid-cols-3 gap-5">
-                <div className="flex items-center gap-2">
-                  <Globe className="w-4 h-4 text-slate-400 shrink-0" />
-                  <div><p className="text-[11px] text-slate-500">Website</p><p className="text-sm text-slate-900">{p.website || '—'}</p></div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Mail className="w-4 h-4 text-slate-400 shrink-0" />
-                  <div><p className="text-[11px] text-slate-500">General email</p><p className="text-sm text-slate-900">{p.generalEmail || '—'}</p></div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Phone className="w-4 h-4 text-slate-400 shrink-0" />
-                  <div><p className="text-[11px] text-slate-500">Telephone</p><p className="text-sm text-slate-900">{p.phone || '—'}</p></div>
-                </div>
-              </div>
-            </div>
-            <div className="mt-3 pt-3 border-t border-slate-100">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">Registered Address</p>
-              <div className="flex items-start gap-2">
-                <MapPin className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
-                <p className="text-sm text-slate-700">{p.address || '—'}</p>
-              </div>
-            </div>
-            <DemoNote>Note: The trade license number shown is demo data. SOKO verification confirms the license has been submitted and reviewed — it does not constitute independent third-party credential authentication.</DemoNote>
-          </Card>
-        )}
-
-        {section === 'categories' && (
-          <Card title="Trade & Sourcing Categories" action={editBtn('locations')}>
-            <div className="grid sm:grid-cols-2 gap-5">
+      <section aria-label="Company identity" className={`${sokoCard} overflow-hidden`}>
+        <div className="p-5 sm:p-6 flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex items-start gap-4 min-w-0">
+            <CompanyLogo company={company} size="lg" />
+            <div className="min-w-0 flex flex-col gap-2">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">Trade Categories</p>
-                <div className="flex flex-wrap gap-2">
-                  {p.categories.length === 0 && <p className="text-sm text-slate-500">No categories set.</p>}
-                  {p.categories.map((c) => (
-                    <span key={c} className="px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-sm text-blue-800 font-medium">{c}</span>
-                  ))}
-                </div>
+                <h2 className="text-xl font-semibold text-slate-900 text-balance">{p.tradingName}</h2>
+                {p.legalName && p.legalName !== p.tradingName && <p className="text-sm text-slate-500">{p.legalName}</p>}
               </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">Subcategories</p>
-                <div className="flex flex-wrap gap-2">
-                  {p.subcategories.length === 0 && <p className="text-sm text-slate-500">No subcategories set.</p>}
-                  {p.subcategories.map((c) => (
-                    <span key={c} className="px-3 py-1 rounded-full bg-slate-50 border border-slate-200 text-sm text-slate-700">{c}</span>
-                  ))}
-                </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {p.types.map((t) => <SokoChip key={t} tone="blue">{t}</SokoChip>)}
+                <SokoChip tone="mono">{company.sokoId}</SokoChip>
+                {location && <SokoChip icon={MapPin}>{location}</SokoChip>}
+                <SokoStatusIndicator label={verification.label} tone={verification.tone} />
               </div>
-            </div>
-            <div className="mt-4 pt-4 border-t border-slate-100">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">Services & Capabilities</p>
-              <div className="flex flex-wrap gap-2">
-                {p.capabilities.length === 0 && <p className="text-sm text-slate-500">No capabilities listed.</p>}
-                {p.capabilities.map((c) => (
-                  <span key={c} className="px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-sm text-emerald-800 font-medium">{c}</span>
-                ))}
-              </div>
-            </div>
-            <div className="mt-4 pt-4 border-t border-slate-100 grid sm:grid-cols-2 gap-5">
-              <Field label="Regions served" value={p.regionsServed.join(', ') || '—'} />
-              <Field label="Markets served" value={p.marketsServed.join(', ') || '—'} />
-            </div>
-          </Card>
-        )}
-
-        {section === 'representatives' && (
-          <div className="space-y-4">
-            <Card title="Authorized Company Representatives" action={editable ? <button type="button" onClick={() => setDialog({})} className={btnSecondary}><Plus className="w-4 h-4" /> Nominate representative</button> : undefined}>
-              <p className="text-sm text-slate-600 mb-4">
-                These are individuals explicitly authorized by GEC Dubai to represent the company publicly on SOKO. Nominating someone here does not depend on their workspace role — a Company Admin is not automatically a public representative.
-              </p>
-              {p.contacts.length > 0 ? (
-                <ul className="grid sm:grid-cols-2 gap-3">
-                  {p.contacts.map((c) => (
-                    <li key={c.id} className="rounded-xl border border-slate-200 p-3 flex items-start gap-3">
-                      <span className="w-9 h-9 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center shrink-0">
-                        <UserRound className="w-4 h-4" />
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-slate-900">{c.name}</p>
-                        <p className="text-xs text-slate-500">{c.title} · {c.location}</p>
-                        <p className="mt-1 text-[11px] text-slate-500">
-                          {c.visibility === 'public' ? 'Publicly visible' : c.visibility === 'network' ? 'Connected companies only' : 'Shared on request'}
-                        </p>
-                      </div>
-                      {editable && (
-                        <div className="flex gap-1">
-                          <button type="button" aria-label="Edit" onClick={() => setDialog({ contact: c })} className={iconBtn}><UserRound className="w-4 h-4" /></button>
-                          <button type="button" aria-label="Remove" onClick={() => save({ contacts: p.contacts.filter((x) => x.id !== c.id) }, `Removed representative ${c.name}`)} className={iconBtn}><Trash2 className="w-4 h-4" /></button>
-                        </div>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-6 py-8 text-center">
-                  <Users className="w-8 h-8 text-slate-300 mx-auto" />
-                  <p className="mt-2 text-sm font-semibold text-slate-900">No authorized representatives yet</p>
-                  <p className="mt-1 text-sm text-slate-500">Nominate team members who are authorized to represent GEC Dubai publicly. This is separate from workspace admin roles.</p>
-                </div>
+              {company.verification.status === 'verified' && company.verification.reviewedAt && (
+                <p className="text-xs text-slate-500">Company verification reviewed by SOKO on {fmtDate(company.verification.reviewedAt)}. This applies to {p.tradingName}, not to any individual member.</p>
               )}
-            </Card>
-
-            <Card title="Workspace Team Members">
-              <p className="text-sm text-slate-600 mb-3">
-                These are individuals with access to the GEC Dubai workspace. Their membership determines their permissions, not their public representation. Company Admin is an administrative role, not a public identity.
-              </p>
-              <div className="overflow-x-auto -mx-5">
-                <table className="w-full text-sm min-w-[400px]">
-                  <thead>
-                    <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500 border-b border-slate-100">
-                      <th className="px-5 py-2 font-semibold">Name</th>
-                      <th className="px-3 py-2 font-semibold">Title</th>
-                      <th className="px-3 py-2 font-semibold">Role</th>
-                      <th className="px-5 py-2 font-semibold">Public Representative?</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {members.map((m: CompanyMembership) => {
-                      const isRep = p.contacts.some((c) => c.name === m.name);
-                      return (
-                        <tr key={m.id}>
-                          <td className="px-5 py-2.5 text-slate-800 font-medium">{m.name}</td>
-                          <td className="px-3 py-2.5 text-slate-600">{m.title}</td>
-                          <td className="px-3 py-2.5 text-slate-600">{m.role.replace(/_/g, ' ')}</td>
-                          <td className="px-5 py-2.5">
-                            {isRep ? (
-                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold">Yes — authorized</span>
-                            ) : (
-                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-50 text-slate-500">No</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              <DemoNote>Team membership controls workspace access. Public representation requires explicit nomination in the Authorized Representatives section above.</DemoNote>
-            </Card>
+            </div>
           </div>
-        )}
+          <div className="lg:w-56 shrink-0 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+            <div className="flex items-baseline justify-between">
+              <p className="text-xs text-slate-500">Profile completion</p>
+              <p className="text-sm font-semibold text-slate-900 tabular-nums">{completion}%</p>
+            </div>
+            <SokoProgress value={completion} tone={completion >= 80 ? 'green' : 'blue'} className="mt-2 w-full" />
+            <p className="mt-2 text-[11px] text-slate-500 leading-relaxed">Based on company information, categories, certifications and representatives.</p>
+          </div>
+        </div>
+        <div className="border-t border-slate-100 px-5 sm:px-6 py-5 grid gap-5 lg:grid-cols-[1.4fr_1fr]">
+          <div>
+            <p className={sokoTokens.eyebrow}>About</p>
+            <p className="mt-2 text-sm text-slate-700 leading-relaxed whitespace-pre-line text-pretty">{p.description || 'No company description yet.'}</p>
+          </div>
+          <div>
+            <p className={sokoTokens.eyebrow}>Business activities</p>
+            <div className="mt-2"><TagList items={p.capabilities} empty="No business activities listed." /></div>
+          </div>
+        </div>
+      </section>
 
-        {section === 'certifications' && (
-          <Card title="Corporate Certifications" action={editable ? <button type="button" onClick={() => setDialog('cert')} className={btnSecondary}><Plus className="w-4 h-4" /> Add</button> : undefined}>
-            {p.certifications.length > 0 ? (
-              <ul className="divide-y divide-slate-100">
+      <SokoTabs tabs={tabs} active={section} onChange={setSection} label="Company profile sections" variant="underline" />
+
+      {section === 'information' && (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <SokoPanel title="Registered business details" subtitle="Private — visible to workspace members only" icon={Building2} action={editLink('information')}>
+            <dl className="grid gap-4 sm:grid-cols-2">
+              <InfoRow label="Legal name" value={p.legalName} />
+              <InfoRow label="Trading name" value={p.tradingName} />
+              <InfoRow label="Trade license no." value={p.licenseNo} mono />
+              <InfoRow label="Issuing authority" value={p.issuingAuthority} />
+              <InfoRow label="License expiry" value={p.licenseExpiry ? fmtDate(p.licenseExpiry) : undefined} />
+              <InfoRow label="Year established" value={p.established ? String(p.established) : undefined} />
+            </dl>
+            {company.demo && (
+              <p className="mt-4 text-[11px] text-slate-500 leading-relaxed">License details in this demo workspace are fictional. SOKO verification confirms a license was submitted and reviewed; it is not third-party credential authentication.</p>
+            )}
+          </SokoPanel>
+
+          <SokoPanel title="Official contact channels" subtitle="Company channels — not personal contact details" icon={Globe} action={editLink('information')}>
+            <ul className="flex flex-col divide-y divide-slate-100 -my-2">
+              {[
+                { icon: Globe, label: 'Website', value: p.website },
+                { icon: Mail, label: 'General email', value: p.generalEmail },
+                { icon: Phone, label: 'Telephone', value: p.phone },
+                { icon: MapPin, label: 'Registered address', value: p.address },
+              ].map(({ icon: Icon, label, value }) => (
+                <li key={label} className="flex items-start gap-3 py-2.5">
+                  <Icon className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+                  <div className="min-w-0">
+                    <p className="text-xs text-slate-500">{label}</p>
+                    <p className="text-sm text-slate-900 break-words">{value || <span className="text-slate-400">Not provided</span>}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </SokoPanel>
+
+          <SokoPanel title="Trade categories & services" icon={Handshake} action={editLink('locations')}>
+            <div className="flex flex-col gap-4">
+              <div>
+                <p className="text-xs text-slate-500 mb-2">Trade categories</p>
+                <TagList items={p.categories} empty="No categories set." tone="blue" />
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 mb-2">Subcategories</p>
+                <TagList items={p.subcategories} empty="No subcategories set." />
+              </div>
+            </div>
+          </SokoPanel>
+
+          <SokoPanel title="Operating locations" icon={MapPin} action={editLink('locations')}>
+            <dl className="grid gap-4 sm:grid-cols-2">
+              <InfoRow label="Headquarters" value={location} />
+              <InfoRow label="Regions served" value={p.regionsServed.join(', ')} />
+              <InfoRow label="Markets served" value={p.marketsServed.join(', ')} />
+            </dl>
+          </SokoPanel>
+
+          <SokoPanel
+            title="Certifications"
+            subtitle="Self-reported by the company"
+            icon={Award}
+            action={editable ? <SokoPanelLink label="Add" onClick={() => setDialog('cert')} /> : undefined}
+          >
+            {p.certifications.length === 0 ? (
+              <SokoEmptyState icon={Award} title="No certifications listed" description="Certificate files are stored privately in the Document Center." />
+            ) : (
+              <ul className="flex flex-col divide-y divide-slate-100 -my-2">
                 {p.certifications.map((c, i) => (
-                  <li key={`${c.name}-${i}`} className="py-3 flex items-center gap-3">
-                    <Award className="w-5 h-5 text-slate-400 shrink-0" />
+                  <li key={`${c.name}-${i}`} className="flex items-center gap-3 py-2.5">
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-slate-900">{c.name}</p>
+                      <p className="text-sm font-medium text-slate-900">{c.name}</p>
                       <p className="text-xs text-slate-500">{c.issuer}{c.validUntil ? ` · Valid until ${fmtDate(c.validUntil)}` : ''}</p>
                     </div>
-                    <StatusPill tone={c.status === 'active' ? 'blue' : c.status === 'pending' ? 'amber' : 'slate'}>{c.status === 'active' ? 'Active' : c.status === 'pending' ? 'Under review' : 'Expired'}</StatusPill>
+                    <SokoStatusIndicator label={c.status === 'active' ? 'Active' : c.status === 'pending' ? 'Under review' : 'Expired'} tone={c.status === 'active' ? 'success' : c.status === 'pending' ? 'warning' : 'neutral'} />
                     {editable && (
-                      <button type="button" aria-label="Remove" onClick={() => save({ certifications: p.certifications.filter((_, j) => j !== i) }, `Removed certification ${c.name}`)} className={iconBtn}>
+                      <button type="button" aria-label={`Remove ${c.name}`} onClick={() => save({ certifications: p.certifications.filter((_, j) => j !== i) }, `Removed certification ${c.name}`)} className={iconBtn}>
                         <Trash2 className="w-4 h-4" />
                       </button>
                     )}
                   </li>
                 ))}
               </ul>
-            ) : (
-              <p className="text-sm text-slate-500">No corporate certifications listed.</p>
             )}
-            <DemoNote>Certificates listed here are self-reported by GEC Dubai. SOKO does not independently verify third-party certifications. Certificate files belong in the private Document Center and are never published automatically. Payment terms and sensitive corporate financial details are not displayed publicly.</DemoNote>
-          </Card>
-        )}
+          </SokoPanel>
 
-        {section === 'verification' && (
-          <div className="grid lg:grid-cols-2 gap-6">
-            <Card title="SOKO Company Verification">
-              <div className="flex flex-wrap items-center gap-3">
-                <VerificationBadge company={company} />
-                <span className="text-xs text-slate-500">
-                  {company.verification.status === 'verified' && `Verified ${fmtDate(company.verification.reviewedAt)}`}
-                  {company.verification.status === 'pending' && `Submitted ${fmtDate(company.verification.submittedAt)}`}
-                  {company.verification.status === 'not_submitted' && 'Not yet submitted for verification.'}
-                </span>
-              </div>
-              <div className="mt-4 grid sm:grid-cols-2 gap-4">
-                <Field label="Trade license no." value={p.licenseNo || '—'} />
-                <Field label="License expiry" value={fmtDate(p.licenseExpiry || undefined)} />
-              </div>
-              <DemoNote>SOKO verification confirms that a trade license has been submitted and reviewed by SOKO. It is separate from third-party credential authentication (e.g. D-U-N-S, tax IDs). Demo credentials are not represented as independently authenticated.</DemoNote>
-            </Card>
-            <Card title="Credential Integrity">
-              <ul className="space-y-3 text-sm">
-                <li className="flex gap-2 text-slate-700"><CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" /> SOKO verification is separate from third-party credential verification.</li>
-                <li className="flex gap-2 text-slate-700"><CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" /> Demo credentials (license numbers, IDs) are clearly labeled as demo data.</li>
-                <li className="flex gap-2 text-slate-700"><CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" /> Sensitive corporate details and payment terms are not publicly displayed.</li>
-                <li className="flex gap-2 text-slate-700"><CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" /> Company verification belongs to GEC Dubai, not to any individual admin.</li>
+          <SokoPanel
+            title="Authorized representatives"
+            subtitle="Explicitly nominated — not based on workspace role"
+            icon={UserRound}
+            action={editable ? <SokoPanelLink label="Nominate" onClick={() => setDialog({})} /> : undefined}
+          >
+            {p.contacts.length === 0 ? (
+              <SokoEmptyState icon={Users} title="No representatives nominated" description="Nominate people authorized to represent the company publicly. A Company Admin is not a representative by default." />
+            ) : (
+              <ul className="flex flex-col divide-y divide-slate-100 -my-2">
+                {p.contacts.map((c) => (
+                  <li key={c.id} className="flex items-center gap-3 py-2.5">
+                    <SokoAvatar name={c.name} size="sm" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-slate-900 truncate">{c.name}</p>
+                      <p className="text-xs text-slate-500 truncate">{[c.title, c.location].filter(Boolean).join(' · ')}</p>
+                    </div>
+                    <SokoStatusIndicator label={VISIBILITY_LABEL[c.visibility] ?? c.visibility} tone={c.visibility === 'public' ? 'info' : 'neutral'} />
+                    {editable && (
+                      <div className="flex">
+                        <button type="button" aria-label={`Edit ${c.name}`} onClick={() => setDialog({ contact: c })} className={iconBtn}><Pencil className="w-4 h-4" /></button>
+                        <button type="button" aria-label={`Remove ${c.name}`} onClick={() => save({ contacts: p.contacts.filter((x) => x.id !== c.id) }, `Removed representative ${c.name}`)} className={iconBtn}><Trash2 className="w-4 h-4" /></button>
+                      </div>
+                    )}
+                  </li>
+                ))}
               </ul>
-            </Card>
-          </div>
-        )}
+            )}
+          </SokoPanel>
 
-        {section === 'share' && (
-          <div className="space-y-4">
-            <Card title="Share Company Profile">
-              <div className="grid md:grid-cols-[1fr_auto] gap-4 items-center">
+          <SokoPanel
+            title="Company documents"
+            subtitle={canViewDocs ? `${plural(summary.docs, 'active document')} · ${summary.publicDocs.length} public` : undefined}
+            icon={FileText}
+            action={canViewDocs ? <SokoPanelLink label="Open Document Center" onClick={() => sw.go('sw-documents')} /> : undefined}
+            className="lg:col-span-2"
+          >
+            {canViewDocs ? (
+              <p className="text-sm text-slate-600 leading-relaxed">
+                Company documents and certificate files are managed in the Document Center. Only documents marked public appear on the public profile; private documents and vendor compliance reviews are never published.
+              </p>
+            ) : (
+              <p className="text-sm text-slate-500">Your role does not include access to company documents.</p>
+            )}
+          </SokoPanel>
+        </div>
+      )}
+
+      {section === 'workspace' && (
+        <div className="flex flex-col gap-6">
+          <section aria-label="Workspace summary" className={`${sokoCard} grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-px bg-slate-100 overflow-hidden`}>
+            {[
+              <SokoKpiCell key="vendors" label="Vendor register" value={summary.vendors} detail={`${summary.approved} approved`} onClick={() => sw.go('sw-vendors')} />,
+              <SokoKpiCell key="team" label="Team members" value={summary.activeMembers.length} detail={summary.pendingMembers ? `${summary.pendingMembers} pending` : 'All active'} onClick={() => sw.go('sw-team')} />,
+              <SokoKpiCell key="contacts" label="Saved contacts" value={summary.contacts} detail={plural(summary.contactCompanies, 'company')} onClick={() => sw.go('sw-contacts')} />,
+              <SokoKpiCell key="visits" label="Supplier visits" value={summary.visits} detail={`${summary.upcoming} upcoming`} onClick={() => sw.go('sw-visits')} />,
+              <SokoKpiCell key="market" label="Market Hub" value={market.campaigns.length} detail={`${market.myInterests} interests expressed`} hint="Opportunities published by the company and interests expressed on others' opportunities." />,
+              <SokoKpiCell key="docs" label="Company documents" value={canViewDocs ? summary.docs : '—'} detail={canViewDocs ? `${summary.publicDocs.length} public` : 'No access'} onClick={canViewDocs ? () => sw.go('sw-documents') : undefined} />,
+            ].map((cell) => <div key={cell.key} className="bg-white">{cell}</div>)}
+          </section>
+
+          <SokoPanel
+            title="Team members"
+            subtitle="Informational — membership and roles are managed in Team & Roles"
+            icon={Users}
+            action={<SokoPanelLink label={sw.can('team.manage') ? 'Manage in Team & Roles' : 'View Team & Roles'} onClick={() => sw.go('sw-team')} />}
+            flush
+          >
+            <ul className="divide-y divide-slate-100 border-t border-slate-100">
+              {members.map((m) => {
+                const isRep = p.contacts.some((c) => c.name === m.name);
+                return (
+                  <li key={m.id} className="flex items-center gap-3 px-5 py-3">
+                    <SokoAvatar name={m.name} size="sm" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-slate-900 truncate">{m.name}{m.userId === sw.user.id && <span className="ml-1.5 text-xs font-normal text-slate-500">(you)</span>}</p>
+                      <p className="text-xs text-slate-500 truncate">{m.title}</p>
+                    </div>
+                    <div className="hidden sm:flex items-center gap-2">
+                      {isRep && <SokoStatusIndicator label="Representative" tone="info" />}
+                      {m.status !== 'active' && <SokoStatusIndicator label={m.status === 'invited' ? 'Invited' : 'Pending approval'} tone="warning" />}
+                    </div>
+                    <span className="text-xs font-medium text-slate-600 whitespace-nowrap">{roleMeta(m.role).label}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          </SokoPanel>
+        </div>
+      )}
+
+      {section === 'administration' && (
+        <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+          <SokoPanel title="Company administration" subtitle={`Your role: ${roleMeta(sw.role).label}`} icon={Settings} flush>
+            <div className="divide-y divide-slate-100 border-t border-slate-100">
+              <AdminRow
+                icon={Users}
+                title="Team & Roles"
+                description="Invite members, assign company roles and approve access requests."
+                locked={sw.can('team.manage') ? undefined : 'View members. Only a Company Admin can change roles or invite.'}
+                onClick={() => sw.go('sw-team')}
+              />
+              <AdminRow icon={Settings} title="Workspace settings" description="Workspace preferences, role preview and leaving the company." onClick={() => sw.go('sw-settings')} />
+              <AdminRow
+                icon={CreditCard}
+                title="Subscription & plan"
+                description={plan.tagline}
+                meta={<SokoStatusIndicator label={plan.label} tone={company.tier === 'premium' ? 'info' : 'neutral'} />}
+                locked={sw.can('plan.manage') ? undefined : `${plan.tagline} Only a Company Admin can change the plan.`}
+                onClick={() => sw.go('sw-plan')}
+              />
+              <AdminRow
+                icon={Pencil}
+                title="Edit company profile"
+                description="Update identity, registered details, categories and locations."
+                locked={editable ? undefined : 'Your role can view the company profile but not edit it.'}
+                onClick={editable ? () => setDialog('overview') : undefined}
+              />
+            </div>
+          </SokoPanel>
+
+          <SokoPanel title="Company vs personal identity" icon={ShieldCheck}>
+            <ul className="flex flex-col gap-3 text-sm text-slate-600 leading-relaxed">
+              <li className="flex gap-2.5"><Building2 className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />{p.tradingName} owns this profile, its verification and its share link. They stay the same when admins change.</li>
+              <li className="flex gap-2.5"><UserRound className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />Members keep their own personal profiles and business cards in their Personal Workspace. Personal details are never published as company information.</li>
+              <li className="flex gap-2.5"><Lock className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />Permissions come from each member&apos;s company role. A company must always keep at least one Company Admin.</li>
+            </ul>
+          </SokoPanel>
+        </div>
+      )}
+
+      {section === 'public' && (
+        <div className="grid gap-6 lg:grid-cols-[1.5fr_1fr]">
+          <section aria-label="Public profile preview" className={`${sokoCard} overflow-hidden`}>
+            <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100 bg-slate-50/60">
+              <p className={sokoTokens.eyebrow}>Public preview</p>
+              <SokoStatusIndicator label="As others see it" tone="info" />
+            </div>
+            <div className="p-5 sm:p-6 flex flex-col gap-5">
+              <div className="flex items-start gap-4">
+                <CompanyLogo company={company} size="lg" />
+                <div className="min-w-0 flex flex-col gap-2">
+                  <h2 className="text-lg font-semibold text-slate-900">{p.tradingName}</h2>
+                  <div className="flex flex-wrap gap-2">
+                    {p.types.map((t) => <SokoChip key={t} tone="blue">{t}</SokoChip>)}
+                    {location && <SokoChip icon={MapPin}>{location}</SokoChip>}
+                    <SokoStatusIndicator label={verification.label} tone={verification.tone} />
+                  </div>
+                </div>
+              </div>
+              {p.description && <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line">{p.description}</p>}
+              <div className="grid gap-5 sm:grid-cols-2">
                 <div>
-                  <p className="text-sm font-semibold text-slate-900">GEC Dubai's public company profile link</p>
-                  <p className="text-xs text-slate-500 mt-0.5">This link showcases the company, not any individual person. It remains valid regardless of who holds the Company Admin role.</p>
-                  <div className="mt-3 flex gap-2 max-w-xl">
-                    <input readOnly value={companyShareUrl} className={`${inputCls} text-xs`} onFocus={(e) => e.currentTarget.select()} />
-                    <button type="button" onClick={copyLink} className={btnSecondary}>
-                      <Copy className="w-4 h-4" /> Copy
-                    </button>
-                  </div>
+                  <p className="text-xs text-slate-500 mb-2">Trade categories</p>
+                  <TagList items={p.categories} empty="None listed." tone="blue" />
                 </div>
-                <div className="p-2 rounded-lg border border-slate-200 bg-white w-fit">
-                  <QRCodeSVG value={companyShareUrl} size={88} />
+                <div>
+                  <p className="text-xs text-slate-500 mb-2">Services</p>
+                  <TagList items={p.capabilities} empty="None listed." />
                 </div>
               </div>
-            </Card>
-            <Card title="Personal vs. Company Profile">
-              <div className="grid sm:grid-cols-2 gap-4">
-                <div className="rounded-xl border border-slate-200 p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <UserRound className="w-4 h-4 text-slate-500" />
-                    <p className="text-sm font-semibold text-slate-900">Personal Digital Business Card</p>
-                  </div>
-                  <p className="text-xs text-slate-500">Belongs to the individual person (e.g. Mohamed Sadiq). Accessible from Personal Workspace → My Profile → Digital Business Card. Remains available when the person changes employers. Does not inherit company verification.</p>
+              <dl className="grid gap-4 sm:grid-cols-3 border-t border-slate-100 pt-4">
+                <InfoRow label="Website" value={p.website} />
+                <InfoRow label="General email" value={p.generalEmail} />
+                <InfoRow label="Telephone" value={p.phone} />
+              </dl>
+              {activeCerts.length > 0 && (
+                <div className="border-t border-slate-100 pt-4">
+                  <p className="text-xs text-slate-500 mb-2">Certifications (self-reported)</p>
+                  <TagList items={activeCerts.map((c) => c.name)} empty="" />
                 </div>
-                <div className="rounded-xl border border-slate-200 p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Building2 className="w-4 h-4 text-slate-700" />
-                    <p className="text-sm font-semibold text-slate-900">Company Profile</p>
-                  </div>
-                  <p className="text-xs text-slate-500">Belongs to GEC Dubai. Contains corporate information, trade categories, certifications and authorized representatives. Has its own shareable link. Does not depend on the current Company Admin's personal identity.</p>
+              )}
+              {summary.publicDocs.length > 0 && (
+                <div className="border-t border-slate-100 pt-4">
+                  <p className="text-xs text-slate-500 mb-2">Public documents</p>
+                  <TagList items={summary.publicDocs.map((d) => d.name)} empty="" />
+                </div>
+              )}
+              <div className="border-t border-slate-100 pt-4">
+                <p className="text-xs text-slate-500 mb-2">Company representatives</p>
+                {publicReps.length === 0 ? (
+                  <p className="text-sm text-slate-400">No publicly visible representatives.</p>
+                ) : (
+                  <ul className="grid gap-3 sm:grid-cols-2">
+                    {publicReps.map((c) => (
+                      <li key={c.id} className="flex items-center gap-3">
+                        <SokoAvatar name={c.name} size="sm" />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-slate-900 truncate">{c.name}</p>
+                          <p className="text-xs text-slate-500 truncate">{c.title}</p>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </section>
+
+          <div className="flex flex-col gap-6">
+            <SokoPanel title="Share company profile" subtitle="Links to the company, not a person" icon={Megaphone}>
+              <div className="flex items-start gap-4">
+                <div className="p-2 rounded-xl border border-slate-200 bg-white shrink-0">
+                  <QRCodeSVG value={companyShareUrl} size={80} />
+                </div>
+                <div className="min-w-0 flex-1 flex flex-col gap-2">
+                  <label htmlFor="company-share-url" className="text-xs text-slate-500">Public profile link</label>
+                  <input
+                    id="company-share-url"
+                    readOnly
+                    value={companyShareUrl}
+                    onFocus={(e) => e.currentTarget.select()}
+                    className={`${sokoTokens.focus} w-full h-9 px-3 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-700 font-mono`}
+                  />
+                  <button type="button" onClick={copyLink} className={`${btnSecondary} self-start`}>
+                    <Copy className="w-4 h-4" /> Copy link
+                  </button>
                 </div>
               </div>
-              <DemoNote>The company profile link and personal business card link are distinct. Switching to a different Company Admin does not change the company's public profile or its share link.</DemoNote>
-            </Card>
+            </SokoPanel>
+
+            <SokoPanel title="Never shown publicly" icon={EyeOff}>
+              <ul className="flex flex-col gap-2 text-sm text-slate-600">
+                {[
+                  'Trade license number, issuing authority and expiry',
+                  'Vendor register, vendor notes and approval statuses',
+                  'Vendor compliance reviews and private documents',
+                  'Team members, roles and personal contact details',
+                  'Supplier visits, saved contacts and subscription plan',
+                  'Representatives not marked public',
+                ].map((item) => (
+                  <li key={item} className="flex gap-2.5"><Lock className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-1" />{item}</li>
+                ))}
+              </ul>
+            </SokoPanel>
+
+            <p className="flex items-start gap-2 text-xs text-slate-500 leading-relaxed">
+              <CalendarDays className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+              Profile last updated {fmtDate(company.updatedAt)}.
+            </p>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {dialog === 'overview' && <OverviewDialog profile={p} onSave={save} onClose={() => setDialog(null)} />}
       {dialog === 'information' && <CompanyInfoDialog profile={p} onSave={save} onClose={() => setDialog(null)} />}
