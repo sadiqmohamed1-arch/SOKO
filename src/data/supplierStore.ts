@@ -64,7 +64,25 @@ export interface ChecklistItem {
   section: 'information' | 'products' | 'brands' | 'certifications' | 'contacts' | 'locations' | 'verification' | 'overview';
 }
 
+const contractorChecklist = (c: CompanyRecord): ChecklistItem[] => {
+  const p = c.profile;
+  return [
+    { id: 'description', label: 'Company description (80+ characters)', done: p.description.trim().length >= 80, section: 'overview' },
+    { id: 'license', label: 'Trade license details', done: !!p.licenseNo && !!p.licenseExpiry, section: 'information' },
+    { id: 'contact', label: 'Website, email and telephone', done: !!p.website && !!p.generalEmail && !!p.phone, section: 'information' },
+    { id: 'address', label: 'Business address', done: !!p.address, section: 'locations' },
+    { id: 'classification', label: 'Business classification', done: p.types.length > 0, section: 'overview' },
+    { id: 'disciplines', label: 'Construction disciplines and specialisms', done: p.categories.length > 0 && p.subcategories.length > 0, section: 'overview' },
+    { id: 'services', label: 'Services offered', done: p.capabilities.length > 0, section: 'overview' },
+    { id: 'locations', label: 'Operating locations', done: p.regionsServed.length > 0, section: 'locations' },
+    { id: 'certifications', label: 'Certifications listed', done: p.certifications.length > 0, section: 'certifications' },
+    { id: 'contacts', label: 'Authorized representatives', done: p.contacts.length > 0, section: 'contacts' },
+    { id: 'verification', label: 'Trade license submitted for verification', done: c.verification.status === 'verified' || c.verification.status === 'pending', section: 'verification' },
+  ];
+};
+
 export const profileChecklist = (c: CompanyRecord, products: CompanyProduct[]): ChecklistItem[] => {
+  if (c.kind === 'contractor') return contractorChecklist(c);
   const p = c.profile;
   return [
     { id: 'description', label: 'Company description (80+ characters)', done: p.description.trim().length >= 80, section: 'overview' },

@@ -168,6 +168,10 @@ export interface CompanyProfile {
   contacts: SupplierContact[];
   certifications: SupplierCertification[];
   logoTone: string;
+  /** Company-owned logo (data URL in the prototype; requires backend storage in production). */
+  logoUrl?: string;
+  /** Optional landscape company cover, roughly 3:1. */
+  coverUrl?: string;
 }
 
 export interface CompanyRecord {

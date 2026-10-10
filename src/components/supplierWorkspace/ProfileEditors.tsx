@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { CompanyProfile } from '../../data/supplierTypes';
 import { SupplierContact, SupplierCertification } from '../../data/buyerSuppliers';
 import { EMIRATES, TRADE_CATEGORIES, subcategoriesOf } from '../../data/marketHubCatalog';
+import { CONTRACTOR_CLASSIFICATIONS, DISCIPLINE_NAMES, disciplineSubsOf, legacyValues, normalizeContractorProfile } from '../../data/contractorTaxonomy';
 import { ProfileDialog } from '../ProfileDialog';
 import { btnPrimary, btnSecondary, inputCls, labelCls } from '../NetworkShared';
 import { ChipToggle } from '../marketHub/MarketHubShared';
@@ -94,9 +95,58 @@ export const TaxonomyFields: React.FC<{ value: CompanyProfile; onChange: (p: Com
   );
 };
 
-export const OverviewDialog: React.FC<{ profile: CompanyProfile; onSave: Save; onClose: () => void }> = ({ profile, onSave, onClose }) => {
-  const [p, setP] = useState(profile);
+export const ContractorTaxonomyFields: React.FC<{ value: CompanyProfile; onChange: (p: CompanyProfile) => void }> = ({ value: p, onChange }) => {
+  const classificationOptions = [...CONTRACTOR_CLASSIFICATIONS, ...legacyValues(p.types, CONTRACTOR_CLASSIFICATIONS)];
+  const disciplineOptions = [...DISCIPLINE_NAMES, ...legacyValues(p.categories, DISCIPLINE_NAMES)];
+  const standardSubs = Array.from(new Set(p.categories.flatMap(disciplineSubsOf)));
+  const subOptions = [...standardSubs, ...legacyValues(p.subcategories, standardSubs)];
+  const setDisciplines = (categories: string[]) => {
+    const removed = p.categories.filter((c) => !categories.includes(c)).flatMap(disciplineSubsOf);
+    onChange({ ...p, categories, subcategories: p.subcategories.filter((s) => !removed.includes(s)) });
+  };
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className={labelCls}>Business classification (select all that apply)</p>
+        <ChipToggle options={classificationOptions} value={p.types} onChange={(types) => onChange({ ...p, types })} />
+      </div>
+      <div>
+        <p className={labelCls}>Construction disciplines (first selected is your primary discipline)</p>
+        <ChipToggle options={disciplineOptions} value={p.categories} onChange={setDisciplines} />
+        <p className="mt-1.5 text-[11px] text-slate-500">Disciplines describe work your company carries out. They do not list you as a materials supplier.</p>
+      </div>
+      {subOptions.length > 0 && (
+        <div>
+          <p className={labelCls}>Specialisms</p>
+          <ChipToggle options={subOptions} value={p.subcategories} onChange={(subcategories) => onChange({ ...p, subcategories })} />
+        </div>
+      )}
+    </div>
+  );
+};
+
+export const OverviewDialog: React.FC<{ profile: CompanyProfile; onSave: Save; onClose: () => void; contractor?: boolean }> = ({ profile, onSave, onClose, contractor }) => {
+  const [p, setP] = useState(() => (contractor ? normalizeContractorProfile(profile) : profile));
   const [caps, setCaps] = useState(profile.capabilities.join(', '));
+  if (contractor)
+    return (
+      <ProfileDialog
+        title="Overview & construction disciplines"
+        size="lg"
+        onClose={onClose}
+        footer={<Footer onClose={onClose} onSave={() => onSave({ ...p, capabilities: caps.split(',').map((c) => c.trim()).filter(Boolean) }, 'Updated company overview') && onClose()} />}
+      >
+        <div className="space-y-4">
+          <label className="block">
+            <span className={labelCls}>Company description</span>
+            <textarea rows={4} value={p.description} onChange={(e) => setP({ ...p, description: e.target.value })} className={`${inputCls} py-2`} />
+            <span className="text-[11px] text-slate-500">{p.description.length} characters · 80+ recommended</span>
+          </label>
+          <ContractorTaxonomyFields value={p} onChange={setP} />
+          <TextField label="Services offered (comma separated, e.g. Turnkey Construction, Design-Build)" value={caps} onChange={setCaps} />
+        </div>
+      </ProfileDialog>
+    );
   return (
     <ProfileDialog
       title="Overview & trade categories"

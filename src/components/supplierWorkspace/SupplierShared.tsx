@@ -47,6 +47,8 @@ const initials = (name: string) =>
 
 export const CompanyLogo: React.FC<{ company: CompanyRecord; size?: 'sm' | 'md' | 'lg' }> = ({ company, size = 'md' }) => {
   const dims = size === 'lg' ? 'w-16 h-16 text-xl rounded-xl' : size === 'md' ? 'w-11 h-11 text-sm rounded-lg' : 'w-8 h-8 text-[11px] rounded-md';
+  if (company.profile.logoUrl)
+    return <img src={company.profile.logoUrl} alt={`${company.profile.tradingName} logo`} className={`${dims} object-cover border border-slate-200 bg-white shrink-0`} />;
   return (
     <div className={`${dims} ${company.profile.logoTone} text-white font-semibold flex items-center justify-center shrink-0`} aria-hidden>
       {initials(company.profile.tradingName)}

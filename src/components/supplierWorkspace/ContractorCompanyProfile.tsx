@@ -1,9 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import {
-  Award, Building2, CalendarDays, ChevronRight, Copy, CreditCard, Eye, EyeOff, FileText, Globe, Handshake, Lock, Mail,
+  Award, Building2, CalendarDays, Camera, ChevronRight, Copy, CreditCard, Eye, EyeOff, FileText, Globe, Handshake, ImagePlus, Lock, Mail,
   MapPin, Megaphone, Pencil, Phone, Plus, Settings, ShieldCheck, Trash2, UserRound, Users,
 } from 'lucide-react';
+import { normalizeContractorProfile } from '../../data/contractorTaxonomy';
+import { CompanyImageDialog } from './CompanyImageDialog';
 import { CompanyProfile, CONTRACTOR_TIER_CONFIG, roleMeta } from '../../data/supplierTypes';
 import { BUYER_SUPPLIERS, SupplierContact, supplierShareUrl } from '../../data/buyerSuppliers';
 import { marketSnapshot } from '../../data/supplierMarket';
@@ -18,7 +20,7 @@ import { CompanyLogo, SW } from './SupplierShared';
 import { OverviewDialog, CompanyInfoDialog, LocationsDialog, CertificationDialog, ContactDialog } from './ProfileEditors';
 
 type Section = 'information' | 'workspace' | 'administration' | 'public';
-type Dialog = 'overview' | 'information' | 'locations' | 'cert' | { contact?: SupplierContact } | null;
+type Dialog = 'overview' | 'information' | 'locations' | 'cert' | 'logo' | 'cover' | { contact?: SupplierContact } | null;
 
 const VERIFICATION: Record<string, { label: string; tone: SokoStatusTone }> = {
   verified: { label: 'SOKO verified', tone: 'success' },
@@ -84,7 +86,7 @@ export const ContractorCompanyProfile: React.FC<{ sw: SW }> = ({ sw }) => {
   const [section, setSection] = useState<Section>('information');
   const [dialog, setDialog] = useState<Dialog>(null);
   const { company, products, members, store } = sw;
-  const p = company.profile;
+  const p = useMemo(() => normalizeContractorProfile(company.profile), [company.profile]);
   const editable = sw.can('profile.edit');
   const canViewDocs = sw.can('documents.view');
   const save = (patch: Partial<CompanyProfile>, label: string) =>
@@ -166,9 +168,32 @@ export const ContractorCompanyProfile: React.FC<{ sw: SW }> = ({ sw }) => {
       </header>
 
       <section aria-label="Company identity" className={`${sokoCard} overflow-hidden`}>
+        {p.coverUrl && (
+          <div className="relative h-24 sm:h-32 lg:h-36 w-full bg-slate-100">
+            <img src={p.coverUrl} alt={`${p.tradingName} cover`} className="w-full h-full object-cover" />
+            {editable && (
+              <button type="button" onClick={() => setDialog('cover')} className={`${btnSecondary} absolute top-3 right-3 h-8 bg-white/95 shadow-sm`}>
+                <Camera className="w-4 h-4" /> Edit cover
+              </button>
+            )}
+          </div>
+        )}
         <div className="p-5 sm:p-6 flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div className="flex items-start gap-4 min-w-0">
-            <CompanyLogo company={company} size="lg" />
+            <div className="relative shrink-0">
+              <CompanyLogo company={company} size="lg" />
+              {editable && (
+                <button
+                  type="button"
+                  onClick={() => setDialog('logo')}
+                  aria-label={p.logoUrl ? 'Change company logo' : 'Upload company logo'}
+                  title={p.logoUrl ? 'Change company logo' : 'Upload company logo'}
+                  className={`${sokoTokens.focus} absolute -bottom-1.5 -right-1.5 w-7 h-7 rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm flex items-center justify-center hover:text-blue-700 hover:border-blue-200 transition-colors cursor-pointer`}
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
             <div className="min-w-0 flex flex-col gap-2">
               <div>
                 <h2 className="text-xl font-semibold text-slate-900 text-balance">{p.tradingName}</h2>
@@ -183,6 +208,11 @@ export const ContractorCompanyProfile: React.FC<{ sw: SW }> = ({ sw }) => {
               {company.verification.status === 'verified' && company.verification.reviewedAt && (
                 <p className="text-xs text-slate-500">Company verification reviewed by SOKO on {fmtDate(company.verification.reviewedAt)}. This applies to {p.tradingName}, not to any individual member.</p>
               )}
+              {editable && !p.coverUrl && (
+                <button type="button" onClick={() => setDialog('cover')} className={`${sokoTokens.focus} self-start inline-flex items-center gap-1.5 rounded-md text-xs font-medium text-blue-700 hover:text-blue-800 cursor-pointer`}>
+                  <ImagePlus className="w-3.5 h-3.5" /> Add cover image (optional)
+                </button>
+              )}
             </div>
           </div>
           <div className="lg:w-56 shrink-0 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
@@ -191,7 +221,7 @@ export const ContractorCompanyProfile: React.FC<{ sw: SW }> = ({ sw }) => {
               <p className="text-sm font-semibold text-slate-900 tabular-nums">{completion}%</p>
             </div>
             <SokoProgress value={completion} tone={completion >= 80 ? 'green' : 'blue'} className="mt-2 w-full" />
-            <p className="mt-2 text-[11px] text-slate-500 leading-relaxed">Based on company information, categories, certifications and representatives.</p>
+            <p className="mt-2 text-[11px] text-slate-500 leading-relaxed">Based on company details, classification, disciplines, services, locations, certifications and representatives. Logo and cover are optional.</p>
           </div>
         </div>
         <div className="border-t border-slate-100 px-5 sm:px-6 py-5 grid gap-5 lg:grid-cols-[1.4fr_1fr]">
@@ -243,15 +273,23 @@ export const ContractorCompanyProfile: React.FC<{ sw: SW }> = ({ sw }) => {
             </ul>
           </SokoPanel>
 
-          <SokoPanel title="Trade categories & services" icon={Handshake} action={editLink('locations')}>
+          <SokoPanel title="Construction disciplines & services" subtitle="Work the company carries out — not materials it supplies" icon={Handshake} action={editLink('overview')}>
             <div className="flex flex-col gap-4">
               <div>
-                <p className="text-xs text-slate-500 mb-2">Trade categories</p>
-                <TagList items={p.categories} empty="No categories set." tone="blue" />
+                <p className="text-xs text-slate-500 mb-2">Business classification</p>
+                <TagList items={p.types} empty="No classification set." tone="blue" />
               </div>
               <div>
-                <p className="text-xs text-slate-500 mb-2">Subcategories</p>
-                <TagList items={p.subcategories} empty="No subcategories set." />
+                <p className="text-xs text-slate-500 mb-2">Construction disciplines</p>
+                <TagList items={p.categories} empty="No disciplines set." tone="blue" />
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 mb-2">Specialisms</p>
+                <TagList items={p.subcategories} empty="No specialisms set." />
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 mb-2">Services offered</p>
+                <TagList items={p.capabilities} empty="No services listed." />
               </div>
             </div>
           </SokoPanel>
@@ -430,6 +468,11 @@ export const ContractorCompanyProfile: React.FC<{ sw: SW }> = ({ sw }) => {
               <p className={sokoTokens.eyebrow}>Public preview</p>
               <SokoStatusIndicator label="As others see it" tone="info" />
             </div>
+            {p.coverUrl && (
+              <div className="h-24 sm:h-32 w-full bg-slate-100">
+                <img src={p.coverUrl} alt="" className="w-full h-full object-cover" />
+              </div>
+            )}
             <div className="p-5 sm:p-6 flex flex-col gap-5">
               <div className="flex items-start gap-4">
                 <CompanyLogo company={company} size="lg" />
@@ -445,7 +488,7 @@ export const ContractorCompanyProfile: React.FC<{ sw: SW }> = ({ sw }) => {
               {p.description && <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line">{p.description}</p>}
               <div className="grid gap-5 sm:grid-cols-2">
                 <div>
-                  <p className="text-xs text-slate-500 mb-2">Trade categories</p>
+                  <p className="text-xs text-slate-500 mb-2">Construction disciplines</p>
                   <TagList items={p.categories} empty="None listed." tone="blue" />
                 </div>
                 <div>
@@ -536,7 +579,21 @@ export const ContractorCompanyProfile: React.FC<{ sw: SW }> = ({ sw }) => {
         </div>
       )}
 
-      {dialog === 'overview' && <OverviewDialog profile={p} onSave={save} onClose={() => setDialog(null)} />}
+      {dialog === 'overview' && <OverviewDialog contractor profile={company.profile} onSave={save} onClose={() => setDialog(null)} />}
+      {(dialog === 'logo' || dialog === 'cover') && (
+        <CompanyImageDialog
+          kind={dialog}
+          current={dialog === 'logo' ? p.logoUrl : p.coverUrl}
+          fallback={dialog === 'logo' ? <CompanyLogo company={{ ...company, profile: { ...company.profile, logoUrl: undefined } }} size="lg" /> : <p className="text-xs text-slate-400">No cover — the standard company header is used.</p>}
+          onSave={(url) =>
+            save(
+              dialog === 'logo' ? { logoUrl: url } : { coverUrl: url },
+              `${url ? 'Updated' : 'Removed'} company ${dialog === 'logo' ? 'logo' : 'cover image'}`,
+            )
+          }
+          onClose={() => setDialog(null)}
+        />
+      )}
       {dialog === 'information' && <CompanyInfoDialog profile={p} onSave={save} onClose={() => setDialog(null)} />}
       {dialog === 'locations' && <LocationsDialog profile={p} onSave={save} onClose={() => setDialog(null)} />}
       {dialog === 'cert' && <CertificationDialog onClose={() => setDialog(null)} onSave={(c) => save({ certifications: [...p.certifications, c] }, `Added certification ${c.name}`) && setDialog(null)} />}
