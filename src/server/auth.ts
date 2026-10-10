@@ -52,7 +52,11 @@ export function requireAuth(req: AuthenticatedRequest, res: Response, next: Next
 // POST /api/auth/register
 authRouter.post('/register', async (req: Request, res: Response) => {
   try {
-    const { name, email, password, role, company, title, phone, tradeLicenseNo, vatTrn, location } = req.body;
+    const { name, email, password, title, tradeLicenseNo, vatTrn, location } = req.body;
+    // A SOKO identity is personal: company, phone and role are optional and belong to company onboarding.
+    const role = req.body.role || 'buyer';
+    const company = typeof req.body.company === 'string' ? req.body.company : '';
+    const phone = typeof req.body.phone === 'string' ? req.body.phone : '';
 
     // Backend Form Validation
     const errors: Record<string, string> = {};
@@ -63,7 +67,7 @@ authRouter.post('/register', async (req: Request, res: Response) => {
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!email || !emailRegex.test(email.trim())) {
-      errors.email = 'Please provide a valid corporate email address.';
+      errors.email = 'Please provide a valid email address.';
     }
 
     if (!password || password.length < 8) {
@@ -74,16 +78,12 @@ authRouter.post('/register', async (req: Request, res: Response) => {
       errors.password = 'Password must contain at least one number.';
     }
 
-    if (!company || company.trim().length < 2) {
-      errors.company = 'Company name is required.';
-    }
-
-    if (!role || !['buyer', 'supplier', 'contractor'].includes(role)) {
+    if (!['buyer', 'supplier', 'contractor'].includes(role)) {
       errors.role = 'Role must be Buyer, Supplier, or Contractor.';
     }
 
-    if (!phone || phone.trim().length < 7) {
-      errors.phone = 'Valid phone number is required (e.g. +971 4 000 0000).';
+    if (phone.trim() && phone.trim().length < 7) {
+      errors.phone = 'Phone number looks too short.';
     }
 
     if (Object.keys(errors).length > 0) {
@@ -99,8 +99,8 @@ authRouter.post('/register', async (req: Request, res: Response) => {
     if (existing) {
       return res.status(409).json({
         success: false,
-        message: 'A corporate account with this email already exists in SOKO.ae.',
-        errors: { email: 'Email already registered.' },
+        message: 'An account with this email already exists. Sign in instead.',
+        errors: { email: 'This email already has a SOKO account.' },
       });
     }
 

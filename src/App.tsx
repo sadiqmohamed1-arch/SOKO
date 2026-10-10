@@ -33,7 +33,7 @@ import { TeamManagementView } from './components/TeamManagementView';
 import { SuperAdminPortal } from './components/SuperAdminPortal';
 import { SokoAiSearchView } from './components/SokoAiSearchView';
 import { LandingPage } from './components/LandingPage';
-import { AuthModal } from './components/AuthModal';
+import { AuthModal, type AuthIntent } from './components/AuthModal';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import {
   CreatePostModal,
@@ -96,6 +96,13 @@ function MainApp() {
   };
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'signup'>('login');
+  const [onboardingIntent, setOnboardingIntent] = useState<'join' | 'supplier' | 'contractor'>('supplier');
+  const handleAuthSuccess = (intent: AuthIntent) => {
+    enterApp();
+    if (intent === 'personal') return;
+    setOnboardingIntent(intent);
+    setActiveTab('supplier-onboarding');
+  };
 
   // Navigation
   const [activeTab, setActiveTab] = useState<string>(() => {
@@ -916,7 +923,7 @@ function MainApp() {
           isOpen={authModalOpen}
           onClose={() => setAuthModalOpen(false)}
           initialMode={authModalMode}
-          onSuccess={enterApp}
+          onSuccess={handleAuthSuccess}
         />
       </>
     );
@@ -935,7 +942,7 @@ function MainApp() {
           workspaces={buyerWorkspaces}
           activeWorkspaceId={activeWorkspaceId}
           onSwitchWorkspace={switchWorkspace}
-          onOpenSupplierOnboarding={() => setActiveTab('supplier-onboarding')}
+          onOpenSupplierOnboarding={() => { setOnboardingIntent('supplier'); setActiveTab('supplier-onboarding'); }}
           onOpenProfile={() => {
             setCardMode('edit');
             setActiveTab('card');
@@ -1077,6 +1084,7 @@ function MainApp() {
               onOpenWorkspace={(id) => switchWorkspace(`company:${id}`)}
               onCancel={() => setActiveTab(activeCompanyId ? 'sw-dashboard' : 'feed')}
               notify={notifyApp}
+              intent={onboardingIntent}
             />
           </div>
         )}
@@ -1280,9 +1288,7 @@ function MainApp() {
         isOpen={authModalOpen}
         onClose={() => setAuthModalOpen(false)}
         initialMode={authModalMode}
-        onSuccess={() => {
-          setViewMode('app');
-        }}
+        onSuccess={handleAuthSuccess}
       />
     </div>
   );

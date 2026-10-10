@@ -25,9 +25,19 @@ type Props = {
   onOpenWorkspace: (companyId: string) => void;
   onCancel: () => void;
   notify: (m: string) => void;
+  /** 'join' focuses the flow on finding an existing company; 'contractor' registers a Contractor / Developer company. */
+  intent?: 'join' | 'supplier' | 'contractor';
 };
 
-export const SupplierOnboarding: React.FC<Props> = ({ store, user, onStoreChange, onOpenWorkspace, onCancel, notify }) => {
+const INTENT_COPY = {
+  join: { eyebrow: 'Join a company', title: 'Find your company on SOKO' },
+  supplier: { eyebrow: 'Supplier onboarding', title: 'Set up your supplier company on SOKO' },
+  contractor: { eyebrow: 'Contractor onboarding', title: 'Set up your contractor or developer company on SOKO' },
+} as const;
+
+export const SupplierOnboarding: React.FC<Props> = ({ store, user, onStoreChange, onOpenWorkspace, onCancel, notify, intent = 'supplier' }) => {
+  const companyKind = intent === 'contractor' ? 'contractor' : 'supplier';
+  const copy = INTENT_COPY[intent];
   const [step, setStep] = useState(0);
   const [verified, setVerified] = useState(false);
   const [code, setCode] = useState('');
@@ -55,14 +65,14 @@ export const SupplierOnboarding: React.FC<Props> = ({ store, user, onStoreChange
 
   const detailsNext = () => {
     if (!profile.legalName.trim() || !profile.tradingName.trim() || !profile.licenseNo.trim()) return setError('Legal name, trading name and trade license number are required.');
-    if (!profile.types.length) return setError('Choose at least one supplier type.');
+    if (companyKind === 'supplier' && !profile.types.length) return setError('Choose at least one supplier type.');
     if (duplicates.length) return setError('This company already appears to exist on SOKO.');
     setError('');
     setStep(3);
   };
 
   const register = (licenseFile?: { name: string; sizeMb: number }) => {
-    const r = registerCompany(store, user, { profile, licenseFile });
+    const r = registerCompany(store, user, { profile, licenseFile, kind: companyKind });
     if (!r.ok) return setError(r.error);
     setError('');
     onStoreChange(r.store);
@@ -77,8 +87,8 @@ export const SupplierOnboarding: React.FC<Props> = ({ store, user, onStoreChange
     <div className="max-w-3xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8a702f]">Supplier onboarding</p>
-          <h1 className="mt-1 text-2xl font-semibold text-slate-900 leading-tight">Set up your supplier company on SOKO</h1>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8a702f]">{copy.eyebrow}</p>
+          <h1 className="mt-1 text-2xl font-semibold text-slate-900 leading-tight">{copy.title}</h1>
         </div>
         {step < 5 && (
           <button type="button" onClick={onCancel} className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 cursor-pointer" aria-label="Close onboarding"><X className="w-5 h-5" /></button>
@@ -209,10 +219,12 @@ export const SupplierOnboarding: React.FC<Props> = ({ store, user, onStoreChange
             <h2 className="text-lg font-semibold text-slate-900">Company details</h2>
             <p className="mt-1 text-sm text-slate-600">Use the details exactly as they appear on your trade license.</p>
             <div className="mt-5"><CompanyInfoFields value={profile} onChange={setProfile} /></div>
-            <div className="mt-4">
-              <p className={labelCls}>Supplier type</p>
-              <ChipToggle options={SUPPLIER_TYPE_OPTIONS} value={profile.types} onChange={(types) => setProfile({ ...profile, types })} />
-            </div>
+            {companyKind === 'supplier' && (
+              <div className="mt-4">
+                <p className={labelCls}>Supplier type</p>
+                <ChipToggle options={SUPPLIER_TYPE_OPTIONS} value={profile.types} onChange={(types) => setProfile({ ...profile, types })} />
+              </div>
+            )}
             <label className="block mt-4">
               <span className={labelCls}>Company description</span>
               <textarea rows={3} value={profile.description} onChange={(e) => setProfile({ ...profile, description: e.target.value })} className={inputCls} placeholder="What you supply, where, and what makes you different" />

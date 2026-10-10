@@ -522,6 +522,7 @@ export const trackProductView = (ctx: SupplierCtx, productId: string): SupplierS
 export interface RegistrationInput {
   profile: CompanyProfile;
   licenseFile?: { name: string; sizeMb: number };
+  kind?: CompanyRecord['kind'];
 }
 
 export const nextSokoId = (store: SupplierStore) => {
@@ -540,14 +541,14 @@ export const registerCompany = (store: SupplierStore, user: SessionUser, input: 
     id,
     sokoId: nextSokoId(store),
     profile: p,
-    kind: 'supplier',
+    kind: input.kind ?? 'supplier',
     tier: 'free',
     demo: false,
     createdAt: now(),
     updatedAt: now(),
     verification: input.licenseFile ? { status: 'pending', licenseFile: input.licenseFile.name, submittedAt: now() } : { status: 'not_submitted' },
   };
-  const membership: CompanyMembership = { id: uid('mem'), companyId: id, userId: user.id, name: user.name, email: user.email, title: user.title || 'Company Administrator', role: 'supplier_admin', status: 'active', at: now() };
+  const membership: CompanyMembership = { id: uid('mem'), companyId: id, userId: user.id, name: user.name, email: user.email, title: user.title || 'Company Administrator', role: company.kind === 'contractor' ? 'contractor_admin' : 'supplier_admin', status: 'active', at: now() };
   const documents: CompanyDocument[] = input.licenseFile
     ? [{
         id: uid('doc'), companyId: id, name: 'Trade License (verification)', category: 'Trade Licenses', fileName: input.licenseFile.name, sizeMb: input.licenseFile.sizeMb,
