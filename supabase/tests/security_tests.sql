@@ -3039,15 +3039,15 @@ select soko_test.expect_denied('07R: an expired reservation admits no upload',
   format($$insert into storage.objects (bucket_id, name, metadata) values ('company-media', %L,
            '{"contentLength": 10, "mimetype": "image/png"}')$$, soko_test.dp('m_race')));
 reset role;
-select soko_test.expect_count('07R: the stale-reservation job keeps a recent unsettled window',
+select soko_test.expect_count('07R: reconciliation keeps a window still inside its grace period',
   format($$select count(*) from private.storage_upload_reservations
-           where object_name = %L and private.release_stale_storage_reservations() >= 0$$, soko_test.dp('m_race')), 1);
-update private.storage_upload_reservations set created_at = now() - interval '2 days'
+           where object_name = %L and (select count(*) from private.reconcile_storage_reservations()) >= 0$$, soko_test.dp('m_race')), 1);
+update private.storage_upload_reservations set expires_at = now() - interval '25 hours'
 where bucket_id = 'company-media' and object_name = soko_test.dp('m_race');
-select soko_test.expect_count('07R: the stale-reservation job removes abandoned windows',
-  $$select count(*) from (select private.release_stale_storage_reservations() n) x where n >= 1$$, 1);
-select soko_test.expect_count('07R: only service_role runs the stale-reservation job',
-  $$select count(*) from pg_proc where oid = 'private.release_stale_storage_reservations(interval)'::regprocedure
+select soko_test.expect_count('07R: reconciliation releases abandoned windows after the grace period',
+  $$select count(*) from private.reconcile_storage_reservations() where outcome = 'released' and reservations >= 1$$, 1);
+select soko_test.expect_count('07R: only service_role runs the reconciliation job',
+  $$select count(*) from pg_proc where oid = 'private.reconcile_storage_reservations()'::regprocedure
       and has_function_privilege('service_role', oid, 'execute')
       and not has_function_privilege('authenticated', oid, 'execute')
       and not has_function_privilege('anon', oid, 'execute')$$, 1);
@@ -3248,6 +3248,173 @@ select soko_test.expect_denied('07U: admins cannot share while suspended',
   format($$select public.share_document(%L, %L)$$, soko_test.id('dd_team'), soko_test.id('d_rec')));
 reset role;
 update public.companies set is_suspended = false where id = soko_test.id('d_sup');
+
+-- =============================================================================
+-- 18. Migration 07 — reservation lifecycle and resharing authorisation
+-- =============================================================================
+-- 18A. Reconciliation of expired reservations against the real objects.
+insert into soko_test.secrets values
+  ('rl_late',    soko_test.id('d_sup')::text || '/gallery/late.png'),
+  ('rl_big',     soko_test.id('d_sup')::text || '/gallery/oversize.png'),
+  ('rl_gone',    soko_test.id('d_sup')::text || '/gallery/interrupted.png'),
+  ('rl_swap',    soko_test.id('d_sup')::text || '/gallery/replaced.png'),
+  ('rl_expired', soko_test.id('d_sup')::text || '/gallery/expired.png');
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_ok('07V: reservations are taken for five uploads',
+  format($$select public.reserve_storage_upload('company-media', p, 100, 'image/png') from unnest(array[%L, %L, %L, %L, %L]) p$$,
+         soko_test.dp('rl_late'), soko_test.dp('rl_big'), soko_test.dp('rl_gone'), soko_test.dp('rl_swap'), soko_test.dp('rl_expired')));
+reset role;
+select soko_test.as_user('d_mgr');
+set local role authenticated;
+select soko_test.expect_sqlstate('07V: a second user cannot reserve a path with an upload in progress',
+  format($$select public.reserve_storage_upload('company-media', %L, 10, 'image/png')$$, soko_test.dp('rl_late')), '55006');
+reset role;
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_ok('07V: a late upload is admitted within its window',
+  format($$insert into storage.objects (bucket_id, name, metadata) values ('company-media', %L, '{"contentLength": 80, "mimetype": "image/png"}')$$, soko_test.dp('rl_late')));
+select soko_test.expect_ok('07V: an upload declaring the reserved size is admitted',
+  format($$insert into storage.objects (bucket_id, name, metadata) values ('company-media', %L, '{"contentLength": 100, "mimetype": "image/png"}')$$, soko_test.dp('rl_big')));
+select soko_test.expect_ok('07V: an upload to be replaced is admitted',
+  format($$insert into storage.objects (bucket_id, name, metadata) values ('company-media', %L, '{"contentLength": 60, "mimetype": "image/png"}')$$, soko_test.dp('rl_swap')));
+reset role;
+-- Storage writes the real size and version after the body is stored; the
+-- oversize object stands in for a body larger than its declared length.
+update storage.objects set metadata = metadata || '{"size": 80}', version = 'v-late' where bucket_id = 'company-media' and name = soko_test.dp('rl_late');
+update storage.objects set metadata = metadata || '{"size": 500}', version = 'v-big' where bucket_id = 'company-media' and name = soko_test.dp('rl_big');
+update storage.objects set metadata = metadata || '{"size": 60}', version = 'v-swap-1' where bucket_id = 'company-media' and name = soko_test.dp('rl_swap');
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_sqlstate('07V: completion refuses a file larger than its reservation',
+  format($$select public.complete_storage_upload('company-media', %L)$$, soko_test.dp('rl_big')), '22023');
+select soko_test.expect_count('07V: a fitting upload settles',
+  format($$select count(*) from (select public.complete_storage_upload('company-media', %L) s) x where s = 60$$, soko_test.dp('rl_swap')), 1);
+select soko_test.expect_denied('07V: users cannot run reconciliation',
+  $$select * from private.reconcile_storage_reservations()$$);
+reset role;
+update storage.objects set version = 'v-swap-2' where bucket_id = 'company-media' and name = soko_test.dp('rl_swap');
+update private.storage_upload_reservations set expires_at = now() - interval '1 minute'
+where bucket_id = 'company-media' and object_name = soko_test.dp('rl_expired');
+
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_denied('07V: an expired reservation admits no upload',
+  format($$insert into storage.objects (bucket_id, name, metadata) values ('company-media', %L, '{"contentLength": 10, "mimetype": "image/png"}')$$, soko_test.dp('rl_expired')));
+reset role;
+
+select soko_test.expect_count('07V: reconciliation leaves reservations inside their grace period',
+  $$select count(*) from private.reconcile_storage_reservations() where outcome is not null and false$$, 0);
+select soko_test.expect_count('07V: an expired reservation still holds quota during its grace period',
+  format($$select count(*) from private.storage_upload_reservations where object_name = %L and rejected_at is null$$, soko_test.dp('rl_expired')), 1);
+
+insert into soko_test.secrets select 'rl_usage0', private.storage_usage(soko_test.id('d_sup'))::text;
+update private.storage_upload_reservations set expires_at = now() - interval '25 hours'
+where bucket_id = 'company-media' and object_name in (soko_test.dp('rl_late'), soko_test.dp('rl_big'), soko_test.dp('rl_gone'), soko_test.dp('rl_swap'));
+create temp table soko_rl_out on commit drop as select * from private.reconcile_storage_reservations();
+
+select soko_test.expect_count('07V: a late upload that fits is settled and released',
+  format($$select count(*) from storage.objects o where o.name = %L
+           and not exists (select 1 from private.storage_upload_reservations r where r.object_name = o.name)$$, soko_test.dp('rl_late')), 1);
+select soko_test.expect_count('07V: an interrupted upload''s reservation is released',
+  format($$select count(*) from private.storage_upload_reservations where object_name = %L$$, soko_test.dp('rl_gone')), 0);
+select soko_test.expect_count('07V: an upload larger than reserved is rejected, not released',
+  format($$select count(*) from private.storage_upload_reservations where object_name = %L and rejected_at is not null$$, soko_test.dp('rl_big')), 1);
+select soko_test.expect_count('07V: a file replaced after settlement is rejected',
+  format($$select count(*) from private.storage_upload_reservations where object_name = %L and rejected_at is not null$$, soko_test.dp('rl_swap')), 1);
+select soko_test.expect_count('07V: reconciliation reports each outcome',
+  $$select count(*) from soko_rl_out where (outcome, reservations) in (('settled_late', 1), ('rejected', 2)) $$, 2);
+select soko_test.expect_count('07V: rejected and late files keep counting their real size',
+  format($$select count(*) where private.storage_usage(%L) = %s - 160$$, soko_test.id('d_sup'), soko_test.dp('rl_usage0')), 1);
+select soko_test.expect_count('07V: rejected files are listed as orphans for cleanup',
+  format($$select count(*) from private.list_orphaned_storage_objects() o where o.name in (%L, %L)$$, soko_test.dp('rl_big'), soko_test.dp('rl_swap')), 2);
+
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_sqlstate('07V: a rejected path cannot be reserved again until its file is removed',
+  format($$select public.reserve_storage_upload('company-media', %L, 10, 'image/png')$$, soko_test.dp('rl_big')), '55006');
+select soko_test.expect_ok('07V: a released path can be reserved again',
+  format($$select public.reserve_storage_upload('company-media', %L, 10, 'image/png')$$, soko_test.dp('rl_gone')));
+reset role;
+delete from storage.objects where bucket_id = 'company-media' and name = soko_test.dp('rl_big');
+update private.storage_upload_reservations set expires_at = now() - interval '25 hours' where object_name = soko_test.dp('rl_big');
+select soko_test.expect_count('07V: a rejected reservation is released once its file is deleted',
+  format($$select count(*) from private.reconcile_storage_reservations() r
+           where not exists (select 1 from private.storage_upload_reservations x where x.object_name = %L) limit 1$$, soko_test.dp('rl_big')), 1);
+delete from storage.objects where bucket_id = 'company-media'
+  and name in (soko_test.dp('rl_late'), soko_test.dp('rl_swap'));
+delete from private.storage_upload_reservations where company_id = soko_test.id('d_sup')
+  and object_name in (soko_test.dp('rl_swap'), soko_test.dp('rl_gone'), soko_test.dp('rl_expired'));
+
+-- 18B. Resharing needs owner membership, documents.share and the document's level.
+insert into soko_test.ids select k, gen_random_uuid() from unnest(array['sh_pub','sh_adm']) k;
+insert into public.documents (id, company_id, name, access_level, is_public, for_verification) values
+  (soko_test.id('sh_pub'), soko_test.id('d_sup'), 'Public Reshare Test', 'team',   true,  false),
+  (soko_test.id('sh_adm'), soko_test.id('d_sup'), 'Admin Reshare Test',  'admins', false, false);
+insert into soko_test.secrets
+select 'p_' || k, soko_test.id('d_sup')::text || '/' || soko_test.id(k)::text || '/v1/file.pdf'
+from unnest(array['sh_pub','sh_adm']) k;
+insert into storage.objects (bucket_id, name, metadata, version)
+select 'company-documents', soko_test.dp('p_' || k), '{"size": 50, "mimetype": "application/pdf"}', 'v1'
+from unnest(array['sh_pub','sh_adm']) k;
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_ok('07W: versions are finalised for the reshare tests',
+  format($$select public.finalize_document_version(d, p, 'file.pdf') from (values (%L::uuid, %L), (%L::uuid, %L)) v(d, p)$$,
+         soko_test.id('sh_pub'), soko_test.dp('p_sh_pub'), soko_test.id('sh_adm'), soko_test.dp('p_sh_adm')));
+select soko_test.expect_ok('07W: an owner admin can share',
+  format($$select public.share_document(%L, %L, now() + interval '1 day')$$, soko_test.id('sh_pub'), soko_test.id('d_rec')));
+reset role;
+select soko_test.as_user('x_admin');
+set local role authenticated;
+select soko_test.expect_count('07W: another company can see the public document',
+  format($$select count(*) from public.documents where id = %L$$, soko_test.id('sh_pub')), 1);
+select soko_test.expect_sqlstate('07W: public visibility does not authorise sharing',
+  format($$select public.share_document(%L, %L)$$, soko_test.id('sh_pub'), soko_test.id('d_rec')), '42501');
+reset role;
+select soko_test.as_user('r_admin');
+set local role authenticated;
+select soko_test.expect_sqlstate('07W: a share recipient admin cannot reshare',
+  format($$select public.share_document(%L, %L)$$, soko_test.id('sh_pub'), soko_test.id('d_other')), '42501');
+select soko_test.expect_denied('07W: a recipient cannot write share rows directly',
+  format($$insert into public.document_shares (document_id, owner_company_id, recipient_company_id) values (%L, %L, %L)$$,
+         soko_test.id('sh_pub'), soko_test.id('d_sup'), soko_test.id('d_other')));
+reset role;
+select soko_test.as_user('d_tech');
+set local role authenticated;
+select soko_test.expect_sqlstate('07W: an owner member without documents.share cannot share',
+  format($$select public.share_document(%L, %L)$$, soko_test.id('sh_pub'), soko_test.id('d_other')), '42501');
+reset role;
+select soko_test.as_user('d_mgr');
+set local role authenticated;
+select soko_test.expect_ok('07W: a member with documents.share and the level can share',
+  format($$select public.share_document(%L, %L)$$, soko_test.id('sh_pub'), soko_test.id('d_other')));
+select soko_test.expect_sqlstate('07W: documents.share without access to the document''s level is refused',
+  format($$select public.share_document(%L, %L)$$, soko_test.id('sh_adm'), soko_test.id('d_rec')), '42501');
+reset role;
+select soko_test.as_user('r_officer');
+set local role authenticated;
+select soko_test.expect_ok('07W: the recipient can download the shared public document',
+  format($$select public.record_document_download(v.id) from public.document_versions v where v.document_id = %L$$, soko_test.id('sh_pub')));
+reset role;
+update public.documents set archived = true where id = soko_test.id('sh_pub');
+select soko_test.as_user('r_officer');
+set local role authenticated;
+select soko_test.expect_sqlstate('07W: archiving stops new download links for the recipient',
+  format($$select public.record_document_download(%L)$$,
+         (select v.id from public.document_versions v where v.document_id = soko_test.id('sh_pub'))), '42501');
+reset role;
+select soko_test.as_anon();
+set local role anon;
+select soko_test.expect_count('07W: archiving hides the public document from anon',
+  format($$select count(*) from public.documents where id = %L$$, soko_test.id('sh_pub')), 0);
+reset role;
+select soko_test.as_user('d_tech');
+set local role authenticated;
+select soko_test.expect_ok('07W: internal members can still download the archived document',
+  format($$select public.record_document_download(v.id) from public.document_versions v where v.document_id = %L$$, soko_test.id('sh_pub')));
+reset role;
+
 
 -- -----------------------------------------------------------------------------
 -- Report

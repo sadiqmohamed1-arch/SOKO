@@ -193,11 +193,16 @@ revoke all on private.storage_quota_guard from public, anon, authenticated;
 -- the quota. The INSERT/UPDATE policies then require an open reservation by the
 -- same user for the exact path, with a declared length that fits it.
 --
--- A reservation keeps counting towards the quota until it is settled (by
--- complete_storage_upload or finalize_document_version, which check the real
--- size) AND one hour has passed since its 15-minute upload window closed, so an
--- upload still in flight when it is settled stays covered. Unsettled rows count
--- until release_stale_storage_reservations removes them.
+-- Lifecycle. Every upload Storage admitted under a reservation (RLS runs at the
+-- start of a standard upload and on every TUS request) must have started
+-- before expires_at, but its body may still be streaming afterwards and is
+-- written by the storage superuser whenever it finishes. So a reservation —
+-- settled or not — keeps counting max(reserved, bytes at its path) for a fixed
+-- 24-hour grace after its window closes; nothing can release it sooner. Only
+-- then does reconcile_storage_reservations compare it with the real object:
+-- a fitting late upload is settled and released, a missing one is released,
+-- and an object that is larger, of another type or replaced after settlement
+-- is marked rejected and reported for deletion by list_orphaned_storage_objects.
 create table private.storage_upload_reservations (
   id             uuid primary key default gen_random_uuid(),
   company_id     uuid not null references public.companies (id) on delete cascade,
@@ -209,6 +214,8 @@ create table private.storage_upload_reservations (
   created_at     timestamptz not null default now(),
   expires_at     timestamptz not null,
   settled_at     timestamptz,
+  object_version text,          -- storage.objects.version seen at settlement
+  rejected_at    timestamptz,   -- object found not to match; awaiting deletion
   unique (bucket_id, object_name)
 );
 create index storage_upload_reservations_company on private.storage_upload_reservations (company_id);
@@ -217,6 +224,12 @@ revoke all on private.storage_upload_reservations from public, anon, authenticat
 alter table public.company_verifications
   add constraint company_verifications_license_document_fk
   foreign key (license_document_id) references public.documents (id) on delete set null;
+
+-- The Storage object version a finalised document version was verified
+-- against. Storage writes uploads with an upsert as superuser, so a second
+-- upload admitted under the same open window could land later and replace the
+-- bytes; downloads refuse a file whose version no longer matches.
+alter table public.document_versions add column object_version text;
 
 -- Document names are redacted (they often identify people or licences).
 select private.attach_audit('public.documents',
@@ -274,6 +287,11 @@ language sql stable security definer set search_path = '' as $$
 $$;
 select private.allow_execute(array['anon', 'authenticated'], array['private.can_read_document(uuid)']);
 
+-- How long after its upload window closes a reservation keeps counting. Matches
+-- the 24-hour lifetime of a Supabase TUS upload URL.
+create or replace function private.upload_grace() returns interval
+language sql immutable set search_path = '' as $$ select interval '24 hours' $$;
+
 -- Bytes a company holds (real sizes written by Storage) plus, for every
 -- reservation still counting, the reserved bytes not yet covered by the object
 -- at its path — so a landed upload counts max(reserved, actual), never both.
@@ -288,15 +306,20 @@ language sql volatile security definer set search_path = '' as $$
                    where o.bucket_id in ('company-documents', 'company-media', 'verification')
                      and o.name like p_company::text || '/%'
                      and not (o.bucket_id = p_bucket and o.name = p_name)), 0)
-       + coalesce((select sum(greatest(r.reserved_bytes - coalesce(
-                     (select private.object_size(o.metadata) from storage.objects o
-                      where o.bucket_id = r.bucket_id and o.name = r.object_name), 0), 0))
+       -- Unsettled reservations hold their unused bytes for the whole grace
+       -- period (an admitted upload may still land). A settled one holds bytes
+       -- only while a different upload has replaced the verified file: the
+       -- verified file already counts itself, and a deleted one frees quota.
+       + coalesce((select sum(greatest(r.reserved_bytes - coalesce(o.size, 0), 0))
                    from private.storage_upload_reservations r
+                   left join lateral (select private.object_size(x.metadata) as size, x.version
+                                      from storage.objects x
+                                      where x.bucket_id = r.bucket_id and x.name = r.object_name) o on true
                    where r.company_id = p_company and r.id is distinct from p_exclude
+                     and r.rejected_at is null
+                     and now() < r.expires_at + private.upload_grace()
                      and (r.settled_at is null
-                          or (now() < r.expires_at + interval '1 hour'
-                              and exists (select 1 from storage.objects o
-                                          where o.bucket_id = r.bucket_id and o.name = r.object_name)))), 0);
+                          or (o.version is not null and o.version is distinct from r.object_version))), 0);
 $$;
 
 -- RLS check at upload time: an open reservation by this user for this exact
@@ -594,6 +617,7 @@ declare
   v_size bigint;
   v_mime text;
   v_found boolean;
+  v_objver text;
   v_name text;
   v_id uuid;
 begin
@@ -616,9 +640,9 @@ begin
       using errcode = '22023';
   end if;
 
-  select true, private.object_size(o.metadata), o.metadata ->> 'mimetype'
-    into v_found, v_size, v_mime
-  from storage.objects o where o.bucket_id = 'company-documents' and o.name = p_storage_path;
+  select true, private.object_size(o.metadata), o.metadata ->> 'mimetype', o.version
+    into v_found, v_size, v_mime, v_objver
+  from storage.objects o where o.bucket_id = 'company-documents' and o.name = p_storage_path for share;
   if v_found is null then
     raise exception 'uploaded file not found' using errcode = '22023';
   end if;
@@ -632,11 +656,15 @@ begin
   -- The real file must fit the reservation it was uploaded under.
   select * into v_res from private.storage_upload_reservations r
   where r.bucket_id = 'company-documents' and r.object_name = p_storage_path for update;
-  if v_res.id is not null and v_res.settled_at is null then
+  if v_res.id is not null and (v_res.rejected_at is not null or v_res.settled_at is not null) then
+    raise exception 'uploaded file does not match its reservation' using errcode = '22023';
+  end if;
+  if v_res.id is not null then
     if v_size > v_res.reserved_bytes or v_mime is distinct from v_res.mime_type then
       raise exception 'uploaded file does not match its reservation' using errcode = '22023';
     end if;
-    update private.storage_upload_reservations set settled_at = now() where id = v_res.id;
+    update private.storage_upload_reservations set settled_at = now(), object_version = v_objver
+    where id = v_res.id;
   end if;
 
   v_name := left(coalesce(nullif(btrim(p_file_name), ''), v_path.file_name), 255);
@@ -644,8 +672,8 @@ begin
     raise exception 'invalid file name' using errcode = '22023';
   end if;
 
-  insert into public.document_versions (document_id, company_id, version, storage_path, file_name, mime_type, size_bytes, uploaded_by)
-  values (v_doc.id, v_doc.company_id, v_path.version, p_storage_path, v_name, v_mime, v_size, v_uid)
+  insert into public.document_versions (document_id, company_id, version, storage_path, file_name, mime_type, size_bytes, uploaded_by, object_version)
+  values (v_doc.id, v_doc.company_id, v_path.version, p_storage_path, v_name, v_mime, v_size, v_uid, v_objver)
   returning id into v_id;
   update public.documents set current_version = v_path.version where id = v_doc.id;
   return v_id;
@@ -696,11 +724,16 @@ begin
 
   select * into v_old from private.storage_upload_reservations r
   where r.bucket_id = p_bucket and r.object_name = p_name;
-  if v_old.id is not null and (v_old.settled_at is null or now() < v_old.expires_at + interval '1 hour') then
+  if v_old.rejected_at is not null then
+    raise exception 'a file at this path failed verification and must be removed first' using errcode = '55006';
+  end if;
+  if v_old.id is not null and now() < v_old.expires_at + private.upload_grace() then
     if v_old.user_id <> v_uid and v_old.settled_at is null and now() < v_old.expires_at then
       raise exception 'another upload to this path is in progress' using errcode = '55006';
     end if;
-    -- An upload admitted under the old reservation may still be in flight.
+    -- An upload admitted under the old reservation may still be in flight, so
+    -- the path keeps the larger charge. Re-reserving also extends the window
+    -- (how an interrupted resumable upload resumes: TUS re-checks RLS per PATCH).
     v_bytes := greatest(v_old.reserved_bytes, p_size);
   end if;
 
@@ -720,7 +753,8 @@ begin
   on conflict (bucket_id, object_name) do update
     set company_id = excluded.company_id, user_id = excluded.user_id,
         reserved_bytes = excluded.reserved_bytes, mime_type = excluded.mime_type,
-        created_at = now(), expires_at = excluded.expires_at, settled_at = null;
+        created_at = now(), expires_at = excluded.expires_at, settled_at = null,
+        object_version = null, rejected_at = null;
   return v_expires;
 end $$;
 
@@ -734,15 +768,18 @@ declare
   v_res private.storage_upload_reservations%rowtype;
   v_size bigint;
   v_mime text;
+  v_objver text;
   v_found boolean;
 begin
   select * into v_res from private.storage_upload_reservations r
-  where r.bucket_id = p_bucket and r.object_name = p_name and r.user_id = v_uid and r.settled_at is null
+  where r.bucket_id = p_bucket and r.object_name = p_name and r.user_id = v_uid
+    and r.settled_at is null and r.rejected_at is null
   for update;
   if v_res.id is null then
     raise exception 'no upload in progress for this path' using errcode = '22023';
   end if;
-  select true, private.object_size(o.metadata), o.metadata ->> 'mimetype' into v_found, v_size, v_mime
+  select true, private.object_size(o.metadata), o.metadata ->> 'mimetype', o.version
+    into v_found, v_size, v_mime, v_objver
   from storage.objects o where o.bucket_id = p_bucket and o.name = p_name;
   if v_found is null then
     raise exception 'uploaded file not found' using errcode = '22023';
@@ -750,23 +787,76 @@ begin
   if v_size is null or v_size <= 0 or v_size > v_res.reserved_bytes or v_mime is distinct from v_res.mime_type then
     raise exception 'uploaded file does not match its reservation' using errcode = '22023';
   end if;
-  update private.storage_upload_reservations set settled_at = now() where id = v_res.id;
+  update private.storage_upload_reservations set settled_at = now(), object_version = v_objver
+  where id = v_res.id;
   return v_size;
 end $$;
 
--- Scheduled service-role job: drops reservations that no longer count, and
--- unsettled ones older than p_min_age (abandoned uploads).
-create or replace function private.release_stale_storage_reservations(p_min_age interval default interval '1 day')
-returns integer
-language sql volatile security definer set search_path = '' as $$
-  with d as (
-    delete from private.storage_upload_reservations r
-    where (r.settled_at is not null and now() >= r.expires_at + interval '1 hour')
-       or r.created_at < now() - p_min_age
-    returning 1)
-  select count(*)::integer from d;
-$$;
-select private.allow_execute(array['service_role'], array['private.release_stale_storage_reservations(interval)']);
+-- Scheduled service-role job. Only reservations whose grace has run out are
+-- touched (no caller can shorten it), each under its company's guard row so it
+-- serialises with reserve_storage_upload. Each is reconciled with the object
+-- actually at its path:
+--   released     no object (abandoned or interrupted upload, or deleted file)
+--   settled_late an unsettled upload that landed and fits, then released
+--   released     a settled upload whose object is unchanged
+--   rejected     larger than reserved, another type, or replaced after
+--                settlement; kept (and the path blocked) until the file is
+--                deleted via the Storage API, listed by list_orphaned_storage_objects
+-- Rejected rows whose file is gone are released.
+create or replace function private.reconcile_storage_reservations()
+returns table (outcome text, reservations integer)
+language plpgsql volatile security definer set search_path = '' as $$
+declare
+  r private.storage_upload_reservations%rowtype;
+  v_found boolean;
+  v_size bigint;
+  v_mime text;
+  v_objver text;
+  v_outcome text;
+  v_counts jsonb := '{}'::jsonb;
+begin
+  for r in
+    select * from private.storage_upload_reservations x
+    where now() >= x.expires_at + private.upload_grace()
+    order by x.company_id, x.id
+  loop
+    insert into private.storage_quota_guard (company_id) values (r.company_id)
+    on conflict (company_id) do update set checked_at = now();
+    -- Re-read under the lock: a concurrent reserve may have renewed this path.
+    select * into r from private.storage_upload_reservations x
+    where x.id = r.id and now() >= x.expires_at + private.upload_grace() for update;
+    continue when r.id is null;
+
+    v_found := null;
+    select true, private.object_size(o.metadata), o.metadata ->> 'mimetype', o.version
+      into v_found, v_size, v_mime, v_objver
+    from storage.objects o where o.bucket_id = r.bucket_id and o.name = r.object_name;
+
+    if v_found is null then
+      v_outcome := 'released';
+    elsif r.rejected_at is not null then
+      v_outcome := 'still_rejected';
+    elsif v_size is null or v_size <= 0 or v_size > r.reserved_bytes
+          or v_mime is distinct from r.mime_type
+          or (r.settled_at is not null and v_objver is distinct from r.object_version) then
+      v_outcome := 'rejected';
+    elsif r.settled_at is null then
+      v_outcome := 'settled_late';
+    else
+      v_outcome := 'released';
+    end if;
+
+    if v_outcome = 'rejected' then
+      update private.storage_upload_reservations set rejected_at = now() where id = r.id;
+    elsif v_outcome in ('released', 'settled_late') then
+      delete from private.storage_upload_reservations where id = r.id;
+    end if;
+    v_counts := jsonb_set(v_counts, array[v_outcome],
+                          to_jsonb(coalesce((v_counts ->> v_outcome)::int, 0) + 1));
+  end loop;
+  return query select k, v::int from jsonb_each_text(v_counts) as e(k, v) order by k;
+end $$;
+select private.allow_execute(array['service_role'], array['private.reconcile_storage_reservations()']);
 
 create or replace function public.share_document(p_document uuid, p_recipient_company uuid, p_expires_at timestamptz default null)
 returns uuid
@@ -776,9 +866,13 @@ declare
   v_doc public.documents%rowtype;
   v_id uuid;
 begin
-  select * into v_doc from public.documents where id = p_document;
+  -- Only an active member of the owning company, holding documents.share and
+  -- internal access at the document's own level, while the company is not
+  -- suspended. can_read_document is deliberately not used: public visibility
+  -- or a share received from another company must never authorise resharing.
+  select * into v_doc from public.documents where id = p_document for share;
   if v_doc.id is null or not private.has_permission(v_doc.company_id, 'documents.share')
-     or not private.can_read_document(v_doc.id) then
+     or not private.has_doc_access(v_doc.company_id, v_doc.access_level) then
     raise exception 'not allowed' using errcode = '42501';
   end if;
   if v_doc.archived or v_doc.current_version = 0 then
@@ -836,6 +930,12 @@ begin
   if v_v.id is null or not private.can_read_document(v_v.document_id) then
     raise exception 'not allowed' using errcode = '42501';
   end if;
+  -- Never sign a URL for bytes other than the ones verified at finalisation.
+  if not exists (select 1 from storage.objects o
+                 where o.bucket_id = 'company-documents' and o.name = v_v.storage_path
+                   and o.version is not distinct from v_v.object_version) then
+    raise exception 'file is unavailable or failed its integrity check' using errcode = '55000';
+  end if;
   insert into public.audit_log (company_id, actor_id, action, entity, entity_id, diff)
   values (v_v.company_id, auth.uid(), 'download', 'document_versions', v_v.id::text,
           jsonb_build_object('document_id', v_v.document_id, 'version', v_v.version,
@@ -885,6 +985,13 @@ language sql stable security definer set search_path = '' as $$
       when private.storage_company(o.name) is null
         or not exists (select 1 from public.companies c where c.id = private.storage_company(o.name))
         then 'company deleted or malformed path'
+      when exists (select 1 from private.storage_upload_reservations r
+                   where r.bucket_id = o.bucket_id and r.object_name = o.name and r.rejected_at is not null)
+        then 'does not match its reservation'
+      when o.bucket_id = 'company-documents'
+        and exists (select 1 from public.document_versions v
+                    where v.storage_path = o.name and v.object_version is distinct from o.version)
+        then 'replaced after finalisation'
       when o.bucket_id = 'company-documents' then
         case when (select p.company_id from private.parse_document_path(o.name) p) is null then 'malformed path'
              when not exists (select 1 from public.document_versions v where v.storage_path = o.name)
