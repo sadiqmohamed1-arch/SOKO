@@ -104,6 +104,12 @@ create trigger credit_ledger_no_truncate before truncate on public.credit_ledger
 -- with a fresh snapshot; under REPEATABLE READ / SERIALIZABLE it fails with
 -- 40001 instead of spending against a stale balance. The guard holds no
 -- balance, so the ledger stays the only source of truth.
+--
+-- Lock order is company -> subscription -> guard, matching the order a
+-- company DELETE takes (company row, then its cascades). Without the leading
+-- KEY SHARE lock, a spend holding the subscription lock would later need a
+-- KEY SHARE on the company for the ledger FK while the DELETE holds the
+-- company and waits on the subscription: a guaranteed 40P01 deadlock.
 -- -----------------------------------------------------------------------------
 create table private.credit_guard (
   company_id uuid primary key references public.companies (id) on delete cascade,
@@ -114,7 +120,11 @@ revoke all on table private.credit_guard from public, anon, authenticated, servi
 create or replace function private.lock_credit_account(p_company uuid) returns void
 language plpgsql security definer set search_path = '' as $$
 begin
-  if p_company is null or not exists (select 1 from public.companies c where c.id = p_company) then
+  if p_company is null then
+    raise exception 'company not found' using errcode = 'P0002';
+  end if;
+  perform 1 from public.companies c where c.id = p_company for key share;
+  if not found then
     raise exception 'company not found' using errcode = 'P0002';
   end if;
   perform 1 from public.company_subscriptions s where s.company_id = p_company for update;
@@ -243,6 +253,8 @@ begin
   from public.company_subscriptions s
   join public.plans p on p.id = s.plan_id
   where s.status in ('trialing', 'active') and coalesce((p.entitlements ->> 'monthlyCredits')::integer, 0) > 0
+  -- Fixed key order so overlapping runs wait on each other instead of deadlocking.
+  order by s.company_id
   on conflict (company_id, period) where reason = 'monthly_grant' do nothing;
   get diagnostics v_count = row_count;
   return v_count;
