@@ -194,11 +194,21 @@ language sql stable security definer set search_path = '' as $$
      and not exists (select 1 from public.document_versions v where v.storage_path = p_name);
 $$;
 
+-- Members read all of their company's media. Everyone else reads only a public,
+-- non-suspended company's media, and within its products/ folder only images
+-- referenced by a published product — draft and archived product images stay
+-- private even though the bucket path is guessable.
 create or replace function private.can_read_company_media(p_name text) returns boolean
 language sql stable security definer set search_path = '' as $$
-  select exists (select 1 from public.companies c
-                 where c.id = private.storage_company(p_name)
-                   and ((c.is_public and not c.is_suspended) or private.is_member(c.id)));
+  select exists (
+    select 1 from public.companies c
+    where c.id = private.storage_company(p_name)
+      and (private.is_member(c.id)
+           or (c.is_public and not c.is_suspended
+               and ((storage.foldername(p_name))[2] is distinct from 'products'
+                    or exists (select 1 from public.products p
+                               where p.company_id = c.id and p.status = 'published'
+                                 and p.image_paths @> array[p_name])))));
 $$;
 
 create or replace function private.can_write_company_media(p_name text) returns boolean

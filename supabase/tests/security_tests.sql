@@ -605,8 +605,8 @@ select soko_test.expect_count('10E: anon can execute no public-schema RPC',
   $$select count(*) from soko_fn where schema = 'public' and has_function_privilege('anon', oid, 'execute')$$, 0);
 select soko_test.expect_count('10E: service_role can execute no public-schema RPC',
   $$select count(*) from soko_fn where schema = 'public' and has_function_privilege('service_role', oid, 'execute')$$, 0);
-select soko_test.expect_count('10E: authenticated can execute exactly the 41 approved public RPCs',
-  $$select count(*) from soko_fn where schema = 'public' and has_function_privilege('authenticated', oid, 'execute')$$, 41);
+select soko_test.expect_count('10E: authenticated can execute exactly the 42 approved public RPCs',
+  $$select count(*) from soko_fn where schema = 'public' and has_function_privilege('authenticated', oid, 'execute')$$, 42);
 select soko_test.expect_count('10E: every authenticated grant is on the allowlist',
   $$select count(*) from soko_fn f
     where has_function_privilege('authenticated', f.oid, 'execute')
@@ -1748,6 +1748,367 @@ select soko_test.expect_count('CR: credit-adjustment audit entries survive with 
          soko_test.id('cr_co')), 2);
 select soko_test.expect_count('CR: other companies'' ledgers are untouched by the deletion',
   format($$select private.credit_balance(%L)$$, soko_test.id('cr_other')), 50);
+
+-- =============================================================================
+-- 14. Migration 06 — supplier catalogue
+-- Supplier-only creation, cross-company isolation, public visibility, the
+-- saved-products rule, record_product_view abuse controls, image paths vs
+-- company-media storage, and grants. Actors: anon, a plain authenticated user,
+-- supplier admins of two companies, a contractor admin, suspended and private
+-- suppliers.
+-- =============================================================================
+reset role;
+insert into soko_test.ids (key, id) values
+  ('pc_a_admin', '00000000-0000-4000-8000-00000000001e'),
+  ('pc_b_admin', '00000000-0000-4000-8000-00000000001f'),
+  ('pc_con_admin','00000000-0000-4000-8000-000000000020'),
+  ('pc_cap_user','00000000-0000-4000-8000-000000000021'),
+  ('pc_a',       '00000000-0000-4000-8000-0000000000d1'),
+  ('pc_b',       '00000000-0000-4000-8000-0000000000d2'),
+  ('pc_susp',    '00000000-0000-4000-8000-0000000000d3'),
+  ('pc_priv',    '00000000-0000-4000-8000-0000000000d4'),
+  ('pc_con',     '00000000-0000-4000-8000-0000000000d5');
+insert into auth.users (id, email, aud, role, email_confirmed_at)
+select id, key || '@soko-security.test', 'authenticated', 'authenticated', now()
+from soko_test.ids where key in ('pc_a_admin', 'pc_b_admin', 'pc_con_admin', 'pc_cap_user');
+
+select soko_test.as_user('pc_a_admin');
+insert into public.companies (id, kind, legal_name) values
+  (soko_test.id('pc_a'),    'supplier',   'Catalogue Supplier A'),
+  (soko_test.id('pc_b'),    'supplier',   'Catalogue Supplier B'),
+  (soko_test.id('pc_susp'), 'supplier',   'Catalogue Suspended Supplier'),
+  (soko_test.id('pc_priv'), 'supplier',   'Catalogue Private Supplier'),
+  (soko_test.id('pc_con'),  'contractor', 'Catalogue Contractor');
+update public.companies set is_public = true
+where id in (soko_test.id('pc_a'), soko_test.id('pc_b'), soko_test.id('pc_susp'), soko_test.id('pc_con'));
+insert into public.company_memberships (company_id, company_kind, user_id, role_key) values
+  (soko_test.id('pc_a'),   'supplier',   soko_test.id('pc_a_admin'),   'supplier_admin'),
+  (soko_test.id('pc_b'),   'supplier',   soko_test.id('pc_b_admin'),   'supplier_admin'),
+  (soko_test.id('pc_con'), 'contractor', soko_test.id('pc_con_admin'), 'contractor_admin');
+
+insert into public.products (company_id, name, status, image_paths) values
+  (soko_test.id('pc_a'), 'PC A Published', 'published', array[soko_test.id('pc_a')::text || '/products/pub.png']),
+  (soko_test.id('pc_a'), 'PC A Draft',     'draft',     array[soko_test.id('pc_a')::text || '/products/draft.png']),
+  (soko_test.id('pc_a'), 'PC A Archived',  'archived',  '{}'),
+  (soko_test.id('pc_b'), 'PC B Published', 'published', '{}'),
+  (soko_test.id('pc_susp'), 'PC Susp Published', 'published', '{}'),
+  (soko_test.id('pc_priv'), 'PC Priv Published', 'published', '{}');
+insert into soko_test.ids select 'pc_a_pub',   id from public.products where name = 'PC A Published';
+insert into soko_test.ids select 'pc_a_draft', id from public.products where name = 'PC A Draft';
+insert into soko_test.ids select 'pc_a_arch',  id from public.products where name = 'PC A Archived';
+insert into soko_test.ids select 'pc_b_pub',   id from public.products where name = 'PC B Published';
+insert into soko_test.ids select 'pc_susp_pub',id from public.products where name = 'PC Susp Published';
+insert into soko_test.ids select 'pc_priv_pub',id from public.products where name = 'PC Priv Published';
+insert into public.product_specs (product_id, label, value) values
+  (soko_test.id('pc_a_draft'), 'Secret spec', 'unreleased'),
+  (soko_test.id('pc_b_pub'),   'Pressure', 'PN16');
+insert into soko_test.ids select 'pc_b_spec', id from public.product_specs where product_id = soko_test.id('pc_b_pub');
+insert into public.product_regions (product_id, region) values
+  (soko_test.id('pc_b_pub'), 'Dubai'), (soko_test.id('pc_a_draft'), 'Abu Dhabi');
+update public.companies set is_suspended = true where id = soko_test.id('pc_susp');
+insert into storage.objects (bucket_id, name, metadata) values
+  ('company-media', soko_test.id('pc_a')::text || '/products/pub.png',   '{"size": 1}'),
+  ('company-media', soko_test.id('pc_a')::text || '/products/draft.png', '{"size": 1}'),
+  ('company-media', soko_test.id('pc_a')::text || '/products/orphan.png','{"size": 1}'),
+  ('company-media', soko_test.id('pc_a')::text || '/logo/logo.png',      '{"size": 1}');
+
+-- 1. Only suppliers can create products -----------------------------------------
+select soko_test.as_user('pc_con_admin');
+set local role authenticated;
+select soko_test.expect_denied('PC: contractor cannot create a product for its own company',
+  format($$insert into public.products (company_id, name) values (%L, 'Contractor Item')$$, soko_test.id('pc_con')));
+select soko_test.expect_denied('PC: contractor cannot create a product for a supplier',
+  format($$insert into public.products (company_id, name) values (%L, 'Injected Item')$$, soko_test.id('pc_a')));
+select soko_test.expect_denied('PC: clients cannot set company_kind on insert',
+  format($$insert into public.products (company_id, company_kind, name) values (%L, 'contractor', 'Kind Forge')$$, soko_test.id('pc_con')));
+select soko_test.expect_denied('PC: contractor cannot edit a supplier product',
+  format($$update public.products set name = 'Hijacked' where id = %L$$, soko_test.id('pc_a_pub')));
+reset role;
+select soko_test.as_user('pc_a_admin');
+set local role authenticated;
+select soko_test.expect_denied('PC: supplier cannot move a product to a contractor company',
+  format($$update public.products set company_id = %L where id = %L$$, soko_test.id('pc_con'), soko_test.id('pc_a_pub')));
+select soko_test.expect_denied('PC: supplier cannot rewrite company_kind',
+  format($$update public.products set company_kind = 'contractor' where id = %L$$, soko_test.id('pc_a_pub')));
+select soko_test.expect_ok('PC: supplier admin can create its own product',
+  format($$insert into public.products (company_id, name) values (%L, 'PC A New')$$, soko_test.id('pc_a')));
+reset role;
+
+-- 2. Cross-company isolation (Supplier A against Supplier B) --------------------
+select soko_test.as_user('pc_a_admin');
+set local role authenticated;
+select soko_test.expect_denied('PC: A cannot create a product for B',
+  format($$insert into public.products (company_id, name) values (%L, 'Planted')$$, soko_test.id('pc_b')));
+select soko_test.expect_denied('PC: A cannot edit B''s product',
+  format($$update public.products set name = 'Defaced' where id = %L$$, soko_test.id('pc_b_pub')));
+select soko_test.expect_denied('PC: A cannot delete B''s product',
+  format($$delete from public.products where id = %L$$, soko_test.id('pc_b_pub')));
+select soko_test.expect_denied('PC: A cannot add specs to B''s product',
+  format($$insert into public.product_specs (product_id, label, value) values (%L, 'x', 'y')$$, soko_test.id('pc_b_pub')));
+select soko_test.expect_denied('PC: A cannot edit B''s specs',
+  format($$update public.product_specs set value = 'tampered' where id = %L$$, soko_test.id('pc_b_spec')));
+select soko_test.expect_denied('PC: A cannot delete B''s specs',
+  format($$delete from public.product_specs where id = %L$$, soko_test.id('pc_b_spec')));
+select soko_test.expect_denied('PC: A cannot move its spec onto B''s product',
+  format($$update public.product_specs set product_id = %L where product_id = %L$$,
+         soko_test.id('pc_b_pub'), soko_test.id('pc_a_draft')));
+select soko_test.expect_denied('PC: A cannot add regions to B''s product',
+  format($$insert into public.product_regions (product_id, region) values (%L, 'Sharjah')$$, soko_test.id('pc_b_pub')));
+select soko_test.expect_denied('PC: A cannot delete B''s regions',
+  format($$delete from public.product_regions where product_id = %L$$, soko_test.id('pc_b_pub')));
+select soko_test.expect_count('PC: A cannot see B''s products through member access to drafts',
+  format($$select count(*) from public.products where company_id = %L and status <> 'published'$$, soko_test.id('pc_b')), 0);
+reset role;
+select soko_test.expect_count('PC: B''s product, spec and regions are unchanged',
+  format($$select (select count(*) from public.products where id = %1$L and name = 'PC B Published')
+              + (select count(*) from public.product_specs where product_id = %1$L and value = 'PN16')
+              + (select count(*) from public.product_regions where product_id = %1$L)$$, soko_test.id('pc_b_pub')), 3);
+
+-- 3. Public visibility ----------------------------------------------------------
+select soko_test.as_anon();
+set local role anon;
+select soko_test.expect_count('PC: anon sees a published product of a public supplier',
+  format($$select count(*) from public.products where id = %L$$, soko_test.id('pc_a_pub')), 1);
+select soko_test.expect_count('PC: anon cannot see draft or archived products',
+  format($$select count(*) from public.products where id in (%L, %L)$$, soko_test.id('pc_a_draft'), soko_test.id('pc_a_arch')), 0);
+select soko_test.expect_count('PC: anon cannot see a suspended supplier''s published product',
+  format($$select count(*) from public.products where id = %L$$, soko_test.id('pc_susp_pub')), 0);
+select soko_test.expect_count('PC: anon cannot see a private supplier''s published product',
+  format($$select count(*) from public.products where id = %L$$, soko_test.id('pc_priv_pub')), 0);
+select soko_test.expect_count('PC: anon cannot see specs or regions of a draft',
+  format($$select (select count(*) from public.product_specs where product_id = %1$L)
+              + (select count(*) from public.product_regions where product_id = %1$L)$$, soko_test.id('pc_a_draft')), 0);
+reset role;
+select soko_test.as_user('pc_con_admin');
+set local role authenticated;
+select soko_test.expect_count('PC: contractor sees only the publicly visible catalogue products',
+  format($$select count(*) from public.products where company_id in (%L, %L, %L, %L)$$,
+         soko_test.id('pc_a'), soko_test.id('pc_b'), soko_test.id('pc_susp'), soko_test.id('pc_priv')), 2);
+reset role;
+select soko_test.as_user('pc_a_admin');
+set local role authenticated;
+select soko_test.expect_count('PC: supplier members see their own draft and archived products',
+  format($$select count(*) from public.products where id in (%L, %L)$$, soko_test.id('pc_a_draft'), soko_test.id('pc_a_arch')), 2);
+reset role;
+
+-- 4. Saved-products rule --------------------------------------------------------
+select soko_test.as_user('pc_con_admin');
+set local role authenticated;
+select soko_test.expect_ok('PC: a user can save a visible product',
+  format($$insert into public.saved_products (user_id, product_id) values (auth.uid(), %L)$$, soko_test.id('pc_a_pub')));
+select soko_test.expect_denied('PC: a user cannot save a draft',
+  format($$insert into public.saved_products (user_id, product_id) values (auth.uid(), %L)$$, soko_test.id('pc_a_draft')));
+select soko_test.expect_denied('PC: a user cannot save a private supplier''s product',
+  format($$insert into public.saved_products (user_id, product_id) values (auth.uid(), %L)$$, soko_test.id('pc_priv_pub')));
+select soko_test.expect_denied('PC: a user cannot save a suspended supplier''s product',
+  format($$insert into public.saved_products (user_id, product_id) values (auth.uid(), %L)$$, soko_test.id('pc_susp_pub')));
+select soko_test.expect_denied('PC: a user cannot save on behalf of someone else',
+  format($$insert into public.saved_products (user_id, product_id) values (%L, %L)$$,
+         soko_test.id('pc_cap_user'), soko_test.id('pc_b_pub')));
+reset role;
+update public.products set status = 'archived' where id = soko_test.id('pc_a_pub');
+select soko_test.as_user('pc_con_admin');
+set local role authenticated;
+select soko_test.expect_count('PC: a saved product hides once archived',
+  $$select count(*) from public.saved_products$$, 0);
+reset role;
+update public.products set status = 'published' where id = soko_test.id('pc_a_pub');
+update public.companies set is_suspended = true where id = soko_test.id('pc_a');
+select soko_test.as_user('pc_con_admin');
+set local role authenticated;
+select soko_test.expect_count('PC: a saved product hides while its supplier is suspended',
+  $$select count(*) from public.saved_products$$, 0);
+reset role;
+update public.companies set is_suspended = false where id = soko_test.id('pc_a');
+select soko_test.as_user('pc_con_admin');
+set local role authenticated;
+select soko_test.expect_count('PC: a saved product reappears when visible again',
+  $$select count(*) from public.saved_products$$, 1);
+reset role;
+update public.products set status = 'draft' where id = soko_test.id('pc_a_pub');
+select soko_test.as_user('pc_con_admin');
+set local role authenticated;
+select soko_test.expect_ok('PC: a user can still remove a save of a now-private product',
+  format($$select public.unsave_product(%L)$$, soko_test.id('pc_a_pub')));
+select soko_test.expect_ok('PC: unsave of someone else''s or an unknown product is a silent no-op',
+  format($$select public.unsave_product(%L)$$, gen_random_uuid()));
+reset role;
+select soko_test.expect_count('PC: the hidden save was actually deleted',
+  format($$select count(*) from public.saved_products where user_id = %L$$, soko_test.id('pc_con_admin')), 0);
+update public.products set status = 'published' where id = soko_test.id('pc_a_pub');
+
+-- 5. record_product_view --------------------------------------------------------
+select soko_test.as_anon();
+set local role anon;
+select soko_test.expect_sqlstate('PC: anon cannot record views',
+  format($$select public.record_product_view(%L)$$, soko_test.id('pc_a_pub')), '42501');
+reset role;
+select soko_test.as_user('pc_con_admin');
+set local role authenticated;
+select soko_test.expect_ok('PC: a forged viewer company is accepted silently',
+  format($$select public.record_product_view(%L, %L)$$, soko_test.id('pc_a_pub'), soko_test.id('pc_b')));
+select soko_test.expect_ok('PC: a duplicate same-day view is accepted silently',
+  format($$select public.record_product_view(%L, %L)$$, soko_test.id('pc_a_pub'), soko_test.id('pc_con')));
+select soko_test.expect_ok('PC: a view of a genuine membership is accepted',
+  format($$select public.record_product_view(%L, %L)$$, soko_test.id('pc_b_pub'), soko_test.id('pc_con')));
+select soko_test.expect_ok('PC: views of draft, private and suspended products are silent no-ops',
+  format($$select public.record_product_view(id) from (values (%L::uuid), (%L::uuid), (%L::uuid), (gen_random_uuid())) v(id)$$,
+         soko_test.id('pc_a_draft'), soko_test.id('pc_priv_pub'), soko_test.id('pc_susp_pub')));
+select soko_test.expect_denied('PC: clients cannot read product_views',
+  $$select count(*) from public.product_views$$);
+select soko_test.expect_denied('PC: clients cannot insert into product_views',
+  format($$insert into public.product_views (product_id, company_id, viewer_user_id) values (%L, %L, auth.uid())$$,
+         soko_test.id('pc_b_pub'), soko_test.id('pc_b')));
+reset role;
+select soko_test.as_user('pc_a_admin');
+set local role authenticated;
+select soko_test.expect_ok('PC: a supplier viewing its own product is accepted silently',
+  format($$select public.record_product_view(%L, %L)$$, soko_test.id('pc_a_pub'), soko_test.id('pc_a')));
+reset role;
+select soko_test.expect_count('PC: forged viewer company is dropped and the duplicate is not counted',
+  format($$select count(*) from public.product_views where product_id = %L and viewer_company_id is null
+             and viewer_user_id = %L$$, soko_test.id('pc_a_pub'), soko_test.id('pc_con_admin')), 1);
+select soko_test.expect_count('PC: a genuine viewer company is attributed',
+  format($$select count(*) from public.product_views where product_id = %L and viewer_company_id = %L$$,
+         soko_test.id('pc_b_pub'), soko_test.id('pc_con')), 1);
+select soko_test.expect_count('PC: self views and non-public products are never recorded',
+  format($$select count(*) from public.product_views
+           where viewer_user_id = %L or product_id in (%L, %L, %L)$$,
+         soko_test.id('pc_a_admin'), soko_test.id('pc_a_draft'), soko_test.id('pc_priv_pub'), soko_test.id('pc_susp_pub')), 0);
+update public.companies set is_suspended = true where id = soko_test.id('pc_con');
+select soko_test.as_user('pc_con_admin');
+set local role authenticated;
+select public.record_product_view(soko_test.id('pc_a_arch'));  -- archived: ignored
+reset role;
+update public.products set status = 'published' where id = soko_test.id('pc_a_arch');
+select soko_test.as_user('pc_con_admin');
+set local role authenticated;
+select public.record_product_view(soko_test.id('pc_a_arch'), soko_test.id('pc_con'));
+reset role;
+update public.companies set is_suspended = false where id = soko_test.id('pc_con');
+select soko_test.expect_count('PC: a suspended viewer company is not attributed',
+  format($$select count(*) from public.product_views where product_id = %L and viewer_company_id is null$$,
+         soko_test.id('pc_a_arch')), 1);
+select soko_test.as_user('pc_b_admin');
+insert into public.products (company_id, name, status)
+select soko_test.id('pc_b'), 'PC B Bulk ' || g, 'published' from generate_series(1, 205) g;
+select soko_test.as_user('pc_cap_user');
+set local role authenticated;
+select soko_test.expect_count('PC: the bulk catalogue is publicly discoverable',
+  format($$select count(*) from public.products where company_id = %L and name like 'PC B Bulk %%'$$, soko_test.id('pc_b')), 205);
+select soko_test.expect_ok('PC: a user can view many products in one day',
+  format($$select count(public.record_product_view(id)::text) from public.products where company_id = %L$$, soko_test.id('pc_b')));
+reset role;
+select soko_test.expect_count('PC: one user''s recorded views are capped at 200 per day',
+  format($$select count(*) from public.product_views where viewer_user_id = %L$$, soko_test.id('pc_cap_user')), 200);
+select soko_test.as_user('pc_con_admin');
+set local role authenticated;
+select public.record_product_view(id) from public.products where name = 'PC B Bulk 1';
+reset role;
+select soko_test.expect_count('PC: the cap is per user, other viewers still count',
+  format($$select count(*) from public.product_views p join public.products x on x.id = p.product_id
+           where x.name = 'PC B Bulk 1'$$), 2);
+
+-- 6. Image paths and company-media storage --------------------------------------
+select soko_test.as_user('pc_a_admin');
+set local role authenticated;
+select soko_test.expect_sqlstate('PC: an image path into another supplier''s folder is rejected',
+  format($$update public.products set image_paths = array[%L] where id = %L$$,
+         soko_test.id('pc_b')::text || '/products/x.png', soko_test.id('pc_a_pub')), '23514');
+select soko_test.expect_sqlstate('PC: a traversal image path is rejected',
+  format($$update public.products set image_paths = array[%L] where id = %L$$,
+         soko_test.id('pc_a')::text || '/products/../../' || soko_test.id('pc_b')::text || '/logo/x.png', soko_test.id('pc_a_pub')), '23514');
+select soko_test.expect_sqlstate('PC: an image path outside the products folder is rejected',
+  format($$update public.products set image_paths = array[%L] where id = %L$$,
+         soko_test.id('pc_a')::text || '/' || soko_test.id('document')::text || '/v1/licence.pdf', soko_test.id('pc_a_pub')), '23514');
+select soko_test.expect_sqlstate('PC: a null image path element is rejected',
+  format($$update public.products set image_paths = array[null::text] where id = %L$$, soko_test.id('pc_a_pub')), '23514');
+select soko_test.expect_sqlstate('PC: a new product cannot point at another supplier''s objects',
+  format($$insert into public.products (company_id, name, image_paths) values (%L, 'Bad Paths', array[%L])$$,
+         soko_test.id('pc_a'), soko_test.id('supplier')::text || '/products/x.png'), '23514');
+select soko_test.expect_ok('PC: a valid own image path is accepted',
+  format($$update public.products set image_paths = array[%L, %L] where id = %L$$,
+         soko_test.id('pc_a')::text || '/products/pub.png', soko_test.id('pc_a')::text || '/products/pub-2_v1.png', soko_test.id('pc_a_pub')));
+reset role;
+select soko_test.as_anon();
+set local role anon;
+select soko_test.expect_count('PC: anon can read a published product''s image and the public logo',
+  format($$select count(*) from storage.objects where bucket_id = 'company-media' and name in (%L, %L)$$,
+         soko_test.id('pc_a')::text || '/products/pub.png', soko_test.id('pc_a')::text || '/logo/logo.png'), 2);
+select soko_test.expect_count('PC: anon cannot read draft or unreferenced product images',
+  format($$select count(*) from storage.objects where bucket_id = 'company-media' and name in (%L, %L)$$,
+         soko_test.id('pc_a')::text || '/products/draft.png', soko_test.id('pc_a')::text || '/products/orphan.png'), 0);
+reset role;
+select soko_test.as_user('pc_b_admin');
+set local role authenticated;
+select soko_test.expect_count('PC: another supplier cannot read draft product images',
+  format($$select count(*) from storage.objects where bucket_id = 'company-media' and name = %L$$,
+         soko_test.id('pc_a')::text || '/products/draft.png'), 0);
+select soko_test.expect_denied('PC: another supplier cannot upload into A''s products folder',
+  format($$insert into storage.objects (bucket_id, name, metadata) values ('company-media', %L, '{"size":1}')$$,
+         soko_test.id('pc_a')::text || '/products/planted.png'));
+reset role;
+select soko_test.as_user('pc_a_admin');
+set local role authenticated;
+select soko_test.expect_count('PC: members read all of their own product images',
+  format($$select count(*) from storage.objects where bucket_id = 'company-media' and name like %L$$,
+         soko_test.id('pc_a')::text || '/products/%'), 3);
+reset role;
+update public.products set status = 'published' where id = soko_test.id('pc_a_draft');
+select soko_test.as_anon();
+set local role anon;
+select soko_test.expect_count('PC: publishing a product makes its image readable',
+  format($$select count(*) from storage.objects where bucket_id = 'company-media' and name = %L$$,
+         soko_test.id('pc_a')::text || '/products/draft.png'), 1);
+reset role;
+update public.companies set is_suspended = true where id = soko_test.id('pc_a');
+select soko_test.as_anon();
+set local role anon;
+select soko_test.expect_count('PC: a suspended supplier''s media is not public',
+  format($$select count(*) from storage.objects where bucket_id = 'company-media' and name like %L$$,
+         soko_test.id('pc_a')::text || '/%'), 0);
+reset role;
+update public.companies set is_suspended = false where id = soko_test.id('pc_a');
+
+-- 7. Grants, SECURITY DEFINER and RLS -------------------------------------------
+select soko_test.expect_count('PC: RLS is enabled on every catalogue table',
+  $$select count(*) from pg_class where oid in ('public.products'::regclass, 'public.product_specs'::regclass,
+      'public.product_regions'::regclass, 'public.saved_products'::regclass, 'public.product_views'::regclass)
+    and relrowsecurity$$, 5);
+select soko_test.expect_count('PC: anon holds only SELECT on public catalogue tables, nothing on saves or views',
+  $$select count(*) from information_schema.role_table_grants
+    where grantee = 'anon' and table_schema = 'public'
+      and table_name in ('products', 'product_specs', 'product_regions', 'saved_products', 'product_views')
+      and not (privilege_type = 'SELECT' and table_name in ('products', 'product_specs', 'product_regions'))$$, 0);
+select soko_test.expect_count('PC: authenticated holds no TRUNCATE, REFERENCES or TRIGGER on catalogue tables',
+  $$select count(*) from information_schema.role_table_grants
+    where grantee in ('authenticated', 'anon', 'PUBLIC') and table_schema = 'public'
+      and table_name in ('products', 'product_specs', 'product_regions', 'saved_products', 'product_views')
+      and privilege_type in ('TRUNCATE', 'REFERENCES', 'TRIGGER')$$, 0);
+select soko_test.expect_count('PC: authenticated has no table-wide INSERT/UPDATE on products (column grants only)',
+  $$select count(*) from information_schema.role_table_grants
+    where grantee = 'authenticated' and table_schema = 'public' and table_name = 'products'
+      and privilege_type in ('INSERT', 'UPDATE')$$, 0);
+select soko_test.expect_count('PC: clients cannot write protected product columns',
+  $$select count(*) from information_schema.column_privileges
+    where grantee = 'authenticated' and table_schema = 'public' and table_name = 'products'
+      and privilege_type in ('INSERT', 'UPDATE')
+      and column_name in ('id', 'company_kind', 'created_by', 'created_at', 'updated_at', 'published_at')$$, 0);
+select soko_test.expect_count('PC: catalogue SECURITY DEFINER functions pin search_path',
+  $$select count(*) from pg_proc
+    where proname in ('record_product_view', 'can_manage_product', 'unsave_product') and prosecdef
+      and not coalesce(proconfig @> array['search_path=""'], false)$$, 0);
+select soko_test.expect_count('PC: anon and PUBLIC cannot execute catalogue functions',
+  $$select count(*) from pg_proc p
+    where p.proname in ('record_product_view', 'can_manage_product', 'stamp_created_by', 'products_published_at',
+                        'unsave_product', 'valid_product_image_paths')
+      and (has_function_privilege('anon', p.oid, 'execute')
+           or exists (select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+                      where a.grantee = 0 and a.privilege_type = 'EXECUTE'))$$, 0);
+select soko_test.expect_count('PC: trigger functions are not executable by authenticated',
+  $$select count(*) from pg_proc
+    where proname in ('stamp_created_by', 'products_published_at')
+      and has_function_privilege('authenticated', oid, 'execute')$$, 0);
 
 -- -----------------------------------------------------------------------------
 -- Report

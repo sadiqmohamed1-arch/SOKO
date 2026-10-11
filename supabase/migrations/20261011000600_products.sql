@@ -18,6 +18,21 @@ begin
   return new;
 end $$;
 
+-- Product images must live in the owning company's media folder, using the
+-- company-media layout {company_id}/products/{file_name} (see 07). Rejecting
+-- anything else stops a supplier pointing its catalogue at another company's
+-- objects, documents or traversal-style names. NULL elements are rejected.
+create or replace function private.valid_product_image_paths(p_company uuid, p_paths text[])
+returns boolean language sql immutable set search_path = '' as $$
+  select p_company is not null and not exists (
+    select 1 from unnest(p_paths) as p
+    where p is null
+       or char_length(p) > 300
+       or p like '%..%'
+       or p !~ ('^' || p_company::text || '/products/[A-Za-z0-9][A-Za-z0-9._-]{0,199}$'));
+$$;
+select private.allow_execute(array['authenticated'], array['private.valid_product_image_paths(uuid, text[])']);
+
 create table public.products (
   id           uuid primary key default gen_random_uuid(),
   company_id   uuid not null,
@@ -40,9 +55,12 @@ create table public.products (
   created_by   uuid,
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now(),
-  foreign key (company_id, company_kind) references public.companies (id, kind) on delete cascade
+  foreign key (company_id, company_kind) references public.companies (id, kind) on delete cascade,
+  constraint products_image_paths_valid check (private.valid_product_image_paths(company_id, image_paths))
 );
 create index products_company_status on public.products (company_id, status);
+-- Serves the published-image lookup in private.can_read_company_media (07).
+create index products_image_paths on public.products using gin (image_paths);
 create index products_search on public.products using gin (search);
 create index products_category on public.products (category, subcategory) where status = 'published';
 create trigger products_updated_at before update on public.products
@@ -104,6 +122,7 @@ create table public.product_views (
   unique (product_id, viewer_user_id, viewed_on)
 );
 create index product_views_company_day on public.product_views (company_id, viewed_on);
+create index product_views_viewer_day on public.product_views (viewer_user_id, viewed_on);
 
 -- -----------------------------------------------------------------------------
 -- RLS
@@ -166,8 +185,22 @@ end $$;
 
 select private.reset_table_grants('public.saved_products');
 grant select, insert, delete on public.saved_products to authenticated;
+-- Saved-products rule: a user may save, and later see, only products visible
+-- to them. The products subquery is filtered by products' RLS, so a save of a
+-- product that is unpublished, archived, or whose supplier goes private or is
+-- suspended disappears from the list (and reappears if it becomes visible
+-- again). A plain DELETE also needs the row to pass this SELECT policy, so
+-- public.unsave_product() below lets users clear a save that is now hidden.
 create policy saved_products_own_read on public.saved_products
-  for select to authenticated using (user_id = auth.uid());
+  for select to authenticated
+  using (user_id = auth.uid() and exists (select 1 from public.products p where p.id = product_id));
+
+-- Deletes only the caller's own save; reveals nothing about the product.
+create or replace function public.unsave_product(p_product uuid) returns void
+language sql security definer set search_path = '' as $$
+  delete from public.saved_products where user_id = private.require_user() and product_id = p_product;
+$$;
+select private.allow_execute(array['authenticated'], array['public.unsave_product(uuid)']);
 create policy saved_products_own_insert on public.saved_products
   for insert to authenticated
   with check (user_id = auth.uid() and exists (select 1 from public.products p where p.id = product_id));
@@ -177,21 +210,33 @@ create policy saved_products_own_delete on public.saved_products
 -- No client policies at all: written by record_product_view, read by metrics.
 select private.reset_table_grants('public.product_views');
 
+-- Always returns void, so it is not an oracle for whether a product exists or
+-- is private. Abuse controls: one row per product, viewer and day (unique key);
+-- a per-user daily cap so one account cannot flood a supplier's metrics; the
+-- viewer company is kept only when the caller is an active member of it and
+-- it is not suspended — otherwise the view is recorded without attribution.
 create or replace function public.record_product_view(p_product uuid, p_viewer_company uuid default null)
 returns void
 language plpgsql security definer set search_path = '' as $$
 declare
   v_uid uuid := private.require_user();
   v_company uuid;
+  c_daily_cap constant int := 200;
 begin
   select p.company_id into v_company
   from public.products p join public.companies c on c.id = p.company_id
   where p.id = p_product and p.status = 'published' and c.is_public and not c.is_suspended;
   if v_company is null or private.is_member(v_company) then
-    return;  -- unknown product, or a supplier viewing their own catalogue
+    return;  -- not publicly visible, or a supplier viewing their own catalogue
   end if;
-  if p_viewer_company is not null and not private.is_member(p_viewer_company) then
+  if p_viewer_company is not null and not exists (
+       select 1 from public.companies c
+       where c.id = p_viewer_company and not c.is_suspended and private.is_member(c.id)) then
     p_viewer_company := null;
+  end if;
+  if (select count(*) from public.product_views v
+      where v.viewer_user_id = v_uid and v.viewed_on = current_date) >= c_daily_cap then
+    return;
   end if;
   insert into public.product_views (product_id, company_id, viewer_user_id, viewer_company_id)
   values (p_product, v_company, v_uid, p_viewer_company)
