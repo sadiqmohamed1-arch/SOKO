@@ -398,7 +398,7 @@ $$;
 
 select private.allow_execute(array['authenticated'], array['private.has_doc_access(uuid, public.doc_access_level)']);
 select private.allow_execute(array['anon', 'authenticated'], array['private.storage_company(text)']);
-select private.allow_execute(array['anon', 'authenticated'], array['private.object_size(jsonb)']);
+select private.allow_execute(array['authenticated'], array['private.object_size(jsonb)']);
 select private.allow_execute(array['authenticated'], array[
   'private.can_upload_document_object(text, bigint)',
   'private.can_read_document_object(text)',

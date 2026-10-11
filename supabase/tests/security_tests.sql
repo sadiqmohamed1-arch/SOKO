@@ -2320,6 +2320,615 @@ select soko_test.expect_count('PV: a published product''s referenced image is st
          soko_test.id('pc_a')::text || '/products/pub.png'), 1);
 reset role;
 
+-- =============================================================================
+-- 16. Migration 07 — documents, sharing, Storage paths, retention and quota
+-- =============================================================================
+reset role;
+create function soko_test.dp(p_key text) returns text language sql stable as
+  $$ select value from soko_test.secrets where key = p_key $$;
+-- Runs as the caller, so Storage RLS applies exactly as for a client upload.
+create function soko_test.put(p_bucket text, p_name text, p_size bigint, p_mime text default 'application/pdf')
+returns void language sql as $$
+  insert into storage.objects (bucket_id, name, metadata)
+  values (p_bucket, p_name, jsonb_build_object('size', p_size, 'mimetype', p_mime));
+$$;
+grant execute on function soko_test.dp(text), soko_test.put(text, text, bigint, text) to anon, authenticated, service_role;
+
+insert into soko_test.ids select k, gen_random_uuid()
+from unnest(array['d_admin','d_tech','d_rep','d_mgr','d_editor','r_admin','r_officer','x_admin','vkey']) k;
+insert into auth.users (id, email, aud, role, email_confirmed_at)
+select id, key || '@soko-security.test', 'authenticated', 'authenticated', now()
+from soko_test.ids where key in ('d_admin','d_tech','d_rep','d_mgr','d_editor','r_admin','r_officer','x_admin');
+
+-- No shipped role holds profile.edit without products.manage, so a test-only
+-- role checks that profile.edit alone never reaches products/.
+insert into public.roles (company_kind, key, label, is_admin)
+values ('supplier', 'soko_test_profile_editor', 'Profile editor (test)', false);
+insert into public.role_permissions (company_kind, role_key, permission)
+values ('supplier', 'soko_test_profile_editor', 'profile.edit');
+insert into public.role_document_access (company_kind, role_key, access_level)
+values ('supplier', 'soko_test_profile_editor', 'team');
+
+select soko_test.as_user('d_admin');
+set local role authenticated;
+insert into soko_test.ids values ('d_sup', public.create_company('supplier', 'Doc Owner Supplier LLC'));
+update public.companies set is_public = true where id = soko_test.id('d_sup');
+reset role;
+select soko_test.as_user('r_admin');
+set local role authenticated;
+insert into soko_test.ids values ('d_rec', public.create_company('contractor', 'Doc Recipient Contractor LLC'));
+reset role;
+select soko_test.as_user('x_admin');
+set local role authenticated;
+insert into soko_test.ids values ('d_other', public.create_company('supplier', 'Doc Other Supplier LLC'));
+reset role;
+
+insert into public.company_memberships (company_id, company_kind, user_id, role_key) values
+  (soko_test.id('d_sup'), 'supplier',   soko_test.id('d_tech'),    'technical_manager'),
+  (soko_test.id('d_sup'), 'supplier',   soko_test.id('d_rep'),     'sales_rep'),
+  (soko_test.id('d_sup'), 'supplier',   soko_test.id('d_mgr'),     'sales_manager'),
+  (soko_test.id('d_sup'), 'supplier',   soko_test.id('d_editor'),  'soko_test_profile_editor'),
+  (soko_test.id('d_rec'), 'contractor', soko_test.id('r_officer'), 'procurement_officer');
+
+insert into soko_test.ids select k, gen_random_uuid()
+from unnest(array['dd_team','dd_tech','dd_admins','dd_public','dd_verif','dd_empty','dd_other']) k;
+insert into public.documents (id, company_id, name, access_level, is_public, for_verification) values
+  (soko_test.id('dd_team'),   soko_test.id('d_sup'),   'Team Spec Sheet',   'team',      false, false),
+  (soko_test.id('dd_tech'),   soko_test.id('d_sup'),   'Technical Drawing', 'technical', false, false),
+  (soko_test.id('dd_admins'), soko_test.id('d_sup'),   'Admin Contract',    'admins',    false, false),
+  (soko_test.id('dd_public'), soko_test.id('d_sup'),   'Public Brochure',   'team',      true,  false),
+  (soko_test.id('dd_verif'),  soko_test.id('d_sup'),   'Trade Licence',     'admins',    false, true),
+  (soko_test.id('dd_empty'),  soko_test.id('d_sup'),   'Never Uploaded',    'team',      false, false),
+  (soko_test.id('dd_other'),  soko_test.id('d_other'), 'Other Spec',        'team',      false, false);
+insert into soko_test.secrets
+select 'p_' || k || '_v' || v, d.company_id::text || '/' || d.id::text || '/v' || v || '/file.pdf'
+from unnest(array['dd_team','dd_tech','dd_admins','dd_public','dd_verif','dd_empty','dd_other']) k
+cross join generate_series(1, 3) v
+join public.documents d on d.id = soko_test.id(k);
+insert into soko_test.secrets values
+  ('p_verif',  soko_test.id('d_sup')::text || '/' || soko_test.id('vkey')::text || '/cert.pdf'),
+  ('p_verif2', soko_test.id('d_sup')::text || '/' || soko_test.id('vkey')::text || '/cert2.pdf');
+
+insert into storage.objects (bucket_id, name, metadata)
+select 'company-documents', soko_test.dp('p_' || k || '_v1'), '{"size": 1000, "mimetype": "application/pdf"}'
+from unnest(array['dd_team','dd_tech','dd_admins','dd_public','dd_verif','dd_other']) k;
+select soko_test.as_user('d_admin');
+set local role authenticated;
+insert into soko_test.ids
+select 'v_' || k, public.finalize_document_version(soko_test.id(k), soko_test.dp('p_' || k || '_v1'), 'file.pdf')
+from unnest(array['dd_team','dd_tech','dd_admins','dd_public','dd_verif']) k;
+reset role;
+select soko_test.as_user('x_admin');
+set local role authenticated;
+insert into soko_test.ids values ('v_dd_other',
+  public.finalize_document_version(soko_test.id('dd_other'), soko_test.dp('p_dd_other_v1'), 'file.pdf'));
+reset role;
+
+-- 16A. Grants -----------------------------------------------------------------
+select soko_test.expect_count('07G: anon cannot execute object_size',
+  $$select count(*) from pg_proc where oid = 'private.object_size(jsonb)'::regprocedure
+      and has_function_privilege('anon', oid, 'execute')$$, 0);
+select soko_test.expect_count('07G: only service_role runs the orphan report and reminders',
+  $$select count(*) from pg_proc
+    where oid in ('private.list_orphaned_storage_objects(interval)'::regprocedure,
+                  'private.queue_document_expiry_reminders()'::regprocedure)
+      and (has_function_privilege('anon', oid, 'execute') or has_function_privilege('authenticated', oid, 'execute'))$$, 0);
+select soko_test.expect_count('07G: users have no write grant on document_versions or document_shares',
+  $$select count(*) from information_schema.role_table_grants
+    where table_schema = 'public' and table_name in ('document_versions', 'document_shares', 'document_reminders_sent')
+      and grantee in ('anon', 'authenticated') and privilege_type in ('INSERT', 'UPDATE', 'DELETE', 'TRUNCATE')$$, 0);
+
+-- 16B. Roles and access levels --------------------------------------------------
+select soko_test.as_user('d_rep');
+set local role authenticated;
+select soko_test.expect_count('07R: a sales rep sees only team-level documents',
+  format($$select count(*) from public.documents where company_id = %L$$, soko_test.id('d_sup')), 3);
+select soko_test.expect_count('07R: a sales rep sees only team-level versions',
+  format($$select count(*) from public.document_versions where company_id = %L$$, soko_test.id('d_sup')), 2);
+select soko_test.expect_ok('07R: a sales rep downloads a team document',
+  format('select public.record_document_download(%L)', soko_test.id('v_dd_team')));
+select soko_test.expect_denied('07R: a sales rep cannot download a technical document',
+  format('select public.record_document_download(%L)', soko_test.id('v_dd_tech')));
+select soko_test.expect_count('07R: a sales rep reads the team file from Storage',
+  format($$select count(*) from storage.objects where bucket_id = 'company-documents' and name = %L$$, soko_test.dp('p_dd_team_v1')), 1);
+select soko_test.expect_count('07R: a sales rep cannot read the technical file from Storage',
+  format($$select count(*) from storage.objects where bucket_id = 'company-documents' and name = %L$$, soko_test.dp('p_dd_tech_v1')), 0);
+select soko_test.expect_denied('07R: a sales rep cannot share documents',
+  format('select public.share_document(%L, %L)', soko_test.id('dd_team'), soko_test.id('d_rec')));
+select soko_test.expect_denied('07R: a sales rep cannot upload a new version',
+  format($$select soko_test.put('company-documents', %L, 10)$$, soko_test.dp('p_dd_team_v2')));
+reset role;
+select soko_test.as_user('d_tech');
+set local role authenticated;
+select soko_test.expect_count('07R: a technical manager sees team and technical documents',
+  format($$select count(*) from public.documents where company_id = %L$$, soko_test.id('d_sup')), 4);
+select soko_test.expect_denied('07R: a technical manager cannot download an admin-only document',
+  format('select public.record_document_download(%L)', soko_test.id('v_dd_admins')));
+select soko_test.expect_denied('07R: a technical manager cannot upload to an admin-only document',
+  format($$select soko_test.put('company-documents', %L, 10)$$, soko_test.dp('p_dd_admins_v2')));
+reset role;
+
+-- 16C. Anonymous access -------------------------------------------------------
+select soko_test.as_anon();
+set local role anon;
+select soko_test.expect_count('07A: anonymous users see only the public document',
+  format($$select count(*) from public.documents where company_id = %L$$, soko_test.id('d_sup')), 1);
+select soko_test.expect_count('07A: anonymous users see only the public document''s versions',
+  format($$select count(*) from public.document_versions where company_id = %L$$, soko_test.id('d_sup')), 1);
+select soko_test.expect_count('07A: anonymous users read no company-documents objects',
+  $$select count(*) from storage.objects where bucket_id = 'company-documents'$$, 0);
+select soko_test.expect_count('07A: anonymous users read no verification objects',
+  $$select count(*) from storage.objects where bucket_id = 'verification'$$, 0);
+select soko_test.expect_denied('07A: anonymous users cannot record downloads',
+  format('select public.record_document_download(%L)', soko_test.id('v_dd_public')));
+select soko_test.expect_denied('07A: anonymous users cannot finalise versions',
+  format('select public.finalize_document_version(%L, %L, %L)', soko_test.id('dd_public'), soko_test.dp('p_dd_public_v2'), 'x.pdf'));
+select soko_test.expect_denied('07A: anonymous users cannot upload media',
+  format($$select soko_test.put('company-media', %L, 10, 'image/png')$$, soko_test.id('d_sup')::text || '/logo/anon.png'));
+select soko_test.expect_denied('07A: anonymous users cannot call object_size',
+  $$select private.object_size('{"size": 1}')$$);
+reset role;
+
+-- 16D. Strict path validation -----------------------------------------------------
+select soko_test.expect_count('07P: malformed document paths never parse',
+  format($$with b(c, d) as (select %L::text, %L::text)
+    select count(*) from b, unnest(array[
+      c || '/' || d || '/v1/../x.pdf',      c || '/' || d || '/v1/sub/x.pdf',
+      '../' || c || '/' || d || '/v1/x.pdf', '/' || c || '/' || d || '/v1/x.pdf',
+      c || '/' || d || '/v1/x.pdf/',        c || '//' || d || '/v1/x.pdf',
+      c || '/' || d || '/v0/x.pdf',         c || '/' || d || '/v01/x.pdf',
+      c || '/' || d || '/1/x.pdf',          c || '/' || d || '/v1/',
+      c || '/' || d || '/v1/.hidden',       c || '/' || d || '/v1/x y.pdf',
+      c || '/' || d || '/v1/x%%2F.pdf',     c || '/' || d || '/v1/x.pdf' || chr(10),
+      upper(c) || '/' || d || '/v1/x.pdf',  c || '/not-a-uuid/v1/x.pdf',
+      c || '/' || d || '/v1/' || repeat('a', 201)]) p
+    where (select x.company_id from private.parse_document_path(p) x) is not null$$,
+    soko_test.id('d_sup'), soko_test.id('dd_team')), 0);
+select soko_test.expect_count('07P: a well-formed document path parses to its parts',
+  format($$select count(*) from private.parse_document_path(%L) x
+           where x.company_id = %L and x.document_id = %L and x.version = 1 and x.file_name = 'file.pdf'$$,
+         soko_test.dp('p_dd_team_v1'), soko_test.id('d_sup'), soko_test.id('dd_team')), 1);
+select soko_test.expect_count('07P: malformed media paths never parse',
+  format($$with b(c) as (select %L::text)
+    select count(*) from b, unnest(array[
+      c || '/products/../x.png', c || '/products/sub/x.png', c || '/logos/x.png',
+      c || '/x.png', c || '/logo/', '../' || c || '/logo/x.png', c || '/logo/.x.png']) p
+    where (select x.company_id from private.parse_media_path(p) x) is not null$$, soko_test.id('d_sup')), 0);
+select soko_test.expect_count('07P: malformed verification paths never parse',
+  format($$with b(c, k) as (select %L::text, %L::text)
+    select count(*) from b, unnest(array[
+      c || '/cert.pdf', c || '/not-a-uuid/cert.pdf', c || '/' || k || '/../cert.pdf',
+      c || '/' || k || '/sub/cert.pdf', c || '/' || k || '/']) p
+    where (select x.company_id from private.parse_verification_path(p) x) is not null$$,
+    soko_test.id('d_sup'), soko_test.id('vkey')), 0);
+select soko_test.expect_denied('07P: a version row cannot name a path outside its document',
+  format($$insert into public.document_versions (document_id, company_id, version, storage_path, file_name, size_bytes)
+           values (%L, %L, 2, %L, 'x.pdf', 1)$$,
+         soko_test.id('dd_team'), soko_test.id('d_sup'), soko_test.dp('p_dd_tech_v2')));
+select soko_test.expect_denied('07P: a version row cannot point at another company''s document',
+  format($$insert into public.document_versions (document_id, company_id, version, storage_path, file_name, size_bytes)
+           values (%L, %L, 2, %L, 'x.pdf', 1)$$,
+         soko_test.id('dd_other'), soko_test.id('d_sup'), soko_test.id('d_sup')::text || '/' || soko_test.id('dd_other')::text || '/v2/x.pdf'));
+
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_denied('07P: cannot upload into another company''s document folder',
+  format($$select soko_test.put('company-documents', %L, 10)$$, soko_test.dp('p_dd_other_v2')));
+select soko_test.expect_denied('07P: cannot pair own company prefix with another company''s document',
+  format($$select soko_test.put('company-documents', %L, 10)$$,
+         soko_test.id('d_sup')::text || '/' || soko_test.id('dd_other')::text || '/v2/file.pdf'));
+select soko_test.expect_denied('07P: cannot upload a traversal path',
+  format($$select soko_test.put('company-documents', %L, 10)$$,
+         soko_test.id('d_sup')::text || '/' || soko_test.id('dd_team')::text || '/v2/../file.pdf'));
+select soko_test.expect_denied('07P: cannot upload to a skipped version',
+  format($$select soko_test.put('company-documents', %L, 10)$$, soko_test.dp('p_dd_team_v3')));
+select soko_test.expect_denied('07P: cannot upload over a finalised version path',
+  format($$select soko_test.put('company-documents', %L, 10)$$, soko_test.dp('p_dd_team_v1')));
+select soko_test.expect_ok('07P: can upload the exact next version',
+  format($$select soko_test.put('company-documents', %L, 500)$$, soko_test.dp('p_dd_team_v2')));
+
+-- 16E. finalize_document_version ------------------------------------------------
+select soko_test.expect_denied('07F: finalise rejects another document''s path',
+  format('select public.finalize_document_version(%L, %L, null)', soko_test.id('dd_team'), soko_test.dp('p_dd_tech_v2')));
+select soko_test.expect_denied('07F: finalise rejects another company''s path',
+  format('select public.finalize_document_version(%L, %L, null)', soko_test.id('dd_team'), soko_test.dp('p_dd_other_v2')));
+select soko_test.expect_denied('07F: finalise rejects a skipped version',
+  format('select public.finalize_document_version(%L, %L, null)', soko_test.id('dd_team'), soko_test.dp('p_dd_team_v3')));
+select soko_test.expect_denied('07F: finalise rejects replaying version 1',
+  format('select public.finalize_document_version(%L, %L, null)', soko_test.id('dd_team'), soko_test.dp('p_dd_team_v1')));
+select soko_test.expect_denied('07F: finalise rejects a version whose file was never uploaded',
+  format('select public.finalize_document_version(%L, %L, null)', soko_test.id('dd_tech'), soko_test.dp('p_dd_tech_v2')));
+select soko_test.expect_denied('07F: another company''s admin cannot finalise',
+  format('select public.finalize_document_version(%L, %L, null)', soko_test.id('dd_other'), soko_test.dp('p_dd_other_v2')));
+select soko_test.expect_ok('07F: finalise accepts the uploaded next version',
+  format('select public.finalize_document_version(%L, %L, %L)', soko_test.id('dd_team'), soko_test.dp('p_dd_team_v2'), 'Spec v2.pdf'));
+select soko_test.expect_count('07F: current_version advanced to 2',
+  format('select current_version from public.documents where id = %L', soko_test.id('dd_team')), 2);
+select soko_test.expect_count('07F: the version records Storage''s own size',
+  format('select size_bytes from public.document_versions where document_id = %L and version = 2', soko_test.id('dd_team')), 500);
+select soko_test.expect_denied('07F: the same version cannot be finalised twice',
+  format('select public.finalize_document_version(%L, %L, null)', soko_test.id('dd_team'), soko_test.dp('p_dd_team_v2')));
+select soko_test.expect_denied('07F: users cannot insert versions directly',
+  format($$insert into public.document_versions (document_id, company_id, version, storage_path, file_name, size_bytes)
+           values (%L, %L, 3, %L, 'x.pdf', 1)$$, soko_test.id('dd_team'), soko_test.id('d_sup'), soko_test.dp('p_dd_team_v3')));
+select soko_test.expect_denied('07F: users cannot update versions',
+  format($$update public.document_versions set file_name = 'forged.pdf' where document_id = %L$$, soko_test.id('dd_team')));
+select soko_test.expect_denied('07F: users cannot overwrite a finalised file',
+  format($$update storage.objects set metadata = '{"size": 1}' where bucket_id = 'company-documents' and name = %L$$, soko_test.dp('p_dd_team_v1')));
+select soko_test.expect_denied('07F: users cannot move a finalised file',
+  format($$update storage.objects set name = %L where bucket_id = 'company-documents' and name = %L$$,
+         soko_test.dp('p_dd_team_v3'), soko_test.dp('p_dd_team_v1')));
+reset role;
+select soko_test.expect_denied('07F: version rows are immutable even for the owner',
+  format($$update public.document_versions set version = 9 where document_id = %L$$, soko_test.id('dd_team')));
+
+-- Objects with forged or missing metadata (written as owner, as a client could
+-- not): finalisation must reject each one.
+insert into storage.objects (bucket_id, name, metadata) values
+  ('company-documents', soko_test.dp('p_dd_tech_v2'),   '{"mimetype": "application/pdf"}'),
+  ('company-documents', soko_test.dp('p_dd_admins_v2'), '{"size": 10, "mimetype": "application/x-msdownload"}'),
+  ('company-documents', soko_test.dp('p_dd_public_v2'), '{"size": 52428801, "mimetype": "application/pdf"}'),
+  ('company-documents', soko_test.dp('p_dd_verif_v2'),  '{"size": "-5", "mimetype": "application/pdf"}'),
+  ('verification',      soko_test.dp('p_dd_empty_v1'),  '{"size": 10, "mimetype": "application/pdf"}');
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_denied('07F: finalise rejects an object without a size',
+  format('select public.finalize_document_version(%L, %L, null)', soko_test.id('dd_tech'), soko_test.dp('p_dd_tech_v2')));
+select soko_test.expect_denied('07F: finalise rejects a disallowed MIME type',
+  format('select public.finalize_document_version(%L, %L, null)', soko_test.id('dd_admins'), soko_test.dp('p_dd_admins_v2')));
+select soko_test.expect_denied('07F: finalise rejects a file over the bucket limit',
+  format('select public.finalize_document_version(%L, %L, null)', soko_test.id('dd_public'), soko_test.dp('p_dd_public_v2')));
+select soko_test.expect_denied('07F: finalise rejects a negative size',
+  format('select public.finalize_document_version(%L, %L, null)', soko_test.id('dd_verif'), soko_test.dp('p_dd_verif_v2')));
+select soko_test.expect_denied('07F: finalise ignores a same-named object in another bucket',
+  format('select public.finalize_document_version(%L, %L, null)', soko_test.id('dd_empty'), soko_test.dp('p_dd_empty_v1')));
+select soko_test.expect_denied('07F: finalise rejects control characters in the file name',
+  format('select public.finalize_document_version(%L, %L, %L)', soko_test.id('dd_tech'), soko_test.dp('p_dd_tech_v2'), 'a' || chr(7) || '.pdf'));
+reset role;
+
+-- 16F. Sharing, revocation and expiry --------------------------------------------
+select soko_test.as_user('d_mgr');
+set local role authenticated;
+insert into soko_test.ids values ('sh_team', public.share_document(soko_test.id('dd_team'), soko_test.id('d_rec')));
+select soko_test.expect_denied('07S: cannot share a document above your access level',
+  format('select public.share_document(%L, %L)', soko_test.id('dd_admins'), soko_test.id('d_rec')));
+select soko_test.expect_denied('07S: cannot share with your own company',
+  format('select public.share_document(%L, %L)', soko_test.id('dd_team'), soko_test.id('d_sup')));
+select soko_test.expect_denied('07S: cannot share with a past expiry',
+  format('select public.share_document(%L, %L, now() - interval ''1 minute'')', soko_test.id('dd_tech'), soko_test.id('d_rec')));
+select soko_test.expect_denied('07S: cannot share a document without a version',
+  format('select public.share_document(%L, %L)', soko_test.id('dd_empty'), soko_test.id('d_rec')));
+reset role;
+
+select soko_test.as_user('r_officer');
+set local role authenticated;
+select soko_test.expect_count('07S: the recipient sees only the shared and public documents',
+  format($$select count(*) from public.documents where company_id = %L$$, soko_test.id('d_sup')), 2);
+select soko_test.expect_count('07S: the recipient download returns the finalised path',
+  format($$select count(*) where public.record_document_download(%L) = %L$$, soko_test.id('v_dd_team'), soko_test.dp('p_dd_team_v1')), 1);
+select soko_test.expect_count('07S: the recipient cannot read the file directly from Storage',
+  format($$select count(*) from storage.objects where bucket_id = 'company-documents' and name = %L$$, soko_test.dp('p_dd_team_v1')), 0);
+select soko_test.expect_denied('07S: the recipient cannot download an unshared document',
+  format('select public.record_document_download(%L)', soko_test.id('v_dd_tech')));
+select soko_test.expect_denied('07S: the recipient cannot revoke the share',
+  format('select public.revoke_document_share(%L)', soko_test.id('sh_team')));
+select soko_test.expect_denied('07S: the recipient cannot reshare the document',
+  format('select public.share_document(%L, %L)', soko_test.id('dd_team'), soko_test.id('d_other')));
+reset role;
+
+select soko_test.as_user('x_admin');
+set local role authenticated;
+select soko_test.expect_denied('07S: an outside company cannot download a shared document',
+  format('select public.record_document_download(%L)', soko_test.id('v_dd_team')));
+select soko_test.expect_count('07S: an outside company sees no shares',
+  $$select count(*) from public.document_shares$$, 0);
+select soko_test.expect_denied('07S: an outside company cannot revoke a share',
+  format('select public.revoke_document_share(%L)', soko_test.id('sh_team')));
+reset role;
+
+select soko_test.expect_count('07S: a recipient download is audited without the storage path',
+  format($$select (count(*) > 0 and count(*) filter (where diff ? 'storage_path') = 0
+                   and bool_and(diff ->> 'by_member' = 'false'))::int
+           from public.audit_log where action = 'download' and entity_id = %L and actor_id = %L$$,
+         soko_test.id('v_dd_team'), soko_test.id('r_officer')), 1);
+select soko_test.expect_count('07S: document audits never contain names, paths or file names',
+  format($$select count(*) from public.audit_log where company_id = %L
+             and (diff::text like '%%file.pdf%%' or diff::text like '%%Team Spec Sheet%%'
+                  or diff::text like '%%Spec v2.pdf%%' or diff::text like '%%Trade Licence%%')$$, soko_test.id('d_sup')), 0);
+
+-- Expiry
+update public.document_shares set expires_at = now() - interval '1 second' where id = soko_test.id('sh_team');
+select soko_test.as_user('r_officer');
+set local role authenticated;
+select soko_test.expect_denied('07S: an expired share no longer allows downloads',
+  format('select public.record_document_download(%L)', soko_test.id('v_dd_team')));
+select soko_test.expect_count('07S: an expired share is hidden from the recipient',
+  $$select count(*) from public.document_shares$$, 0);
+select soko_test.expect_count('07S: an expired share hides the document metadata',
+  format('select count(*) from public.documents where id = %L', soko_test.id('dd_team')), 0);
+reset role;
+update public.document_shares set expires_at = null where id = soko_test.id('sh_team');
+
+-- Revocation
+select soko_test.as_user('d_mgr');
+set local role authenticated;
+select soko_test.expect_ok('07S: the owner revokes the share',
+  format('select public.revoke_document_share(%L)', soko_test.id('sh_team')));
+reset role;
+select soko_test.as_user('r_officer');
+set local role authenticated;
+select soko_test.expect_denied('07S: a revoked share no longer allows downloads',
+  format('select public.record_document_download(%L)', soko_test.id('v_dd_team')));
+select soko_test.expect_count('07S: a revoked share hides the document metadata and versions',
+  format($$select (select count(*) from public.documents where id = %1$L)
+                + (select count(*) from public.document_versions where document_id = %1$L)$$, soko_test.id('dd_team')), 0);
+reset role;
+select soko_test.as_user('d_mgr');
+set local role authenticated;
+insert into soko_test.ids values ('sh_team2', public.share_document(soko_test.id('dd_team'), soko_test.id('d_rec')));
+select soko_test.expect_count('07S: the owner keeps the revoked share in its history',
+  format('select count(*) from public.document_shares where document_id = %L', soko_test.id('dd_team')), 2);
+reset role;
+
+-- Recipient-company suspension
+update public.companies set is_suspended = true where id = soko_test.id('d_rec');
+select soko_test.as_user('r_officer');
+set local role authenticated;
+select soko_test.expect_denied('07S: a suspended recipient company cannot download',
+  format('select public.record_document_download(%L)', soko_test.id('v_dd_team')));
+reset role;
+update public.companies set is_suspended = false where id = soko_test.id('d_rec');
+select soko_test.as_user('d_mgr');
+set local role authenticated;
+select soko_test.expect_ok('07S: the re-issued share works again',
+  format('select public.share_document(%L, %L, now() + interval ''1 day'')', soko_test.id('dd_team'), soko_test.id('d_rec')));
+reset role;
+
+-- 16G. Archival -------------------------------------------------------------------
+select soko_test.as_user('d_admin');
+set local role authenticated;
+update public.documents set archived = true where id in (soko_test.id('dd_team'), soko_test.id('dd_public'));
+select soko_test.expect_denied('07X: an archived document cannot get a new upload',
+  format($$select soko_test.put('company-documents', %L, 10)$$, soko_test.dp('p_dd_team_v3')));
+select soko_test.expect_denied('07X: an archived document cannot be shared',
+  format('select public.share_document(%L, %L)', soko_test.id('dd_team'), soko_test.id('d_other')));
+select soko_test.expect_count('07X: owner members still see archived documents',
+  format('select count(*) from public.documents where id = %L', soko_test.id('dd_team')), 1);
+reset role;
+insert into storage.objects (bucket_id, name, metadata)
+values ('company-documents', soko_test.dp('p_dd_team_v3'), '{"size": 10, "mimetype": "application/pdf"}');
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_denied('07X: an archived document cannot be finalised',
+  format('select public.finalize_document_version(%L, %L, null)', soko_test.id('dd_team'), soko_test.dp('p_dd_team_v3')));
+reset role;
+select soko_test.as_user('r_officer');
+set local role authenticated;
+select soko_test.expect_denied('07X: a recipient cannot download an archived document',
+  format('select public.record_document_download(%L)', soko_test.id('v_dd_team')));
+reset role;
+select soko_test.as_anon();
+set local role anon;
+select soko_test.expect_count('07X: an archived public document is hidden from anonymous users',
+  format($$select count(*) from public.documents where company_id = %L$$, soko_test.id('d_sup')), 0);
+reset role;
+delete from storage.objects where bucket_id = 'company-documents' and name = soko_test.dp('p_dd_team_v3');
+select soko_test.as_user('d_admin');
+set local role authenticated;
+update public.documents set archived = false where id in (soko_test.id('dd_team'), soko_test.id('dd_public'));
+reset role;
+
+-- 16H. Verification files --------------------------------------------------------
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_ok('07V: a company admin uploads verification evidence',
+  format($$select soko_test.put('verification', %L, 100)$$, soko_test.dp('p_verif')));
+select soko_test.expect_denied('07V: a malformed verification path is rejected',
+  format($$select soko_test.put('verification', %L, 100)$$, soko_test.id('d_sup')::text || '/cert.pdf'));
+select soko_test.expect_denied('07V: another company''s verification folder is rejected',
+  format($$select soko_test.put('verification', %L, 100)$$, soko_test.id('d_other')::text || '/' || soko_test.id('vkey')::text || '/cert.pdf'));
+select soko_test.expect_denied('07V: verification evidence cannot be overwritten',
+  format($$update storage.objects set metadata = '{"size": 1}' where bucket_id = 'verification' and name = %L$$, soko_test.dp('p_verif')));
+select soko_test.expect_denied('07V: verification evidence cannot be deleted by users',
+  format($$delete from storage.objects where bucket_id = 'verification' and name = %L$$, soko_test.dp('p_verif')));
+reset role;
+select soko_test.as_user('d_tech');
+set local role authenticated;
+select soko_test.expect_denied('07V: a non-admin cannot upload verification evidence',
+  format($$select soko_test.put('verification', %L, 100)$$, soko_test.dp('p_verif2')));
+select soko_test.expect_count('07V: a non-admin cannot read verification evidence',
+  format($$select count(*) from storage.objects where bucket_id = 'verification' and name = %L$$, soko_test.dp('p_verif')), 0);
+reset role;
+select soko_test.as_user('padmin');
+set local role authenticated;
+select soko_test.expect_count('07V: platform admins read verification evidence',
+  format($$select count(*) from storage.objects where bucket_id = 'verification' and name = %L$$, soko_test.dp('p_verif')), 1);
+reset role;
+select soko_test.as_user('x_admin');
+set local role authenticated;
+select soko_test.expect_count('07V: another company cannot read verification evidence',
+  format($$select count(*) from storage.objects where bucket_id = 'verification' and name = %L$$, soko_test.dp('p_verif')), 0);
+reset role;
+
+-- 16I. Owner-company suspension ----------------------------------------------------
+update public.companies set is_suspended = true where id = soko_test.id('d_sup');
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_count('07U: a suspended company''s admin sees only its verification document',
+  format($$select count(*) from public.documents where company_id = %L$$, soko_test.id('d_sup')), 1);
+select soko_test.expect_count('07U: a suspended company''s files are unreadable in Storage',
+  format($$select count(*) from storage.objects where bucket_id = 'company-documents' and name = %L$$, soko_test.dp('p_dd_team_v1')), 0);
+select soko_test.expect_count('07U: suspended admins still read their verification document file',
+  format($$select count(*) from storage.objects where bucket_id = 'company-documents' and name = %L$$, soko_test.dp('p_dd_verif_v1')), 1);
+select soko_test.expect_count('07U: suspended admins still read their verification evidence',
+  format($$select count(*) from storage.objects where bucket_id = 'verification' and name = %L$$, soko_test.dp('p_verif')), 1);
+select soko_test.expect_ok('07U: suspended admins may download their verification document',
+  format('select public.record_document_download(%L)', soko_test.id('v_dd_verif')));
+select soko_test.expect_denied('07U: suspended members cannot download ordinary documents',
+  format('select public.record_document_download(%L)', soko_test.id('v_dd_team')));
+select soko_test.expect_denied('07U: suspended companies cannot upload document versions',
+  format($$select soko_test.put('company-documents', %L, 10)$$, soko_test.dp('p_dd_team_v3')));
+select soko_test.expect_denied('07U: suspended companies cannot share',
+  format('select public.share_document(%L, %L)', soko_test.id('dd_tech'), soko_test.id('d_rec')));
+select soko_test.expect_denied('07U: suspended companies cannot upload media',
+  format($$select soko_test.put('company-media', %L, 10, 'image/png')$$, soko_test.id('d_sup')::text || '/logo/s.png'));
+select soko_test.expect_denied('07U: suspended companies cannot upload verification evidence',
+  format($$select soko_test.put('verification', %L, 100)$$, soko_test.dp('p_verif2')));
+reset role;
+select soko_test.as_user('r_officer');
+set local role authenticated;
+select soko_test.expect_denied('07U: recipients cannot download from a suspended owner',
+  format('select public.record_document_download(%L)', soko_test.id('v_dd_team')));
+reset role;
+select soko_test.as_anon();
+set local role anon;
+select soko_test.expect_count('07U: a suspended company''s public documents are hidden',
+  format($$select count(*) from public.documents where company_id = %L$$, soko_test.id('d_sup')), 0);
+reset role;
+update public.companies set is_suspended = false where id = soko_test.id('d_sup');
+
+-- 16J. Company media permissions -------------------------------------------------
+select soko_test.as_user('d_tech');
+set local role authenticated;
+select soko_test.expect_ok('07M: products.manage may upload product images',
+  format($$select soko_test.put('company-media', %L, 10, 'image/png')$$, soko_test.id('d_sup')::text || '/products/t.png'));
+select soko_test.expect_denied('07M: products.manage alone cannot upload a logo',
+  format($$select soko_test.put('company-media', %L, 10, 'image/png')$$, soko_test.id('d_sup')::text || '/logo/t.png'));
+select soko_test.expect_denied('07M: products.manage alone cannot upload gallery images',
+  format($$select soko_test.put('company-media', %L, 10, 'image/png')$$, soko_test.id('d_sup')::text || '/gallery/t.png'));
+select soko_test.expect_denied('07M: a product image cannot be moved into the logo folder',
+  format($$update storage.objects set name = %L where bucket_id = 'company-media' and name = %L$$,
+         soko_test.id('d_sup')::text || '/logo/t.png', soko_test.id('d_sup')::text || '/products/t.png'));
+reset role;
+select soko_test.as_user('d_editor');
+set local role authenticated;
+select soko_test.expect_ok('07M: profile.edit may upload a logo',
+  format($$select soko_test.put('company-media', %L, 10, 'image/png')$$, soko_test.id('d_sup')::text || '/logo/e.png'));
+select soko_test.expect_ok('07M: profile.edit may upload a cover',
+  format($$select soko_test.put('company-media', %L, 10, 'image/png')$$, soko_test.id('d_sup')::text || '/cover/e.png'));
+select soko_test.expect_ok('07M: profile.edit may upload gallery images',
+  format($$select soko_test.put('company-media', %L, 10, 'image/png')$$, soko_test.id('d_sup')::text || '/gallery/e.png'));
+select soko_test.expect_denied('07M: profile.edit alone cannot upload product images',
+  format($$select soko_test.put('company-media', %L, 10, 'image/png')$$, soko_test.id('d_sup')::text || '/products/e.png'));
+select soko_test.expect_denied('07M: profile.edit alone cannot overwrite product images',
+  format($$update storage.objects set metadata = '{"size": 1}' where bucket_id = 'company-media' and name = %L$$,
+         soko_test.id('d_sup')::text || '/products/t.png'));
+select soko_test.expect_denied('07M: profile.edit alone cannot delete product images',
+  format($$delete from storage.objects where bucket_id = 'company-media' and name = %L$$,
+         soko_test.id('d_sup')::text || '/products/t.png'));
+reset role;
+select soko_test.as_user('d_mgr');
+set local role authenticated;
+select soko_test.expect_ok('07M: a role with both permissions may upload product images',
+  format($$select soko_test.put('company-media', %L, 10, 'image/png')$$, soko_test.id('d_sup')::text || '/products/m.png'));
+select soko_test.expect_ok('07M: a role with both permissions may upload a logo',
+  format($$select soko_test.put('company-media', %L, 10, 'image/png')$$, soko_test.id('d_sup')::text || '/logo/m.png'));
+reset role;
+select soko_test.as_user('d_rep');
+set local role authenticated;
+select soko_test.expect_denied('07M: a role with neither permission cannot upload media',
+  format($$select soko_test.put('company-media', %L, 10, 'image/png')$$, soko_test.id('d_sup')::text || '/logo/r.png'));
+reset role;
+select soko_test.as_user('x_admin');
+set local role authenticated;
+select soko_test.expect_denied('07M: another company cannot upload into this company''s media',
+  format($$select soko_test.put('company-media', %L, 10, 'image/png')$$, soko_test.id('d_sup')::text || '/logo/x.png'));
+select soko_test.expect_denied('07M: another company cannot delete this company''s media',
+  format($$delete from storage.objects where bucket_id = 'company-media' and name = %L$$, soko_test.id('d_sup')::text || '/logo/m.png'));
+reset role;
+
+-- 16K. Retention -------------------------------------------------------------------
+select soko_test.as_user('d_tech');
+set local role authenticated;
+select soko_test.expect_denied('07D: a pending upload above your access level cannot be deleted',
+  format($$delete from storage.objects where bucket_id = 'company-documents' and name = %L$$, soko_test.dp('p_dd_admins_v2')));
+reset role;
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_denied('07D: a document with finalised versions cannot be deleted',
+  format('delete from public.documents where id = %L', soko_test.id('dd_team')));
+select soko_test.expect_denied('07D: a finalised file cannot be deleted from Storage',
+  format($$delete from storage.objects where bucket_id = 'company-documents' and name = %L$$, soko_test.dp('p_dd_team_v1')));
+select soko_test.expect_count('07D: never-finalised uploads can be cleaned up by managers',
+  format($$with d as (delete from storage.objects where bucket_id = 'company-documents' and name in (%L, %L, %L, %L) returning 1)
+           select count(*) from d$$,
+         soko_test.dp('p_dd_tech_v2'), soko_test.dp('p_dd_admins_v2'), soko_test.dp('p_dd_public_v2'), soko_test.dp('p_dd_verif_v2')), 4);
+select soko_test.expect_count('07D: a document that never had a version can be deleted',
+  format($$with d as (delete from public.documents where id = %L returning 1) select count(*) from d$$, soko_test.id('dd_empty')), 1);
+select soko_test.expect_denied('07D: users cannot run the orphan report',
+  $$select * from private.list_orphaned_storage_objects()$$);
+reset role;
+delete from storage.objects where bucket_id = 'verification' and name = soko_test.dp('p_dd_empty_v1');
+select soko_test.expect_denied('07D: finalised versions cannot be deleted on their own, even by the owner',
+  format('delete from public.document_versions where id = %L', soko_test.id('v_dd_team')));
+select soko_test.expect_ok('07D: deleting a company cascades through its documents',
+  format('delete from public.companies where id = %L', soko_test.id('d_other')));
+select soko_test.expect_count('07D: the deleted company leaves no document rows',
+  format($$select (select count(*) from public.documents where company_id = %1$L)
+                + (select count(*) from public.document_versions where company_id = %1$L)
+                + (select count(*) from public.document_shares where owner_company_id = %1$L)$$, soko_test.id('d_other')), 0);
+select soko_test.expect_count('07D: the deleted company''s document audit trail is retained',
+  format($$select (count(*) > 0)::int from public.audit_log where company_id = %L and entity like '%%document%%'$$, soko_test.id('d_other')), 1);
+select soko_test.expect_count('07D: the deleted company''s files are reported as orphans',
+  format($$select count(*) from private.list_orphaned_storage_objects()
+           where bucket_id = 'company-documents' and name = %L and reason = 'company deleted or malformed path'$$,
+         soko_test.dp('p_dd_other_v1')), 1);
+select soko_test.expect_count('07D: live finalised files are never reported as orphans',
+  format($$select count(*) from private.list_orphaned_storage_objects() where name = %L$$, soko_test.dp('p_dd_team_v1')), 0);
+
+-- 16L. Storage quota --------------------------------------------------------------
+select soko_test.expect_count('07Q: object_size reads integer sizes only',
+  $$select count(*) from (values
+      ('{"size": 12}'::jsonb, 12::bigint), ('{"size": "12"}', 12), ('{"size": -5}', null),
+      ('{"size": "1e9"}', null), ('{"size": 1.5}', null), ('{}', null),
+      ('{"size": "9999999999999999"}', null), ('{"size": null}', null)) t(m, expected)
+    where private.object_size(m) is not distinct from expected$$, 8);
+insert into soko_test.secrets
+select 'quota_left', (private.entitlement_int(soko_test.id('d_sup'), 'storageMb')::bigint * 1024 * 1024
+  - (select coalesce(sum(coalesce(private.object_size(o.metadata), 0)), 0) from storage.objects o
+     where o.bucket_id in ('company-documents', 'company-media', 'verification')
+       and o.name like soko_test.id('d_sup')::text || '/%'))::text;
+select soko_test.expect_count('07Q: the test company starts with quota to spare',
+  $$select (soko_test.dp('quota_left')::bigint > 1000)::int$$, 1);
+insert into storage.objects (bucket_id, name, metadata)
+values ('company-media', soko_test.id('d_sup')::text || '/gallery/filler.png',
+        jsonb_build_object('size', soko_test.dp('quota_left')::bigint - 100, 'mimetype', 'image/png'));
+select soko_test.as_user('d_mgr');
+set local role authenticated;
+select soko_test.expect_denied('07Q: an upload that would exceed the quota is rejected',
+  format($$select soko_test.put('company-media', %L, 101, 'image/png')$$, soko_test.id('d_sup')::text || '/gallery/big.png'));
+select soko_test.expect_ok('07Q: an upload that exactly fills the quota is accepted',
+  format($$select soko_test.put('company-media', %L, 100, 'image/png')$$, soko_test.id('d_sup')::text || '/gallery/fit.png'));
+select soko_test.expect_denied('07Q: a full company cannot add an object without a size',
+  format($$select soko_test.put('company-media', %L, null, 'image/png')$$, soko_test.id('d_sup')::text || '/gallery/nosize.png'));
+select soko_test.expect_denied('07Q: a negative size does not bypass the quota',
+  format($$select soko_test.put('company-media', %L, -1000, 'image/png')$$, soko_test.id('d_sup')::text || '/gallery/neg.png'));
+select soko_test.expect_denied('07Q: an overwrite cannot grow past the quota',
+  format($$update storage.objects set metadata = '{"size": 5000, "mimetype": "image/png"}'
+           where bucket_id = 'company-media' and name = %L$$, soko_test.id('d_sup')::text || '/gallery/fit.png'));
+reset role;
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_denied('07Q: the quota covers document versions',
+  format($$select soko_test.put('company-documents', %L, 1)$$, soko_test.dp('p_dd_tech_v2')));
+select soko_test.expect_denied('07Q: the quota covers verification evidence',
+  format($$select soko_test.put('verification', %L, 1)$$, soko_test.dp('p_verif2')));
+reset role;
+select soko_test.as_user('r_admin');
+set local role authenticated;
+select soko_test.expect_ok('07Q: another company''s quota is unaffected',
+  format($$select soko_test.put('company-media', %L, 10, 'image/png')$$, soko_test.id('d_rec')::text || '/logo/r.png'));
+reset role;
+select soko_test.as_user('d_mgr');
+set local role authenticated;
+select soko_test.expect_count('07Q: deleting media frees quota',
+  format($$with d as (delete from storage.objects where bucket_id = 'company-media' and name = %L returning 1) select count(*) from d$$,
+         soko_test.id('d_sup')::text || '/gallery/fit.png'), 1);
+select soko_test.expect_ok('07Q: freed quota can be used again',
+  format($$select soko_test.put('company-media', %L, 50, 'image/png')$$, soko_test.id('d_sup')::text || '/gallery/again.png'));
+reset role;
+delete from storage.objects where bucket_id = 'company-media' and name = soko_test.id('d_sup')::text || '/gallery/filler.png';
+
 -- -----------------------------------------------------------------------------
 -- Report
 -- -----------------------------------------------------------------------------
