@@ -628,6 +628,8 @@ declare
   v_mime text;
   v_found boolean;
   v_objver text;
+  v_owner text;
+  v_written timestamptz;
   v_name text;
   v_id uuid;
 begin
@@ -650,8 +652,21 @@ begin
       using errcode = '22023';
   end if;
 
-  select true, private.object_size(o.metadata), o.metadata ->> 'mimetype', o.version
-    into v_found, v_size, v_mime, v_objver
+  -- The caller's own open reservation for this exact path is mandatory: it is
+  -- the only proof the bytes were admitted through reserve_storage_upload (and
+  -- charged to the quota). One message for every failure, so it does not reveal
+  -- whether someone else holds the path.
+  select * into v_res from private.storage_upload_reservations r
+  where r.bucket_id = 'company-documents' and r.object_name = p_storage_path for update;
+  if v_res.id is null or v_res.user_id <> v_uid
+     or v_res.settled_at is not null or v_res.rejected_at is not null then
+    raise exception 'no open upload reservation for this path' using errcode = '22023';
+  end if;
+
+  -- FOR SHARE blocks a concurrent Storage upsert of the row until we commit.
+  select true, private.object_size(o.metadata), o.metadata ->> 'mimetype', o.version, o.owner_id,
+         greatest(o.created_at, coalesce(o.updated_at, o.created_at))
+    into v_found, v_size, v_mime, v_objver, v_owner, v_written
   from storage.objects o where o.bucket_id = 'company-documents' and o.name = p_storage_path for share;
   if v_found is null then
     raise exception 'uploaded file not found' using errcode = '22023';
@@ -663,19 +678,20 @@ begin
   if v_bucket.allowed_mime_types is not null and (v_mime is null or not v_mime = any (v_bucket.allowed_mime_types)) then
     raise exception 'uploaded file type is not allowed' using errcode = '22023';
   end if;
-  -- The real file must fit the reservation it was uploaded under.
-  select * into v_res from private.storage_upload_reservations r
-  where r.bucket_id = 'company-documents' and r.object_name = p_storage_path for update;
-  if v_res.id is not null and (v_res.rejected_at is not null or v_res.settled_at is not null) then
+  -- The stored object must be the one this reservation admitted: real size
+  -- within the reserved bytes, the reserved MIME type, written by the reserving
+  -- user (Storage sets owner_id from the JWT sub) no earlier than the
+  -- reservation, and carrying a Storage version (pinned on the version row).
+  if v_size > v_res.reserved_bytes
+     or v_mime is distinct from v_res.mime_type
+     or v_objver is null or v_objver = ''
+     or (v_res.object_version is not null and v_objver is distinct from v_res.object_version)
+     or v_owner is distinct from v_uid::text
+     or v_written < v_res.created_at then
     raise exception 'uploaded file does not match its reservation' using errcode = '22023';
   end if;
-  if v_res.id is not null then
-    if v_size > v_res.reserved_bytes or v_mime is distinct from v_res.mime_type then
-      raise exception 'uploaded file does not match its reservation' using errcode = '22023';
-    end if;
-    update private.storage_upload_reservations set settled_at = now(), object_version = v_objver
-    where id = v_res.id;
-  end if;
+  update private.storage_upload_reservations set settled_at = now(), object_version = v_objver
+  where id = v_res.id;
 
   v_name := left(coalesce(nullif(btrim(p_file_name), ''), v_path.file_name), 255);
   if v_name ~ '[[:cntrl:]]' then
@@ -1000,6 +1016,12 @@ language sql stable security definer set search_path = '' as $$
   cross join lateral (select
     case
       when coalesce(res.in_grace, false) then null
+      -- A finalised document file is never a routine deletion candidate, even
+      -- if its bytes were replaced or its reservation was rejected: that is an
+      -- integrity incident (list_storage_integrity_incidents), not garbage.
+      when o.bucket_id = 'company-documents'
+        and exists (select 1 from public.document_versions v where v.storage_path = o.name)
+        then null
       when o.bucket_id = 'avatars' then
         case when (select a.user_id from private.parse_avatar_path(o.name) a) is null then 'malformed path'
              when not exists (select 1 from auth.users u
@@ -1010,14 +1032,9 @@ language sql stable security definer set search_path = '' as $$
         then 'company deleted or malformed path'
       when res.rejected_at is not null then
         case when res.object_version is not distinct from o.version then 'does not match its reservation' end
-      when o.bucket_id = 'company-documents'
-        and exists (select 1 from public.document_versions v
-                    where v.storage_path = o.name and v.object_version is distinct from o.version)
-        then 'replaced after finalisation'
       when o.bucket_id = 'company-documents' then
         case when (select p.company_id from private.parse_document_path(o.name) p) is null then 'malformed path'
-             when not exists (select 1 from public.document_versions v where v.storage_path = o.name)
-                  and greatest(o.created_at, coalesce(o.updated_at, o.created_at))
+             when greatest(o.created_at, coalesce(o.updated_at, o.created_at))
                       < now() - greatest(coalesce(p_min_age, interval '0'),
                                          private.upload_window() + private.upload_grace())
                then 'never finalised' end
@@ -1030,6 +1047,26 @@ language sql stable security definer set search_path = '' as $$
     and x.reason is not null;
 $$;
 select private.allow_execute(array['service_role'], array['private.list_orphaned_storage_objects(interval)']);
+
+-- Service-role integrity report: finalised document versions whose Storage
+-- object no longer matches what finalize_document_version verified. These are
+-- never deletion candidates; each needs investigation (who wrote the bytes,
+-- what the original was). Downloads already refuse them.
+--   replaced  the object at the path has a different Storage version
+--   missing   the object at the path is gone
+create or replace function private.list_storage_integrity_incidents()
+returns table (bucket_id text, name text, company_id uuid, document_id uuid, document_version_id uuid,
+               version integer, expected_object_version text, actual_object_version text, incident text)
+language sql stable security definer set search_path = '' as $$
+  select 'company-documents', v.storage_path, v.company_id, v.document_id, v.id,
+         v.version, v.object_version, o.version,
+         case when o.id is null then 'missing' else 'replaced' end
+  from public.document_versions v
+  left join storage.objects o on o.bucket_id = 'company-documents' and o.name = v.storage_path
+  where o.id is null or o.version is distinct from v.object_version
+  order by v.company_id, v.storage_path;
+$$;
+select private.allow_execute(array['service_role'], array['private.list_storage_integrity_incidents()']);
 
 -- Approved RPCs: callable by signed-in users only; each checks its own authorization.
 select private.allow_execute(array['authenticated'], array[

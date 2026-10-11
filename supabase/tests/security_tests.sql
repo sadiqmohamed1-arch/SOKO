@@ -70,6 +70,23 @@ begin
   end;
 end $$;
 
+-- Run as the owner. Turns a fixture document object (inserted directly) into
+-- what an admitted upload by p_user looks like: an open reservation matching
+-- the object's size and MIME type, plus the owner_id/version Storage sets.
+create function soko_test.stage_doc(p_name text, p_user text) returns void language plpgsql as $$
+begin
+  insert into private.storage_upload_reservations
+    (company_id, bucket_id, object_name, user_id, reserved_bytes, mime_type, created_at, expires_at)
+  select (select p.company_id from private.parse_document_path(o.name) p), o.bucket_id, o.name,
+         soko_test.id(p_user), greatest(coalesce(private.object_size(o.metadata), 1), 1),
+         coalesce(o.metadata ->> 'mimetype', 'application/pdf'),
+         least(now(), o.created_at), now() + interval '15 minutes'
+  from storage.objects o where o.bucket_id = 'company-documents' and o.name = p_name;
+  update storage.objects set owner_id = soko_test.id(p_user)::text,
+         version = coalesce(version, 'fx-' || md5(name))
+  where bucket_id = 'company-documents' and name = p_name;
+end $$;
+
 grant execute on all functions in schema soko_test to anon, authenticated, service_role;
 
 -- -----------------------------------------------------------------------------
@@ -161,6 +178,7 @@ insert into storage.objects (bucket_id, name, metadata)
 values ('company-documents',
         soko_test.id('supplier')::text || '/' || soko_test.id('document')::text || '/v1/licence.pdf',
         '{"size": 2048, "mimetype": "application/pdf"}');
+select soko_test.stage_doc(soko_test.id('supplier')::text || '/' || soko_test.id('document')::text || '/v1/licence.pdf', 'sup_admin');
 select soko_test.as_user('sup_admin');
 set local role authenticated;
 insert into soko_test.ids values ('document_version', public.finalize_document_version(
@@ -2335,8 +2353,10 @@ begin
   if auth.uid() is not null and p_bucket in ('company-documents', 'company-media', 'verification') then
     perform public.reserve_storage_upload(p_bucket, p_name, p_size, p_mime);
   end if;
-  insert into storage.objects (bucket_id, name, metadata)
-  values (p_bucket, p_name, jsonb_build_object('size', p_size, 'contentLength', p_size, 'mimetype', p_mime));
+  -- owner_id and version are set the way Storage sets them on upload.
+  insert into storage.objects (bucket_id, name, metadata, owner_id, version)
+  values (p_bucket, p_name, jsonb_build_object('size', p_size, 'contentLength', p_size, 'mimetype', p_mime),
+          auth.uid()::text, 'put-' || md5(p_name));
 end $$;
 grant execute on function soko_test.dp(text), soko_test.put(text, text, bigint, text) to anon, authenticated, service_role;
 
@@ -2397,6 +2417,8 @@ insert into soko_test.secrets values
 
 insert into storage.objects (bucket_id, name, metadata)
 select 'company-documents', soko_test.dp('p_' || k || '_v1'), '{"size": 1000, "mimetype": "application/pdf"}'
+from unnest(array['dd_team','dd_tech','dd_admins','dd_public','dd_verif','dd_other']) k;
+select soko_test.stage_doc(soko_test.dp('p_' || k || '_v1'), case k when 'dd_other' then 'x_admin' else 'd_admin' end)
 from unnest(array['dd_team','dd_tech','dd_admins','dd_public','dd_verif','dd_other']) k;
 select soko_test.as_user('d_admin');
 set local role authenticated;
@@ -2576,6 +2598,9 @@ insert into storage.objects (bucket_id, name, metadata) values
   ('company-documents', soko_test.dp('p_dd_public_v2'), '{"size": 52428801, "mimetype": "application/pdf"}'),
   ('company-documents', soko_test.dp('p_dd_verif_v2'),  '{"size": "-5", "mimetype": "application/pdf"}'),
   ('verification',      soko_test.dp('p_dd_empty_v1'),  '{"size": 10, "mimetype": "application/pdf"}');
+-- Staged as genuine reservations so each case fails on its own check.
+select soko_test.stage_doc(soko_test.dp(k), 'd_admin')
+from unnest(array['p_dd_tech_v2','p_dd_admins_v2','p_dd_public_v2','p_dd_verif_v2']) k;
 select soko_test.as_user('d_admin');
 set local role authenticated;
 select soko_test.expect_denied('07F: finalise rejects an object without a size',
@@ -2591,6 +2616,11 @@ select soko_test.expect_denied('07F: finalise ignores a same-named object in ano
 select soko_test.expect_denied('07F: finalise rejects control characters in the file name',
   format('select public.finalize_document_version(%L, %L, %L)', soko_test.id('dd_tech'), soko_test.dp('p_dd_tech_v2'), 'a' || chr(7) || '.pdf'));
 reset role;
+-- Release the staged fixture reservations so they do not hold quota.
+delete from private.storage_upload_reservations
+where bucket_id = 'company-documents' and settled_at is null
+  and object_name in (soko_test.dp('p_dd_tech_v2'), soko_test.dp('p_dd_admins_v2'),
+                      soko_test.dp('p_dd_public_v2'), soko_test.dp('p_dd_verif_v2'));
 
 -- 16F. Sharing, revocation and expiry --------------------------------------------
 select soko_test.as_user('d_mgr');
@@ -2703,11 +2733,14 @@ select soko_test.expect_count('07X: owner members still see archived documents',
 reset role;
 insert into storage.objects (bucket_id, name, metadata)
 values ('company-documents', soko_test.dp('p_dd_team_v3'), '{"size": 10, "mimetype": "application/pdf"}');
+select soko_test.stage_doc(soko_test.dp('p_dd_team_v3'), 'd_admin');
 select soko_test.as_user('d_admin');
 set local role authenticated;
 select soko_test.expect_denied('07X: an archived document cannot be finalised',
   format('select public.finalize_document_version(%L, %L, null)', soko_test.id('dd_team'), soko_test.dp('p_dd_team_v3')));
 reset role;
+delete from private.storage_upload_reservations
+where bucket_id = 'company-documents' and settled_at is null and object_name = soko_test.dp('p_dd_team_v3');
 select soko_test.as_user('r_officer');
 set local role authenticated;
 select soko_test.expect_denied('07X: a recipient cannot download an archived document',
@@ -3073,6 +3106,7 @@ from unnest(array['ar_doc','rv_doc','ex_doc','su_doc']) k;
 insert into storage.objects (bucket_id, name, metadata)
 select 'company-documents', soko_test.dp('p_' || k), '{"size": 500, "mimetype": "application/pdf"}'
 from unnest(array['ar_doc','rv_doc','ex_doc','su_doc']) k;
+select soko_test.stage_doc(soko_test.dp('p_' || k), 'd_admin') from unnest(array['ar_doc','rv_doc','ex_doc','su_doc']) k;
 select soko_test.as_user('d_admin');
 set local role authenticated;
 insert into soko_test.ids
@@ -3365,6 +3399,7 @@ from unnest(array['sh_pub','sh_adm']) k;
 insert into storage.objects (bucket_id, name, metadata, version)
 select 'company-documents', soko_test.dp('p_' || k), '{"size": 50, "mimetype": "application/pdf"}', 'v1'
 from unnest(array['sh_pub','sh_adm']) k;
+select soko_test.stage_doc(soko_test.dp('p_' || k), 'd_admin') from unnest(array['sh_pub','sh_adm']) k;
 select soko_test.as_user('d_admin');
 set local role authenticated;
 select soko_test.expect_ok('07W: versions are finalised for the reshare tests',
@@ -3514,6 +3549,102 @@ select soko_test.expect_count('07Z: a different object at the rejected path is n
 delete from storage.objects where bucket_id = 'company-media' and name in (soko_test.dp('n19_rej'), soko_test.dp('n19_hold'));
 delete from private.storage_upload_reservations where company_id = soko_test.id('d_sup')
   and object_name in (soko_test.dp('n19_rej'), soko_test.dp('n19_hold'));
+
+-- =============================================================================
+-- 20. Migration 07 — finalisation requires a matching reservation; integrity incidents
+-- =============================================================================
+-- 20A. finalize_document_version needs the caller's own open, non-rejected
+-- reservation for the exact path, matching size, MIME type, owner and version.
+reset role;
+insert into soko_test.ids values ('fi_doc', gen_random_uuid());
+insert into public.documents (id, company_id, name, access_level, is_public, for_verification)
+values (soko_test.id('fi_doc'), soko_test.id('d_sup'), 'Finalise Reservation Test', 'team', false, false);
+insert into soko_test.secrets
+select 'p_fi_' || k, soko_test.id('d_sup')::text || '/' || soko_test.id('fi_doc')::text || '/v1/' || k || '.pdf'
+from unnest(array['none','other','settled','rejected','size','mime','pinned','nover','owner','ok']) k;
+insert into storage.objects (bucket_id, name, metadata)
+select 'company-documents', soko_test.dp('p_fi_' || k), '{"size": 50, "contentLength": 50, "mimetype": "application/pdf"}'
+from unnest(array['none','other','settled','rejected','size','mime','pinned','nover','owner','ok']) k;
+select soko_test.stage_doc(soko_test.dp('p_fi_' || k), 'd_admin')
+from unnest(array['settled','rejected','size','mime','pinned','nover','owner','ok']) k;
+select soko_test.stage_doc(soko_test.dp('p_fi_other'), 'x_admin');
+update storage.objects set owner_id = soko_test.id('d_admin')::text, version = 'fx-none'
+where bucket_id = 'company-documents' and name in (soko_test.dp('p_fi_none'), soko_test.dp('p_fi_other'));
+update private.storage_upload_reservations set settled_at = now() where object_name = soko_test.dp('p_fi_settled');
+update private.storage_upload_reservations set rejected_at = now() where object_name = soko_test.dp('p_fi_rejected');
+update private.storage_upload_reservations set reserved_bytes = 10 where object_name = soko_test.dp('p_fi_size');
+update private.storage_upload_reservations set mime_type = 'image/png' where object_name = soko_test.dp('p_fi_mime');
+update private.storage_upload_reservations set object_version = 'some-other-version' where object_name = soko_test.dp('p_fi_pinned');
+update storage.objects set version = null where bucket_id = 'company-documents' and name = soko_test.dp('p_fi_nover');
+update storage.objects set owner_id = soko_test.id('x_admin')::text where bucket_id = 'company-documents' and name = soko_test.dp('p_fi_owner');
+
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_sqlstate('20A: ' || label,
+  format('select public.finalize_document_version(%L, %L, null)', soko_test.id('fi_doc'), soko_test.dp('p_fi_' || k)), '22023')
+from (values
+  ('none',     'finalising without any reservation is refused'),
+  ('other',    'finalising with another user''s reservation is refused'),
+  ('settled',  'finalising against a settled reservation is refused'),
+  ('rejected', 'finalising against a rejected reservation is refused'),
+  ('size',     'finalising an object larger than its reservation is refused'),
+  ('mime',     'finalising an object whose MIME type differs from the reservation is refused'),
+  ('pinned',   'finalising an object whose version differs from the recorded one is refused'),
+  ('nover',    'finalising an object with no Storage version is refused'),
+  ('owner',    'finalising an object written by another user is refused')
+) t(k, label);
+select soko_test.expect_ok('20A: finalising the caller''s matching reservation succeeds',
+  format('select public.finalize_document_version(%L, %L, null)', soko_test.id('fi_doc'), soko_test.dp('p_fi_ok')));
+reset role;
+select soko_test.expect_count('20A: refused finalisations create no version',
+  format($$select count(*) from public.document_versions where document_id = %L$$, soko_test.id('fi_doc')), 1);
+select soko_test.expect_count('20A: finalisation settles the reservation and pins the Storage version',
+  format($$select count(*) from private.storage_upload_reservations r
+           join public.document_versions v on v.storage_path = r.object_name
+           where r.object_name = %L and r.settled_at is not null and r.rejected_at is null
+             and r.object_version = 'fx-' || md5(r.object_name) and v.object_version = r.object_version$$,
+         soko_test.dp('p_fi_ok')), 1);
+select soko_test.expect_count('20A: refused reservations are left exactly as they were',
+  format($$select count(*) from private.storage_upload_reservations
+           where object_name in (%L, %L, %L) and settled_at is null$$,
+         soko_test.dp('p_fi_size'), soko_test.dp('p_fi_mime'), soko_test.dp('p_fi_owner')), 3);
+
+-- 20B. A finalised file whose Storage version changed is an integrity incident,
+-- never a routine deletion candidate.
+select soko_test.expect_count('20B: an intact finalised file is neither an orphan nor an incident',
+  format($$select (select count(*) from private.list_orphaned_storage_objects(interval '0') where name = %1$L)
+                + (select count(*) from private.list_storage_integrity_incidents() where name = %1$L)$$,
+         soko_test.dp('p_fi_ok')), 0);
+update storage.objects set version = 'tampered', created_at = now() - interval '3 days', updated_at = now() - interval '3 days'
+where bucket_id = 'company-documents' and name = soko_test.dp('p_fi_ok');
+update private.storage_upload_reservations set expires_at = now() - interval '3 days', created_at = now() - interval '3 days'
+where object_name = soko_test.dp('p_fi_ok');
+select soko_test.expect_count('20B: a replaced finalised file is not listed for deletion',
+  format($$select count(*) from private.list_orphaned_storage_objects(interval '0') where name = %L$$, soko_test.dp('p_fi_ok')), 0);
+select soko_test.expect_count('20B: a replaced finalised file is reported as an integrity incident',
+  format($$select count(*) from private.list_storage_integrity_incidents()
+           where name = %L and incident = 'replaced' and actual_object_version = 'tampered'
+             and expected_object_version = 'fx-' || md5(name) and document_id = %L$$,
+         soko_test.dp('p_fi_ok'), soko_test.id('fi_doc')), 1);
+update private.storage_upload_reservations set rejected_at = now(), object_version = 'tampered'
+where object_name = soko_test.dp('p_fi_ok');
+select soko_test.expect_count('20B: a finalised file is not listed for deletion even if its reservation is rejected',
+  format($$select count(*) from private.list_orphaned_storage_objects(interval '0') where name = %L$$, soko_test.dp('p_fi_ok')), 0);
+delete from storage.objects where bucket_id = 'company-documents' and name = soko_test.dp('p_fi_ok');
+select soko_test.expect_count('20B: a finalised file that disappeared is reported as missing',
+  format($$select count(*) from private.list_storage_integrity_incidents() where name = %L and incident = 'missing'$$,
+         soko_test.dp('p_fi_ok')), 1);
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_denied('20B: clients cannot read the integrity report',
+  'select count(*) from private.list_storage_integrity_incidents()');
+reset role;
+-- Finalised versions are retained by design; archive the test document instead.
+update public.documents set archived = true where id = soko_test.id('fi_doc');
+delete from storage.objects where bucket_id = 'company-documents'
+  and name like soko_test.id('d_sup')::text || '/' || soko_test.id('fi_doc')::text || '/%';
+delete from private.storage_upload_reservations
+where object_name like soko_test.id('d_sup')::text || '/' || soko_test.id('fi_doc')::text || '/%';
 
 
 -- -----------------------------------------------------------------------------

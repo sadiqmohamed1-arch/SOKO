@@ -64,7 +64,46 @@ async function asUser(uid, sql, params = []) {
 }
 
 const object = async (bucket, name) => (await owner.query(
-  `select metadata, version, updated_at from storage.objects where bucket_id = $1 and name = $2`, [bucket, name])).rows[0];
+  `select metadata, version, owner_id, updated_at from storage.objects where bucket_id = $1 and name = $2`, [bucket, name])).rows[0];
+
+const serviceJwt = () => jwt({ role: 'service_role' });
+const tusMeta = obj => Object.entries(obj).map(([k, v]) => `${k} ${Buffer.from(v).toString('base64')}`).join(',');
+async function tusCreate(token, bucket, name, length, mime) {
+  const res = await fetch(`${storage}/upload/resumable`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}`, 'tus-resumable': '1.0.0', 'upload-length': String(length),
+               'upload-metadata': tusMeta({ bucketName: bucket, objectName: name, contentType: mime }), 'x-upsert': 'false' },
+  });
+  await res.text();
+  return { status: res.status, location: res.headers.get('location') };
+}
+async function tusPatch(token, location, offset, bytes) {
+  const res = await fetch(location, {
+    method: 'PATCH',
+    headers: { authorization: `Bearer ${token}`, 'tus-resumable': '1.0.0', 'upload-offset': String(offset),
+               'content-type': 'application/offset+octet-stream' },
+    body: Buffer.alloc(bytes, 9),
+  });
+  await res.text();
+  return { status: res.status, offset: Number(res.headers.get('upload-offset')) };
+}
+async function tusHead(token, location) {
+  const res = await fetch(location, { method: 'HEAD', headers: { authorization: `Bearer ${token}`, 'tus-resumable': '1.0.0' } });
+  return Number(res.headers.get('upload-offset'));
+}
+// The document-download Edge Function flow: authorise + audit with the user's
+// JWT, then sign a short-lived URL with the service role and fetch it.
+async function download(uid, versionId) {
+  const auth = await asUser(uid, `select public.record_document_download($1) as path`, [versionId]);
+  if (auth.error) return { error: auth.error };
+  const path = auth.rows[0].path;
+  const signed = await fetch(`${storage}/object/sign/company-documents/${path}`, {
+    method: 'POST', headers: { authorization: `Bearer ${serviceJwt()}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ expiresIn: 60 }),
+  }).then(r => r.json());
+  const res = await fetch(`${storage}${signed.signedURL}`);
+  return { status: res.status, bytes: (await res.arrayBuffer()).byteLength };
+}
 
 const created = { companies: [], users: [] };
 async function user() {
@@ -157,6 +196,117 @@ try {
   const unknown = await asUser(admin, `select public.reserve_storage_upload('company-documents', $1, 10, 'application/pdf')`,
     [`${co}/${randomUUID()}/v1/a.pdf`]);
   check(!!unknown.error, 'J: a document path for a document that does not exist cannot be reserved', unknown.error?.code);
+
+  // K. Full document lifecycle with a standard upload:
+  //    reserve -> Storage upload -> finalise -> download -> reconcile.
+  const newDoc = async label => (await owner.query(
+    `insert into public.documents (company_id, name, access_level, is_public, for_verification)
+     values ($1, $2, 'team', false, false) returning id`, [co, label])).rows[0].id;
+  const finalize = (uid, doc, name) => asUser(uid,
+    `select public.finalize_document_version($1, $2, null) as id`, [doc, name]);
+  const reserveDoc = (uid, name, size) => asUser(uid,
+    `select public.reserve_storage_upload('company-documents', $1, $2, 'application/pdf')`, [name, size]);
+  const reservation = async name => (await owner.query(
+    `select settled_at, rejected_at, object_version from private.storage_upload_reservations
+     where bucket_id = 'company-documents' and object_name = $1`, [name])).rows[0];
+  const listedFor = async name => ({
+    orphan: (await owner.query(`select reason from private.list_orphaned_storage_objects(interval '0') where name = $1`, [name])).rows,
+    incident: (await owner.query(`select incident from private.list_storage_integrity_incidents() where name = $1`, [name])).rows,
+  });
+
+  const docA = await newDoc('Standard lifecycle');
+  const stdName = `${co}/${docA}/v1/standard.pdf`;
+  check(!(await reserveDoc(admin, stdName, 120)).error, 'K: reserve 120 bytes application/pdf');
+  r = await upload(userJwt(admin), 'company-documents', stdName, 120, 'application/pdf');
+  check(r.status === 200, 'K: standard upload under the reservation is accepted', `HTTP ${r.status} ${r.status === 200 ? '' : r.body}`);
+  const std = await object('company-documents', stdName);
+  check(std?.metadata?.size === 120 && std?.metadata?.contentLength === 120,
+    'K: Storage records metadata.size and metadata.contentLength = real bytes', JSON.stringify(std?.metadata));
+  check(std?.metadata?.mimetype === 'application/pdf', 'K: Storage records metadata.mimetype from the request');
+  check(typeof std?.version === 'string' && std.version.length > 0, 'K: Storage sets storage.objects.version', std?.version);
+  check(std?.owner_id === admin, 'K: Storage sets owner_id to the uploader JWT sub', std?.owner_id);
+
+  const stolen = await finalize(other, docA, stdName);
+  check(stolen.error?.code === '22023', "K: another member cannot finalise someone else's upload", stolen.error?.code);
+  const fin = await finalize(admin, docA, stdName);
+  check(!fin.error && fin.rows?.[0]?.id, 'K: the uploader finalises the document version', fin.error?.message ?? '');
+  const verA = fin.rows?.[0]?.id;
+  const pinned = (await owner.query(`select object_version, size_bytes, mime_type from public.document_versions where id = $1`, [verA])).rows[0];
+  check(pinned?.object_version === std.version && Number(pinned?.size_bytes) === 120 && pinned?.mime_type === 'application/pdf',
+    'K: the version row pins Storage version, real size and MIME type', JSON.stringify(pinned));
+  const resA = await reservation(stdName);
+  check(resA?.settled_at && !resA.rejected_at && resA.object_version === std.version,
+    'K: finalisation settles the reservation with the Storage version', JSON.stringify(resA));
+  const again2 = await finalize(admin, docA, stdName);
+  check(!!again2.error, 'K: the same upload cannot be finalised twice', again2.error?.code);
+
+  const dl = await download(admin, verA);
+  check(dl.status === 200 && dl.bytes === 120, 'K: download via record_document_download + signed URL returns the bytes', JSON.stringify(dl.error?.message ?? dl));
+
+  await owner.query(`update private.storage_upload_reservations set expires_at = now() - interval '2 days'
+                     where bucket_id = 'company-documents' and object_name = $1`, [stdName]);
+  await owner.query(`select * from private.reconcile_storage_reservations()`);
+  const afterRec = await reservation(stdName);
+  check(!afterRec?.rejected_at, 'K: reconciliation does not reject a finalised upload', JSON.stringify(afterRec));
+  let lists = await listedFor(stdName);
+  check(lists.orphan.length === 0 && lists.incident.length === 0,
+    'K: an intact finalised file is neither an orphan nor an integrity incident', JSON.stringify(lists));
+
+  // Bytes replaced behind SOKO's back (service role bypasses RLS): download
+  // refuses, and the file is reported as an incident, not a deletion candidate.
+  r = await upload(serviceJwt(), 'company-documents', stdName, 90, 'application/pdf', { upsert: true });
+  const swapped = await object('company-documents', stdName);
+  check(r.status === 200 && swapped?.version !== std.version, 'K: a service-role overwrite changes storage.objects.version',
+    `${std.version} -> ${swapped?.version}`);
+  const dlBad = await download(admin, verA);
+  check(dlBad.error?.code === '55000', 'K: download of replaced bytes is refused', dlBad.error?.code ?? JSON.stringify(dlBad));
+  await owner.query(`select * from private.reconcile_storage_reservations()`);
+  lists = await listedFor(stdName);
+  check(lists.orphan.length === 0, 'K: a replaced finalised file is not listed for routine deletion', JSON.stringify(lists.orphan));
+  check(lists.incident.length === 1 && lists.incident[0].incident === 'replaced',
+    'K: a replaced finalised file is reported as an integrity incident', JSON.stringify(lists.incident));
+
+  // L. Full document lifecycle with a resumable (TUS) upload in two chunks.
+  const docB = await newDoc('Resumable lifecycle');
+  const tusName = `${co}/${docB}/v1/resumable.pdf`;
+  const tusBig = `${co}/${docB}/v1/too-big.pdf`;
+  const tusMime = `${co}/${docB}/v1/wrong-type.pdf`;
+  await reserveDoc(admin, tusBig, 100);
+  let t = await tusCreate(userJwt(admin), 'company-documents', tusBig, 200, 'application/pdf');
+  check(t.status >= 400, 'L: a resumable upload declaring more than the reservation is refused at creation', `HTTP ${t.status}`);
+  await reserveDoc(admin, tusMime, 200);
+  t = await tusCreate(userJwt(admin), 'company-documents', tusMime, 200, 'image/png');
+  check(t.status >= 400, 'L: a resumable upload declaring another content type is refused at creation', `HTTP ${t.status}`);
+  t = await tusCreate(userJwt(other), 'company-documents', tusName, 200, 'application/pdf');
+  check(t.status >= 400, 'L: a resumable upload without the caller\'s reservation is refused', `HTTP ${t.status}`);
+
+  check(!(await reserveDoc(admin, tusName, 200)).error, 'L: reserve 200 bytes application/pdf');
+  t = await tusCreate(userJwt(admin), 'company-documents', tusName, 200, 'application/pdf');
+  check(t.status === 201 && !!t.location, 'L: resumable upload created under the reservation', `HTTP ${t.status}`);
+  let p = await tusPatch(userJwt(admin), t.location, 0, 100);
+  check(p.status === 204 && p.offset === 100, 'L: first chunk accepted', `HTTP ${p.status} offset ${p.offset}`);
+  check(!(await object('company-documents', tusName)), 'L: no storage.objects row exists until the upload completes');
+  check(await tusHead(userJwt(admin), t.location) === 100, 'L: HEAD reports the resumable offset');
+  const otherPatch = await tusPatch(userJwt(other), t.location, 100, 100);
+  check(otherPatch.status >= 400, 'L: another member cannot continue someone else\'s resumable upload', `HTTP ${otherPatch.status}`);
+  p = await tusPatch(userJwt(admin), t.location, 100, 100);
+  check(p.status === 204 && p.offset === 200, 'L: final chunk completes the upload', `HTTP ${p.status} offset ${p.offset}`);
+  const tus = await object('company-documents', tusName);
+  check(tus?.metadata?.size === 200 && tus?.metadata?.contentLength === 200,
+    'L: resumable upload records metadata.size and metadata.contentLength = real bytes', JSON.stringify(tus?.metadata));
+  check(tus?.metadata?.mimetype === 'application/pdf', 'L: resumable upload records metadata.mimetype from Upload-Metadata');
+  check(typeof tus?.version === 'string' && tus.version.length > 0, 'L: resumable upload sets storage.objects.version', tus?.version);
+  check(tus?.owner_id === admin, 'L: resumable upload sets owner_id to the uploader', tus?.owner_id);
+  const finB = await finalize(admin, docB, tusName);
+  check(!finB.error && finB.rows?.[0]?.id, 'L: the resumable upload is finalised', finB.error?.message ?? '');
+  const dlB = await download(admin, finB.rows?.[0]?.id);
+  check(dlB.status === 200 && dlB.bytes === 200, 'L: download returns the resumable upload\'s bytes', JSON.stringify(dlB.error?.message ?? dlB));
+  await owner.query(`update private.storage_upload_reservations set expires_at = now() - interval '2 days'
+                     where bucket_id = 'company-documents' and object_name = $1`, [tusName]);
+  await owner.query(`select * from private.reconcile_storage_reservations()`);
+  lists = await listedFor(tusName);
+  check(!(await reservation(tusName))?.rejected_at && lists.orphan.length === 0 && lists.incident.length === 0,
+    'L: after reconciliation the resumable file is settled, not an orphan, not an incident', JSON.stringify(lists));
 } finally {
   for (const co of created.companies) {
     await owner.query(`delete from storage.objects where name like $1`, [`${co}/%`]).catch(() => {});

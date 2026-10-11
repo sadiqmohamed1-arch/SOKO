@@ -197,6 +197,13 @@ try {
     const path = `${companies.sup}/${ids[k]}/v1/file.pdf`;
     await admin.query(`insert into storage.objects (bucket_id, name, metadata)
       values ('company-documents', $1, '{"size": 100, "mimetype": "application/pdf"}')`, [path]);
+    // Finalisation requires the uploader's reservation and a Storage owner/version.
+    await admin.query(`insert into private.storage_upload_reservations
+        (company_id, bucket_id, object_name, user_id, reserved_bytes, mime_type, created_at, expires_at)
+      values ($1, 'company-documents', $2, $3, 100, 'application/pdf', now() - interval '1 minute', now() + interval '15 minutes')`,
+      [companies.sup, path, ids.owner]);
+    await admin.query(`update storage.objects set owner_id = $2, version = 'edge-' || md5(name)
+      where bucket_id = 'company-documents' and name = $1`, [path, ids.owner]);
     versions[k] = (await asUser(ids.owner, 'select public.finalize_document_version($1, $2, $3) id',
       [ids[k], path, 'file.pdf']))[0].id;
   }

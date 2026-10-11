@@ -168,6 +168,13 @@ try {
     const path = `${co}/${doc}/v1/file.pdf`;
     await owner.query(`insert into storage.objects (bucket_id, name, metadata) values ('company-documents', $1, $2)`,
       [path, JSON.stringify({ size: 100, mimetype: 'application/pdf' })]);
+    // Finalisation requires the uploader's reservation and a Storage owner/version.
+    await owner.query(`insert into private.storage_upload_reservations
+        (company_id, bucket_id, object_name, user_id, reserved_bytes, mime_type, created_at, expires_at)
+      values ($1, 'company-documents', $2, $3, 100, 'application/pdf', now() - interval '1 minute', now() + interval '15 minutes')`,
+      [co, path, admin]);
+    await owner.query(`update storage.objects set owner_id = $2, version = 'race-' || md5(name)
+      where bucket_id = 'company-documents' and name = $1`, [path, admin]);
     const results = await race(admin, isolation, Array(12).fill(path),
       (c, p) => c.query('select public.finalize_document_version($1, $2, null)', [doc, p]));
     const state = (await owner.query(

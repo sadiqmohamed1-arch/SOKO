@@ -49,6 +49,7 @@ drop function if exists private.upload_grace();
 drop function if exists private.can_upload_verification_object(text);
 
 drop function if exists private.list_orphaned_storage_objects(interval);
+drop function if exists private.list_storage_integrity_incidents();
 drop function if exists private.retain_document_version();
 drop function if exists private.is_own_avatar_path(text);
 drop function if exists private.can_read_verification_object(text);
