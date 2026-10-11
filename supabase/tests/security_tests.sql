@@ -2111,6 +2111,216 @@ select soko_test.expect_count('PC: trigger functions are not executable by authe
       and has_function_privilege('authenticated', oid, 'execute')$$, 0);
 
 -- -----------------------------------------------------------------------------
+-- 15. Migration 06 — final validation: view quota, re-parenting, saves, paths
+-- (Concurrency of the view cap is exercised in product_view_concurrency_tests.mjs.)
+-- -----------------------------------------------------------------------------
+insert into soko_test.ids (key, id) values ('pc_fresh_user', '00000000-0000-4000-8000-0000000006f1');
+insert into auth.users (id, email, aud, role, email_confirmed_at)
+values (soko_test.id('pc_fresh_user'), 'pc_fresh_user@soko-security.test', 'authenticated', 'authenticated', now());
+
+-- 1. Quota row mirrors the recorded views ---------------------------------------
+select soko_test.expect_count('PV: the quota row for a capped user records exactly 200',
+  format($$select views from private.product_view_quota where viewer_user_id = %L$$, soko_test.id('pc_cap_user')), 200);
+select soko_test.expect_count('PV: every quota row equals that user''s recorded views for the day',
+  $$select count(*) from private.product_view_quota q
+    where q.views <> (select count(*) from public.product_views v
+                      where v.viewer_user_id = q.viewer_user_id and v.viewed_on = q.viewed_on)$$, 0);
+select soko_test.expect_count('PV: views are bucketed by the UTC day',
+  $$select count(*) from public.product_views where viewed_on <> (now() at time zone 'utc')::date$$, 0);
+
+-- 2. Duplicate views are idempotent and never consume quota ---------------------
+select soko_test.as_user('pc_fresh_user');
+set local role authenticated;
+select soko_test.expect_ok('PV: repeated same-day views of one product are accepted',
+  format($$select public.record_product_view(%1$L), public.record_product_view(%1$L),
+                  public.record_product_view(%1$L, %2$L)$$, soko_test.id('pc_b_pub'), soko_test.id('pc_con')));
+reset role;
+select soko_test.expect_count('PV: repeated views record one row',
+  format($$select count(*) from public.product_views where viewer_user_id = %L$$, soko_test.id('pc_fresh_user')), 1);
+select soko_test.expect_count('PV: repeated views consume one unit of quota',
+  format($$select views from private.product_view_quota where viewer_user_id = %L$$, soko_test.id('pc_fresh_user')), 1);
+select soko_test.as_user('pc_cap_user');
+set local role authenticated;
+select public.record_product_view(soko_test.id('pc_b_pub'));
+select public.record_product_view(id) from public.products where name in ('PC B Bulk 204', 'PC B Bulk 205', 'PC A Published');
+reset role;
+select soko_test.expect_count('PV: at the cap neither repeats nor new products are recorded',
+  format($$select count(*) + (select views from private.product_view_quota where viewer_user_id = %1$L)
+           from public.product_views where viewer_user_id = %1$L$$, soko_test.id('pc_cap_user')), 400);
+
+-- 3. Privacy: inaccessible products leave no trace ------------------------------
+insert into soko_test.ids (key, id) values ('pc_ghost_user', '00000000-0000-4000-8000-0000000006f2');
+insert into auth.users (id, email, aud, role, email_confirmed_at)
+values (soko_test.id('pc_ghost_user'), 'pc_ghost_user@soko-security.test', 'authenticated', 'authenticated', now());
+update public.products set status = 'draft' where id = soko_test.id('pc_a_arch');
+select soko_test.as_user('pc_ghost_user');
+set local role authenticated;
+select soko_test.expect_count('PV: missing, draft, private and suspended products all return the same void result',
+  format($$select count(*) from (values (%L::uuid), (%L::uuid), (%L::uuid), (gen_random_uuid())) v(id)
+           where public.record_product_view(v.id)::text = ''$$,
+         soko_test.id('pc_a_arch'), soko_test.id('pc_priv_pub'), soko_test.id('pc_susp_pub')), 4);
+reset role;
+select soko_test.expect_count('PV: inaccessible products create no quota row and no view',
+  format($$select (select count(*) from private.product_view_quota where viewer_user_id = %1$L)
+              + (select count(*) from public.product_views where viewer_user_id = %1$L)$$,
+         soko_test.id('pc_ghost_user')), 0);
+select soko_test.as_user('pc_b_admin');
+set local role authenticated;
+select public.record_product_view(soko_test.id('pc_b_pub'));
+reset role;
+select soko_test.expect_count('PV: a supplier viewing its own product creates no quota row',
+  format($$select count(*) from private.product_view_quota where viewer_user_id = %L$$, soko_test.id('pc_b_admin')), 0);
+update public.products set status = 'published' where id = soko_test.id('pc_a_arch');
+select soko_test.as_user('pc_fresh_user');
+set local role authenticated;
+select soko_test.expect_denied('PV: clients cannot read the view quota',
+  $$select count(*) from private.product_view_quota$$);
+select soko_test.expect_denied('PV: clients cannot reset their view quota',
+  $$update private.product_view_quota set views = 0$$);
+select soko_test.expect_denied('PV: clients cannot delete their view quota',
+  $$delete from private.product_view_quota$$);
+reset role;
+select soko_test.expect_count('PV: client roles hold no privilege on the view quota; service_role is read-only',
+  $$select count(*) from information_schema.role_table_grants
+    where table_schema = 'private' and table_name = 'product_view_quota'
+      and (grantee in ('anon', 'authenticated', 'PUBLIC')
+           or (grantee = 'service_role' and privilege_type <> 'SELECT'))$$, 0);
+
+-- 4. Cross-company modification and re-parenting --------------------------------
+insert into public.product_specs (product_id, label, value) values (soko_test.id('pc_a_pub'), 'Size', 'DN50');
+insert into soko_test.ids select 'pc_a_spec', id from public.product_specs where product_id = soko_test.id('pc_a_pub');
+insert into public.product_regions (product_id, region) values (soko_test.id('pc_a_pub'), 'Ajman');
+select soko_test.as_user('pc_a_admin');
+set local role authenticated;
+select soko_test.expect_denied('PV: A cannot reassign its product to supplier B',
+  format($$update public.products set company_id = %L where id = %L$$, soko_test.id('pc_b'), soko_test.id('pc_a_pub')));
+select soko_test.expect_denied('PV: A cannot re-parent its spec onto B''s product',
+  format($$update public.product_specs set product_id = %L where id = %L$$, soko_test.id('pc_b_pub'), soko_test.id('pc_a_spec')));
+select soko_test.expect_denied('PV: A cannot re-parent its spec onto its own other product',
+  format($$update public.product_specs set product_id = %L where id = %L$$, soko_test.id('pc_a_draft'), soko_test.id('pc_a_spec')));
+select soko_test.expect_denied('PV: A cannot re-parent its region onto B''s product',
+  format($$update public.product_regions set product_id = %L where product_id = %L$$, soko_test.id('pc_b_pub'), soko_test.id('pc_a_pub')));
+select soko_test.expect_denied('PV: A cannot pull B''s spec onto its own product',
+  format($$update public.product_specs set product_id = %L where id = %L$$, soko_test.id('pc_a_pub'), soko_test.id('pc_b_spec')));
+select soko_test.expect_denied('PV: A cannot rename B''s region',
+  format($$update public.product_regions set region = 'Hijacked' where product_id = %L$$, soko_test.id('pc_b_pub')));
+select soko_test.expect_denied('PV: A cannot insert a spec under B''s product',
+  format($$insert into public.product_specs (product_id, label, value) values (%L, 'planted', 'x')$$, soko_test.id('pc_b_pub')));
+select soko_test.expect_denied('PV: A cannot create a product owned by B',
+  format($$insert into public.products (company_id, name) values (%L, 'Forged B Item')$$, soko_test.id('pc_b')));
+select soko_test.expect_ok('PV: A can still edit its own spec content',
+  format($$update public.product_specs set label = 'Diameter', value = 'DN65', position = 2 where id = %L$$, soko_test.id('pc_a_spec')));
+select soko_test.expect_ok('PV: A can still rename its own region',
+  format($$update public.product_regions set region = 'Fujairah' where product_id = %L and region = 'Ajman'$$, soko_test.id('pc_a_pub')));
+reset role;
+select soko_test.as_user('pc_b_admin');
+set local role authenticated;
+select soko_test.expect_denied('PV: B cannot edit A''s spec content',
+  format($$update public.product_specs set value = 'tampered' where id = %L$$, soko_test.id('pc_a_spec')));
+select soko_test.expect_denied('PV: B cannot delete A''s region',
+  format($$delete from public.product_regions where product_id = %L$$, soko_test.id('pc_a_pub')));
+reset role;
+select soko_test.expect_count('PV: A''s spec and region stayed on A''s product with A''s edits',
+  format($$select (select count(*) from public.product_specs
+                   where id = %1$L and product_id = %2$L and value = 'DN65')
+              + (select count(*) from public.product_regions where product_id = %2$L and region = 'Fujairah')$$,
+         soko_test.id('pc_a_spec'), soko_test.id('pc_a_pub')), 2);
+select soko_test.expect_count('PV: B''s spec and regions are untouched',
+  format($$select (select count(*) from public.product_specs where id = %1$L and product_id = %2$L and value = 'PN16')
+              + (select count(*) from public.product_regions where product_id = %2$L and region = 'Dubai')$$,
+         soko_test.id('pc_b_spec'), soko_test.id('pc_b_pub')), 2);
+select soko_test.expect_count('PV: product_id, company_id and company_kind are not client-updatable',
+  $$select count(*) from information_schema.column_privileges
+    where grantee = 'authenticated' and table_schema = 'public' and privilege_type = 'UPDATE'
+      and ((table_name in ('product_specs', 'product_regions') and column_name = 'product_id')
+        or (table_name = 'products' and column_name in ('company_id', 'company_kind')))$$, 0);
+
+-- 5. Saved products follow parent visibility and remain removable ---------------
+select soko_test.as_user('pc_con_admin');
+set local role authenticated;
+select soko_test.expect_ok('PV: contractor saves B''s published product',
+  format($$insert into public.saved_products (user_id, product_id) values (auth.uid(), %L)$$, soko_test.id('pc_b_pub')));
+reset role;
+select soko_test.as_user('pc_fresh_user');
+set local role authenticated;
+select soko_test.expect_ok('PV: another user saves the same product',
+  format($$insert into public.saved_products (user_id, product_id) values (auth.uid(), %L)$$, soko_test.id('pc_b_pub')));
+reset role;
+update public.companies set is_public = false where id = soko_test.id('pc_b');
+select soko_test.as_user('pc_con_admin');
+set local role authenticated;
+select soko_test.expect_count('PV: a save hides when the supplier goes private',
+  format($$select count(*) from public.saved_products where product_id = %L$$, soko_test.id('pc_b_pub')), 0);
+select soko_test.expect_denied('PV: a plain DELETE cannot reach the hidden save',
+  format($$delete from public.saved_products where product_id = %L$$, soko_test.id('pc_b_pub')));
+select soko_test.expect_ok('PV: unsave_product removes the hidden save',
+  format($$select public.unsave_product(%L)$$, soko_test.id('pc_b_pub')));
+reset role;
+select soko_test.expect_count('PV: unsave removed only the caller''s save',
+  format($$select count(*) from public.saved_products where product_id = %L and user_id in (%L, %L)$$,
+         soko_test.id('pc_b_pub'), soko_test.id('pc_con_admin'), soko_test.id('pc_fresh_user')), 1);
+update public.companies set is_public = true where id = soko_test.id('pc_b');
+update public.products set status = 'archived' where id = soko_test.id('pc_b_pub');
+select soko_test.as_user('pc_fresh_user');
+set local role authenticated;
+select soko_test.expect_count('PV: a save hides when the product is archived',
+  $$select count(*) from public.saved_products$$, 0);
+select soko_test.expect_ok('PV: the owner can remove a save of an archived product',
+  format($$select public.unsave_product(%L)$$, soko_test.id('pc_b_pub')));
+reset role;
+select soko_test.expect_count('PV: no saves remain for the archived product',
+  format($$select count(*) from public.saved_products where product_id = %L$$, soko_test.id('pc_b_pub')), 0);
+update public.products set status = 'published' where id = soko_test.id('pc_b_pub');
+
+-- 6. Image paths match the company-media storage rules (07) ---------------------
+select soko_test.as_user('pc_a_admin');
+set local role authenticated;
+select soko_test.expect_sqlstate('PV: an uppercase company folder is rejected',
+  format($$update public.products set image_paths = array[%L] where id = %L$$,
+         upper(soko_test.id('pc_a')::text) || '/products/x.png', soko_test.id('pc_a_pub')), '23514');
+select soko_test.expect_sqlstate('PV: a nested products subfolder is rejected',
+  format($$update public.products set image_paths = array[%L] where id = %L$$,
+         soko_test.id('pc_a')::text || '/products/sub/x.png', soko_test.id('pc_a_pub')), '23514');
+select soko_test.expect_sqlstate('PV: a non-image extension is rejected',
+  format($$update public.products set image_paths = array[%L] where id = %L$$,
+         soko_test.id('pc_a')::text || '/products/spec-sheet.pdf', soko_test.id('pc_a_pub')), '23514');
+select soko_test.expect_sqlstate('PV: an SVG (not an allowed bucket type) is rejected',
+  format($$update public.products set image_paths = array[%L] where id = %L$$,
+         soko_test.id('pc_a')::text || '/products/logo.svg', soko_test.id('pc_a_pub')), '23514');
+select soko_test.expect_sqlstate('PV: a file with no extension is rejected',
+  format($$update public.products set image_paths = array[%L] where id = %L$$,
+         soko_test.id('pc_a')::text || '/products/photo', soko_test.id('pc_a_pub')), '23514');
+select soko_test.expect_sqlstate('PV: a trailing-slash folder path is rejected',
+  format($$update public.products set image_paths = array[%L] where id = %L$$,
+         soko_test.id('pc_a')::text || '/products/', soko_test.id('pc_a_pub')), '23514');
+select soko_test.expect_ok('PV: every allowed bucket image type is accepted',
+  format($$update public.products set image_paths = array[%1$L || 'a.png', %1$L || 'b.JPG', %1$L || 'c.jpeg',
+                                                          %1$L || 'd.webp', %1$L || 'e.avif', %1$L || 'pub.png']
+           where id = %2$L$$, soko_test.id('pc_a')::text || '/products/', soko_test.id('pc_a_pub')));
+select soko_test.expect_count('PV: the product manager may write every accepted path under 07''s rules',
+  format($$select count(*) from public.products p, unnest(p.image_paths) path
+           where p.id = %L and private.can_write_company_media(path)$$, soko_test.id('pc_a_pub')), 6);
+reset role;
+select soko_test.expect_count('PV: every stored image path resolves to its owning company''s products folder',
+  $$select count(*) from public.products p, unnest(p.image_paths) path
+    where private.storage_company(path) is distinct from p.company_id
+       or (storage.foldername(path))[1] <> p.company_id::text
+       or (storage.foldername(path))[2] <> 'products'
+       or array_length(storage.foldername(path), 1) <> 2$$, 0);
+select soko_test.as_user('pc_b_admin');
+set local role authenticated;
+select soko_test.expect_count('PV: another supplier may not write A''s accepted paths',
+  format($$select count(*) from unnest(array[%1$L || 'a.png', %1$L || 'pub.png']) path
+           where private.can_write_company_media(path)$$, soko_test.id('pc_a')::text || '/products/'), 0);
+reset role;
+select soko_test.as_anon();
+set local role anon;
+select soko_test.expect_count('PV: a published product''s referenced image is still publicly readable',
+  format($$select count(*) from storage.objects where bucket_id = 'company-media' and name = %L$$,
+         soko_test.id('pc_a')::text || '/products/pub.png'), 1);
+reset role;
+
+-- -----------------------------------------------------------------------------
 -- Report
 -- -----------------------------------------------------------------------------
 reset role;

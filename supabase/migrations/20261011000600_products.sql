@@ -22,6 +22,12 @@ end $$;
 -- company-media layout {company_id}/products/{file_name} (see 07). Rejecting
 -- anything else stops a supplier pointing its catalogue at another company's
 -- objects, documents or traversal-style names. NULL elements are rejected.
+-- Alignment with 07: exactly three segments, so storage.foldername() yields
+-- [1] = the canonical lowercase company id (what storage_company() and the
+-- public-read lookup in can_read_company_media() compare against) and
+-- [2] = 'products' (the folder can_write_company_media() grants to
+-- products.manage). The extension must be one of the company-media bucket's
+-- allowed image types (png, jpeg, webp, avif).
 create or replace function private.valid_product_image_paths(p_company uuid, p_paths text[])
 returns boolean language sql immutable set search_path = '' as $$
   select p_company is not null and not exists (
@@ -29,7 +35,8 @@ returns boolean language sql immutable set search_path = '' as $$
     where p is null
        or char_length(p) > 300
        or p like '%..%'
-       or p !~ ('^' || p_company::text || '/products/[A-Za-z0-9][A-Za-z0-9._-]{0,199}$'));
+       or p !~ ('^' || p_company::text || '/products/[A-Za-z0-9][A-Za-z0-9._-]{0,199}$')
+       or lower(p) !~ '\.(png|jpe?g|webp|avif)$');
 $$;
 select private.allow_execute(array['authenticated'], array['private.valid_product_image_paths(uuid, text[])']);
 
@@ -171,7 +178,7 @@ begin
   foreach t in array array['product_specs','product_regions'] loop
     perform private.reset_table_grants(format('public.%I', t)::regclass);
     execute format('grant select on public.%I to anon, authenticated', t);
-    execute format('grant insert, update, delete on public.%I to authenticated', t);
+    execute format('grant insert, delete on public.%I to authenticated', t);
     execute format($p$create policy %I on public.%I for select to anon, authenticated
       using (exists (select 1 from public.products p where p.id = product_id))$p$, t || '_read', t);
     execute format($p$create policy %I on public.%I for insert to authenticated
@@ -182,6 +189,10 @@ begin
       using (private.can_manage_product(product_id))$p$, t || '_delete', t);
   end loop;
 end $$;
+-- product_id is never client-updatable: a spec or region cannot be re-parented
+-- onto another product (of this or any other supplier). Move = delete + insert.
+grant update (label, value, position) on public.product_specs to authenticated;
+grant update (region) on public.product_regions to authenticated;
 
 select private.reset_table_grants('public.saved_products');
 grant select, insert, delete on public.saved_products to authenticated;
@@ -210,17 +221,44 @@ create policy saved_products_own_delete on public.saved_products
 -- No client policies at all: written by record_product_view, read by metrics.
 select private.reset_table_grants('public.product_views');
 
+-- Per-user daily view quota. One row per user and UTC day; record_product_view
+-- locks it before checking the cap, so concurrent calls for the same user are
+-- serialised on this row and can never record more than the cap.
+create table private.product_view_quota (
+  viewer_user_id uuid not null references auth.users (id) on delete cascade,
+  viewed_on      date not null,
+  views          int  not null default 0 check (views >= 0),
+  primary key (viewer_user_id, viewed_on)
+);
+select private.reset_table_grants('private.product_view_quota');
+-- Only record_product_view (definer) maintains the quota; the service role may
+-- inspect it but cannot reset, forge or truncate it.
+revoke all on table private.product_view_quota from service_role;
+grant select on table private.product_view_quota to service_role;
+
 -- Always returns void, so it is not an oracle for whether a product exists or
--- is private. Abuse controls: one row per product, viewer and day (unique key);
--- a per-user daily cap so one account cannot flood a supplier's metrics; the
--- viewer company is kept only when the caller is an active member of it and
--- it is not suspended — otherwise the view is recorded without attribution.
+-- is private: every non-visible case returns before any lock or write.
+-- Abuse controls: one row per product, viewer and UTC day (unique key, so
+-- repeat views are idempotent and never consume quota); a per-user daily cap
+-- so one account cannot flood a supplier's metrics; the viewer company is kept
+-- only when the caller is an active member of it and it is not suspended —
+-- otherwise the view is recorded without attribution.
+--
+-- Concurrency: the quota upsert takes a row lock on (user, day) and returns the
+-- latest committed count. Under READ COMMITTED concurrent calls queue on that
+-- lock and each re-reads the count, so the cap is exact. Under REPEATABLE READ
+-- and SERIALIZABLE a concurrent quota change raises 40001 instead of letting a
+-- stale snapshot overshoot — callers may retry. A single lock per call means
+-- no lock-ordering deadlocks.
 create or replace function public.record_product_view(p_product uuid, p_viewer_company uuid default null)
 returns void
 language plpgsql security definer set search_path = '' as $$
 declare
   v_uid uuid := private.require_user();
+  v_day date := (now() at time zone 'utc')::date;
   v_company uuid;
+  v_used int;
+  v_view bigint;
   c_daily_cap constant int := 200;
 begin
   select p.company_id into v_company
@@ -234,13 +272,23 @@ begin
        where c.id = p_viewer_company and not c.is_suspended and private.is_member(c.id)) then
     p_viewer_company := null;
   end if;
-  if (select count(*) from public.product_views v
-      where v.viewer_user_id = v_uid and v.viewed_on = current_date) >= c_daily_cap then
+
+  insert into private.product_view_quota as q (viewer_user_id, viewed_on)
+  values (v_uid, v_day)
+  on conflict (viewer_user_id, viewed_on) do update set views = q.views
+  returning q.views into v_used;
+  if v_used >= c_daily_cap then
     return;
   end if;
-  insert into public.product_views (product_id, company_id, viewer_user_id, viewer_company_id)
-  values (p_product, v_company, v_uid, p_viewer_company)
-  on conflict (product_id, viewer_user_id, viewed_on) do nothing;
+
+  insert into public.product_views (product_id, company_id, viewer_user_id, viewer_company_id, viewed_on)
+  values (p_product, v_company, v_uid, p_viewer_company, v_day)
+  on conflict (product_id, viewer_user_id, viewed_on) do nothing
+  returning id into v_view;
+  if v_view is not null then
+    update private.product_view_quota set views = views + 1
+    where viewer_user_id = v_uid and viewed_on = v_day;
+  end if;
 end $$;
 
 -- Approved RPCs: callable by signed-in users only; each checks its own authorization.
