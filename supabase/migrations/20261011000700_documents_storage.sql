@@ -306,7 +306,8 @@ language sql immutable set search_path = '' as $$ select interval '15 minutes' $
 -- reservation still counting, the reserved bytes not yet covered by the object
 -- at its path — so a landed upload counts max(reserved, actual), never both.
 -- p_bucket/p_name exclude the object being replaced (and its reservation via
--- p_exclude). Volatile so each call inside a plpgsql function takes a fresh
+-- p_exclude); the exclusion applies only when both are given, since a NULL
+-- comparison would otherwise drop every row. Volatile so each call inside a plpgsql function takes a fresh
 -- snapshot after the caller has locked the guard row.
 create or replace function private.storage_usage(
   p_company uuid, p_exclude uuid default null, p_bucket text default null, p_name text default null
@@ -315,7 +316,8 @@ language sql volatile security definer set search_path = '' as $$
   select coalesce((select sum(coalesce(private.object_size(o.metadata), 0)) from storage.objects o
                    where o.bucket_id in ('company-documents', 'company-media', 'verification')
                      and o.name like p_company::text || '/%'
-                     and not (o.bucket_id = p_bucket and o.name = p_name)), 0)
+                     and (p_bucket is null or p_name is null
+                          or not (o.bucket_id = p_bucket and o.name = p_name))), 0)
        -- Unsettled reservations hold their unused bytes for the whole grace
        -- period (an admitted upload may still land). A settled one holds bytes
        -- only while a different upload has replaced the verified file: the

@@ -3850,6 +3850,33 @@ delete from private.storage_upload_reservations
 where object_name in (soko_test.dp('p_i22_doc'), soko_test.dp('p_i22_rej'));
 
 
+-- =============================================================================
+-- 23. Migration 07 — storage_usage() exclusion arguments and NULL handling
+-- =============================================================================
+reset role;
+insert into storage.objects (bucket_id, name, metadata) values
+  ('company-documents', '2323a000-0000-4000-8000-000000000023/x.pdf', '{"size":100}'),
+  ('company-media',     '2323a000-0000-4000-8000-000000000023/x.pdf', '{"size":20}'),
+  ('company-media',     '2323a000-0000-4000-8000-000000000023/y.png', '{"size":3}');
+
+select soko_test.expect_count('23: with no exclusion every object counts',
+  $$select count(*) where private.storage_usage('2323a000-0000-4000-8000-000000000023') = 123$$, 1);
+select soko_test.expect_count('23: an exact bucket/path exclusion removes only that object',
+  $$select count(*) where private.storage_usage('2323a000-0000-4000-8000-000000000023', null,
+      'company-documents', '2323a000-0000-4000-8000-000000000023/x.pdf') = 23$$, 1);
+select soko_test.expect_count('23: an exclusion matching no object removes nothing',
+  $$select count(*) where private.storage_usage('2323a000-0000-4000-8000-000000000023', null,
+      'company-media', '2323a000-0000-4000-8000-000000000023/none.png') = 123$$, 1);
+select soko_test.expect_count('23: a NULL bucket with a path excludes nothing',
+  $$select count(*) where private.storage_usage('2323a000-0000-4000-8000-000000000023', null,
+      null, '2323a000-0000-4000-8000-000000000023/x.pdf') = 123$$, 1);
+select soko_test.expect_count('23: a bucket with a NULL path excludes nothing',
+  $$select count(*) where private.storage_usage('2323a000-0000-4000-8000-000000000023', null,
+      'company-media', null) = 123$$, 1);
+
+delete from storage.objects where name like '2323a000-0000-4000-8000-000000000023/%';
+
+
 -- -----------------------------------------------------------------------------
 -- Report
 -- -----------------------------------------------------------------------------
