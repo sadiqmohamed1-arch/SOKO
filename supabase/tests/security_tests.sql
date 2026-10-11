@@ -3338,9 +3338,9 @@ select soko_test.expect_ok('07V: a released path can be reserved again',
 reset role;
 delete from storage.objects where bucket_id = 'company-media' and name = soko_test.dp('rl_big');
 update private.storage_upload_reservations set expires_at = now() - interval '25 hours' where object_name = soko_test.dp('rl_big');
+select count(*) from private.reconcile_storage_reservations();
 select soko_test.expect_count('07V: a rejected reservation is released once its file is deleted',
-  format($$select count(*) from private.reconcile_storage_reservations() r
-           where not exists (select 1 from private.storage_upload_reservations x where x.object_name = %L) limit 1$$, soko_test.dp('rl_big')), 1);
+  format($$select count(*) from private.storage_upload_reservations where object_name = %L$$, soko_test.dp('rl_big')), 0);
 delete from storage.objects where bucket_id = 'company-media'
   and name in (soko_test.dp('rl_late'), soko_test.dp('rl_swap'));
 delete from private.storage_upload_reservations where company_id = soko_test.id('d_sup')
@@ -3375,20 +3375,20 @@ reset role;
 select soko_test.as_user('r_admin');
 set local role authenticated;
 select soko_test.expect_sqlstate('07W: a share recipient admin cannot reshare',
-  format($$select public.share_document(%L, %L)$$, soko_test.id('sh_pub'), soko_test.id('d_other')), '42501');
+  format($$select public.share_document(%L, %L)$$, soko_test.id('sh_pub'), soko_test.id('d_rec')), '42501');
 select soko_test.expect_denied('07W: a recipient cannot write share rows directly',
   format($$insert into public.document_shares (document_id, owner_company_id, recipient_company_id) values (%L, %L, %L)$$,
-         soko_test.id('sh_pub'), soko_test.id('d_sup'), soko_test.id('d_other')));
+         soko_test.id('sh_pub'), soko_test.id('d_sup'), soko_test.id('d_rec')));
 reset role;
 select soko_test.as_user('d_tech');
 set local role authenticated;
 select soko_test.expect_sqlstate('07W: an owner member without documents.share cannot share',
-  format($$select public.share_document(%L, %L)$$, soko_test.id('sh_pub'), soko_test.id('d_other')), '42501');
+  format($$select public.share_document(%L, %L)$$, soko_test.id('sh_pub'), soko_test.id('d_rec')), '42501');
 reset role;
 select soko_test.as_user('d_mgr');
 set local role authenticated;
 select soko_test.expect_ok('07W: a member with documents.share and the level can share',
-  format($$select public.share_document(%L, %L)$$, soko_test.id('sh_pub'), soko_test.id('d_other')));
+  format($$select public.share_document(%L, %L)$$, soko_test.id('sh_pub'), soko_test.id('d_rec')));
 select soko_test.expect_sqlstate('07W: documents.share without access to the document''s level is refused',
   format($$select public.share_document(%L, %L)$$, soko_test.id('sh_adm'), soko_test.id('d_rec')), '42501');
 reset role;
