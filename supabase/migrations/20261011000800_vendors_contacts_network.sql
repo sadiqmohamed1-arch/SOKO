@@ -167,6 +167,22 @@ create table public.vendor_compliance_submissions (
   unique (requirement_id, vendor_record_id)
 );
 create index on public.vendor_compliance_submissions (supplier_company_id);
+
+-- Changing what a requirement asks for (name or document category) returns
+-- accepted and in-review submissions to 'submitted', so they are reassessed
+-- against the new requirement instead of silently staying valid.
+create or replace function private.reset_submissions_on_requirement_change() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  if new.name is distinct from old.name or new.document_category is distinct from old.document_category then
+    update public.vendor_compliance_submissions
+    set status = 'submitted', reviewed_by = null, reviewed_at = null, review_note = null
+    where requirement_id = new.id and status in ('accepted', 'under-review');
+  end if;
+  return new;
+end $$;
+create trigger vendor_requirements_reassess after update on public.vendor_compliance_requirements
+  for each row execute function private.reset_submissions_on_requirement_change();
 -- Evidence document reference and review note are redacted.
 select private.attach_audit('public.vendor_compliance_submissions',
   array['supplier_company_id'],
@@ -386,19 +402,32 @@ declare
   v_vendor public.vendor_records%rowtype;
   v_req public.vendor_compliance_requirements%rowtype;
   v_ver public.document_versions%rowtype;
+  v_doc public.documents%rowtype;
   v_id uuid;
 begin
   select * into v_vendor from public.vendor_records where id = p_vendor_record;
   select * into v_req from public.vendor_compliance_requirements where id = p_requirement;
   select * into v_ver from public.document_versions where id = p_document_version;
+  select * into v_doc from public.documents where id = v_ver.document_id for share;
 
-  if v_vendor.id is null or v_req.id is null or v_ver.id is null
+  -- Submitting auto-shares the document, so the caller must pass the same
+  -- document-level checks as share_document(): documents.share in the owning
+  -- company and internal access at the document's own level.
+  if v_vendor.id is null or v_req.id is null or v_ver.id is null or v_doc.id is null
      or v_vendor.supplier_company_id is null
      or not private.has_permission(v_vendor.supplier_company_id, 'documents.share')
      or v_ver.company_id <> v_vendor.supplier_company_id
+     or v_doc.company_id <> v_vendor.supplier_company_id
+     or not private.has_doc_access(v_doc.company_id, v_doc.access_level)
      or v_req.contractor_company_id <> v_vendor.contractor_company_id
      or (v_req.vendor_record_id is not null and v_req.vendor_record_id <> v_vendor.id) then
     raise exception 'not allowed' using errcode = '42501';
+  end if;
+  if v_doc.archived or v_doc.current_version = 0 or v_ver.version <> v_doc.current_version then
+    raise exception 'document version is not the current active version' using errcode = '22023';
+  end if;
+  if v_doc.access_level = 'admins' and not private.is_company_admin(v_doc.company_id) then
+    raise exception 'only admins can share admin-only documents' using errcode = '42501';
   end if;
 
   if not exists (select 1 from public.document_shares s

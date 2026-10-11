@@ -3934,6 +3934,192 @@ select soko_test.expect_count('23: a bucket with a NULL path excludes nothing',
 
 delete from storage.objects where name like '2323a000-0000-4000-8000-000000000023/%';
 
+-- =============================================================================
+-- 24. Migration 08 — compliance submissions: document-level access and
+--     reassessment after a requirement changes
+-- =============================================================================
+reset role;
+insert into soko_test.ids select k, gen_random_uuid()
+from unnest(array['c_sadm','c_smgr','c_cadm','c_xadm','c_xcadm']) k;
+insert into auth.users (id, email, aud, role, email_confirmed_at)
+select id, key || '@soko-security.test', 'authenticated', 'authenticated', now()
+from soko_test.ids where key in ('c_sadm','c_smgr','c_cadm','c_xadm','c_xcadm');
+
+select soko_test.as_user('c_sadm');
+set local role authenticated;
+insert into soko_test.ids values ('c_sup', public.create_company('supplier', 'Compliance Supplier LLC'));
+update public.companies set is_public = true where id = soko_test.id('c_sup');
+reset role;
+select soko_test.as_user('c_xadm');
+set local role authenticated;
+insert into soko_test.ids values ('c_xsup', public.create_company('supplier', 'Compliance Other Supplier LLC'));
+reset role;
+select soko_test.as_user('c_xcadm');
+set local role authenticated;
+insert into soko_test.ids values ('c_xcon', public.create_company('contractor', 'Compliance Other Contractor LLC'));
+reset role;
+insert into public.company_memberships (company_id, company_kind, user_id, role_key)
+values (soko_test.id('c_sup'), 'supplier', soko_test.id('c_smgr'), 'sales_manager');
+
+-- Supplier documents: team, admin-only, archived, and one with two versions.
+insert into soko_test.ids select k, gen_random_uuid()
+from unnest(array['cd_team','cd_admins','cd_arch','cd_multi']) k;
+insert into public.documents (id, company_id, name, access_level) values
+  (soko_test.id('cd_team'),   soko_test.id('c_sup'), 'Team Trade Licence', 'team'),
+  (soko_test.id('cd_admins'), soko_test.id('c_sup'), 'Admin Insurance',    'admins'),
+  (soko_test.id('cd_arch'),   soko_test.id('c_sup'), 'Archived Cert',      'team'),
+  (soko_test.id('cd_multi'),  soko_test.id('c_sup'), 'Revised Method Stmt','team');
+
+select soko_test.as_user('c_sadm');
+set local role authenticated;
+select soko_test.put('company-documents', soko_test.id('c_sup') || '/' || soko_test.id(d) || '/v1/f.pdf', 1000)
+from unnest(array['cd_team','cd_admins','cd_arch','cd_multi']) d;
+insert into soko_test.ids select d || '_v1', public.finalize_document_version(soko_test.id(d),
+  soko_test.id('c_sup') || '/' || soko_test.id(d) || '/v1/f.pdf', 'f.pdf')
+from unnest(array['cd_team','cd_admins','cd_arch','cd_multi']) d;
+select soko_test.put('company-documents', soko_test.id('c_sup') || '/' || soko_test.id('cd_multi') || '/v2/f.pdf', 1000);
+insert into soko_test.ids values ('cd_multi_v2', public.finalize_document_version(soko_test.id('cd_multi'),
+  soko_test.id('c_sup') || '/' || soko_test.id('cd_multi') || '/v2/f.pdf', 'f.pdf'));
+reset role;
+update public.documents set archived = true where id = soko_test.id('cd_arch');
+
+-- Contractor links the supplier and sets four requirements.
+select soko_test.as_user('c_cadm');
+set local role authenticated;
+insert into soko_test.ids values ('c_con', public.create_company('contractor', 'Compliance Contractor LLC'));
+insert into public.vendor_records (contractor_company_id, supplier_company_id, trade_category)
+values (soko_test.id('c_con'), soko_test.id('c_sup'), 'Civil');
+reset role;
+insert into soko_test.ids select 'c_vr', id from public.vendor_records
+where contractor_company_id = soko_test.id('c_con') and supplier_company_id = soko_test.id('c_sup');
+select soko_test.as_user('c_cadm');
+set local role authenticated;
+insert into public.vendor_compliance_requirements (contractor_company_id, vendor_record_id, name, document_category)
+select soko_test.id('c_con'), soko_test.id('c_vr'), 'Requirement ' || k, 'licence'
+from unnest(array['cr1','cr2','cr3','cr4']) k;
+reset role;
+insert into soko_test.ids select substr(r.name, 13), r.id from public.vendor_compliance_requirements r
+where r.contractor_company_id = soko_test.id('c_con');
+
+-- 24A. Document-level authorisation (same rules as share_document()).
+select soko_test.as_user('c_smgr');
+set local role authenticated;
+select soko_test.expect_denied('24A: sales manager cannot submit an admin-only document above their access level',
+  format($$select public.submit_compliance_document(%L, %L, %L)$$,
+         soko_test.id('cr2'), soko_test.id('c_vr'), soko_test.id('cd_admins_v1')));
+reset role;
+select soko_test.expect_count('24A: the refused submission did not share the admin-only document',
+  format($$select count(*) from public.document_shares where document_id = %L$$, soko_test.id('cd_admins')), 0);
+select soko_test.expect_count('24A: the refused submission created no submission row',
+  format($$select count(*) from public.vendor_compliance_submissions where requirement_id = %L$$, soko_test.id('cr2')), 0);
+
+select soko_test.as_user('c_smgr');
+set local role authenticated;
+select soko_test.expect_ok('24A: sales manager can submit a team document within their access level',
+  format($$select public.submit_compliance_document(%L, %L, %L)$$,
+         soko_test.id('cr1'), soko_test.id('c_vr'), soko_test.id('cd_team_v1')));
+select soko_test.expect_count('24A: sales manager still sees no admin-only document',
+  format($$select count(*) from public.documents where id = %L$$, soko_test.id('cd_admins')), 0);
+reset role;
+select soko_test.expect_count('24A: an authorised submission shares the document with the contractor',
+  format($$select count(*) from public.document_shares where document_id = %L and recipient_company_id = %L
+          and revoked_at is null$$, soko_test.id('cd_team'), soko_test.id('c_con')), 1);
+
+select soko_test.as_user('c_sadm');
+set local role authenticated;
+select soko_test.expect_ok('24A: supplier admin can submit the admin-only document',
+  format($$select public.submit_compliance_document(%L, %L, %L)$$,
+         soko_test.id('cr2'), soko_test.id('c_vr'), soko_test.id('cd_admins_v1')));
+select soko_test.expect_sqlstate('24A: an archived document cannot be submitted',
+  format($$select public.submit_compliance_document(%L, %L, %L)$$,
+         soko_test.id('cr3'), soko_test.id('c_vr'), soko_test.id('cd_arch_v1')), '22023');
+select soko_test.expect_sqlstate('24A: a superseded version cannot be submitted',
+  format($$select public.submit_compliance_document(%L, %L, %L)$$,
+         soko_test.id('cr3'), soko_test.id('c_vr'), soko_test.id('cd_multi_v1')), '22023');
+select soko_test.expect_ok('24A: the current version can be submitted',
+  format($$select public.submit_compliance_document(%L, %L, %L)$$,
+         soko_test.id('cr3'), soko_test.id('c_vr'), soko_test.id('cd_multi_v2')));
+reset role;
+select soko_test.expect_count('24A: archived document was not shared',
+  format($$select count(*) from public.document_shares where document_id = %L$$, soko_test.id('cd_arch')), 0);
+
+-- 24B. Supplier / contractor isolation.
+select soko_test.as_user('c_xadm');
+set local role authenticated;
+select soko_test.expect_denied('24B: another supplier cannot submit against this supplier''s vendor record',
+  format($$select public.submit_compliance_document(%L, %L, %L)$$,
+         soko_test.id('cr4'), soko_test.id('c_vr'), soko_test.id('cd_team_v1')));
+select soko_test.expect_count('24B: another supplier sees none of the submissions',
+  format($$select count(*) from public.vendor_compliance_submissions where vendor_record_id = %L$$, soko_test.id('c_vr')), 0);
+select soko_test.expect_count('24B: another supplier sees none of the requirements',
+  format($$select count(*) from public.vendor_compliance_requirements where contractor_company_id = %L$$, soko_test.id('c_con')), 0);
+reset role;
+select soko_test.as_user('c_xcadm');
+set local role authenticated;
+select soko_test.expect_count('24B: another contractor sees none of the submissions',
+  format($$select count(*) from public.vendor_compliance_submissions where vendor_record_id = %L$$, soko_test.id('c_vr')), 0);
+select soko_test.expect_denied('24B: another contractor cannot review a submission',
+  format($$select public.review_compliance_submission(id, 'accepted') from public.vendor_compliance_submissions
+          where vendor_record_id = %L$$, soko_test.id('c_vr')));
+select soko_test.expect_denied('24B: another contractor cannot edit the requirements',
+  format($$update public.vendor_compliance_requirements set name = 'x' where contractor_company_id = %L$$, soko_test.id('c_con')));
+reset role;
+select soko_test.as_user('c_smgr');
+set local role authenticated;
+select soko_test.expect_count('24B: the supplier sees its own three submissions',
+  format($$select count(*) from public.vendor_compliance_submissions where vendor_record_id = %L$$, soko_test.id('c_vr')), 3);
+select soko_test.expect_denied('24B: the supplier cannot edit the contractor''s requirements',
+  format($$update public.vendor_compliance_requirements set name = 'x' where id = %L$$, soko_test.id('cr1')));
+reset role;
+
+-- 24C. Requirement changes force reassessment of accepted submissions.
+select soko_test.as_user('c_cadm');
+set local role authenticated;
+select public.review_compliance_submission(s.id, 'accepted', 'ok')
+from public.vendor_compliance_submissions s where s.requirement_id in (soko_test.id('cr1'), soko_test.id('cr2'));
+select public.review_compliance_submission(s.id, 'rejected', 'wrong doc')
+from public.vendor_compliance_submissions s where s.requirement_id = soko_test.id('cr3');
+update public.vendor_compliance_requirements set mandatory = false where id = soko_test.id('cr2');
+reset role;
+select soko_test.expect_count('24C: a non-material change (mandatory) keeps the submission accepted',
+  format($$select count(*) from public.vendor_compliance_submissions where requirement_id = %L and status = 'accepted'$$,
+         soko_test.id('cr2')), 1);
+
+select soko_test.as_user('c_cadm');
+set local role authenticated;
+update public.vendor_compliance_requirements set document_category = 'insurance' where id = soko_test.id('cr1');
+update public.vendor_compliance_requirements set name = 'Requirement cr2 (revised)' where id = soko_test.id('cr2');
+update public.vendor_compliance_requirements set name = 'Requirement cr3 (revised)' where id = soko_test.id('cr3');
+reset role;
+select soko_test.expect_count('24C: changing the document category returns an accepted submission to submitted',
+  format($$select count(*) from public.vendor_compliance_submissions where requirement_id = %L
+          and status = 'submitted' and reviewed_by is null and reviewed_at is null and review_note is null$$,
+         soko_test.id('cr1')), 1);
+select soko_test.expect_count('24C: renaming the requirement returns an accepted submission to submitted',
+  format($$select count(*) from public.vendor_compliance_submissions where requirement_id = %L and status = 'submitted'$$,
+         soko_test.id('cr2')), 1);
+select soko_test.expect_count('24C: a rejected submission stays rejected',
+  format($$select count(*) from public.vendor_compliance_submissions where requirement_id = %L and status = 'rejected'$$,
+         soko_test.id('cr3')), 1);
+select soko_test.expect_count('24C: no submission still shows as accepted after the material changes',
+  format($$select count(*) from public.vendor_compliance_submissions where vendor_record_id = %L and status = 'accepted'$$,
+         soko_test.id('c_vr')), 0);
+select soko_test.expect_count('24C: the reset is recorded in the audit log',
+  format($$select count(*) from public.audit_log where entity = 'vendor_compliance_submissions'
+          and action = 'update' and diff -> 'changed' -> 'status' ->> 'from' = 'accepted'
+          and diff -> 'changed' -> 'status' ->> 'to' = 'submitted'
+          and company_id = %L$$, soko_test.id('c_sup')), 2);
+
+select soko_test.as_user('c_cadm');
+set local role authenticated;
+select soko_test.expect_ok('24C: the contractor can reassess and accept again',
+  format($$select public.review_compliance_submission(id, 'accepted') from public.vendor_compliance_submissions
+          where requirement_id = %L$$, soko_test.id('cr1')));
+reset role;
+select soko_test.expect_count('24C: reassessed submission is accepted',
+  format($$select count(*) from public.vendor_compliance_submissions where requirement_id = %L and status = 'accepted'$$,
+         soko_test.id('cr1')), 1);
+
 
 -- -----------------------------------------------------------------------------
 -- Report

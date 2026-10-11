@@ -15,6 +15,7 @@ drop table if exists public.company_contacts cascade;
 drop table if exists public.connections cascade;
 drop table if exists public.business_cards cascade;
 
+drop function if exists private.reset_submissions_on_requirement_change();
 drop function if exists private.connection_requested_notify();
 drop function if exists private.vendor_record_company(uuid);
 drop function if exists private.is_supplier_of(uuid);
