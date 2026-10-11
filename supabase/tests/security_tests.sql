@@ -623,8 +623,8 @@ select soko_test.expect_count('10E: anon can execute no public-schema RPC',
   $$select count(*) from soko_fn where schema = 'public' and has_function_privilege('anon', oid, 'execute')$$, 0);
 select soko_test.expect_count('10E: service_role can execute no public-schema RPC',
   $$select count(*) from soko_fn where schema = 'public' and has_function_privilege('service_role', oid, 'execute')$$, 0);
-select soko_test.expect_count('10E: authenticated can execute exactly the 44 approved public RPCs',
-  $$select count(*) from soko_fn where schema = 'public' and has_function_privilege('authenticated', oid, 'execute')$$, 44);
+select soko_test.expect_count('10E: authenticated can execute exactly the 45 approved public RPCs',
+  $$select count(*) from soko_fn where schema = 'public' and has_function_privilege('authenticated', oid, 'execute')$$, 45);
 select soko_test.expect_count('10E: every authenticated grant is on the allowlist',
   $$select count(*) from soko_fn f
     where has_function_privilege('authenticated', f.oid, 'execute')
@@ -4119,6 +4119,156 @@ reset role;
 select soko_test.expect_count('24C: reassessed submission is accepted',
   format($$select count(*) from public.vendor_compliance_submissions where requirement_id = %L and status = 'accepted'$$,
          soko_test.id('cr1')), 1);
+
+-- =============================================================================
+-- 25. Migration 10 — campaign targeting privacy and confidential opportunities
+-- =============================================================================
+reset role;
+insert into soko_test.ids select k, gen_random_uuid()
+from unnest(array['mh_sadm','mh_recip','mh_out','mh_padm','mh_pub','mh_resp']) k;
+insert into auth.users (id, email, aud, role, email_confirmed_at)
+select id, key || '@soko-security.test', 'authenticated', 'authenticated', now()
+from soko_test.ids where key in ('mh_sadm','mh_recip','mh_out','mh_padm','mh_pub','mh_resp');
+insert into public.platform_admins (user_id, note) values (soko_test.id('mh_padm'), 'section 25 fixture');
+
+select soko_test.as_user('mh_sadm');
+set local role authenticated;
+insert into soko_test.ids values ('mh_sup', public.create_company('supplier', 'Market Hub Supplier LLC'));
+reset role;
+
+-- An active, reviewed campaign delivered to mh_recip only.
+insert into soko_test.ids values ('mh_camp', gen_random_uuid());
+insert into public.campaigns (id, owner_company_id, kind, promo_type, title, body, status, audience_filter,
+                              budget_credits, reviewed_by, reviewed_at, review_note)
+values (soko_test.id('mh_camp'), soko_test.id('mh_sup'), 'promotion', 'special_offer', 'Valve Offer', 'Offer body',
+        'active', '{"categories": ["Valves"], "emirates": ["Dubai"]}', 10,
+        soko_test.id('mh_padm'), now(), 'Internal moderation note');
+insert into public.campaign_recipients (campaign_id, user_id) values (soko_test.id('mh_camp'), soko_test.id('mh_recip'));
+
+-- 25A. Campaign recipients read content but not targeting or moderation.
+select soko_test.as_user('mh_recip');
+set local role authenticated;
+select soko_test.expect_count('25A: recipient can read the campaign content',
+  format($$select count(*) from public.campaigns where id = %L and title = 'Valve Offer' and body = 'Offer body'$$,
+         soko_test.id('mh_camp')), 1);
+select soko_test.expect_denied('25A: recipient cannot read audience_filter',
+  $$select audience_filter from public.campaigns$$);
+select soko_test.expect_denied('25A: recipient cannot read review_note',
+  $$select review_note from public.campaigns$$);
+select soko_test.expect_denied('25A: recipient cannot read reviewed_by',
+  $$select reviewed_by from public.campaigns$$);
+select soko_test.expect_denied('25A: recipient cannot read reviewed_at',
+  $$select reviewed_at from public.campaigns$$);
+select soko_test.expect_denied('25A: recipient cannot read the full row',
+  $$select * from public.campaigns$$);
+select soko_test.expect_denied('25A: recipient cannot call get_campaign_private_details',
+  format($$select public.get_campaign_private_details(%L)$$, soko_test.id('mh_camp')));
+reset role;
+
+select soko_test.as_user('mh_out');
+set local role authenticated;
+select soko_test.expect_count('25A: non-recipient cannot see the campaign',
+  format($$select count(*) from public.campaigns where id = %L$$, soko_test.id('mh_camp')), 0);
+select soko_test.expect_denied('25A: non-recipient cannot call get_campaign_private_details',
+  format($$select public.get_campaign_private_details(%L)$$, soko_test.id('mh_camp')));
+reset role;
+
+select soko_test.as_user('mh_sadm');
+set local role authenticated;
+select soko_test.expect_count('25A: owner reads targeting through get_campaign_private_details',
+  format($$select count(*) from (select public.get_campaign_private_details(%L) d) x
+           where d -> 'audience_filter' -> 'categories' ->> 0 = 'Valves'
+             and d ->> 'review_note' = 'Internal moderation note'$$, soko_test.id('mh_camp')), 1);
+select soko_test.expect_count('25A: owner still lists own campaigns',
+  format($$select count(*) from public.campaigns where id = %L$$, soko_test.id('mh_camp')), 1);
+insert into public.campaigns (owner_company_id, kind, promo_type, title, body, audience_filter, budget_credits)
+values (soko_test.id('mh_sup'), 'promotion', 'catalogue', 'Draft Targeting', 'Body', '{"emirates": ["Sharjah"]}', 5);
+select soko_test.expect_ok('25A: owner can still edit a draft audience_filter',
+  $$update public.campaigns set audience_filter = '{"emirates": ["Ajman"]}' where title = 'Draft Targeting'$$);
+reset role;
+select soko_test.expect_count('25A: draft audience_filter update persisted',
+  $$select count(*) from public.campaigns where title = 'Draft Targeting' and audience_filter -> 'emirates' ->> 0 = 'Ajman'$$, 1);
+
+select soko_test.as_user('mh_padm');
+set local role authenticated;
+select soko_test.expect_count('25A: platform admin reads moderation details',
+  format($$select count(*) from (select public.get_campaign_private_details(%L) d) x
+           where d ->> 'review_note' = 'Internal moderation note' and d ->> 'reviewed_by' = %L$$,
+         soko_test.id('mh_camp'), soko_test.id('mh_padm')), 1);
+reset role;
+
+-- 25B. Confidential opportunities: discoverable, but identifying fields hidden until connection.
+select soko_test.as_user('mh_pub');
+set local role authenticated;
+insert into public.opportunities (type, opp_group, title, category, location, description, scope,
+                                  project_name, attachment_name, identity)
+values ('material', 'requirements', 'Confidential valve tender', 'Valves', 'Dubai', 'Secret tower description',
+        'Secret scope', 'Secret Tower Project', 'secret-tower-boq.xlsx', 'confidential'),
+       ('material', 'requirements', 'Public pipe tender', 'Pipes', 'Dubai', 'Public pipe description',
+        'Public scope', 'Public Project', 'public-boq.xlsx', 'public');
+reset role;
+insert into soko_test.ids select 'mh_conf', id from public.opportunities where title = 'Confidential valve tender';
+insert into soko_test.ids select 'mh_public', id from public.opportunities where title = 'Public pipe tender';
+
+select soko_test.as_user('mh_resp');
+set local role authenticated;
+select soko_test.expect_count('25B: confidential opportunity is still discoverable',
+  format($$select count(*) from public.opportunities
+           where id = %L and title = 'Confidential valve tender' and category = 'Valves' and identity = 'confidential'$$,
+         soko_test.id('mh_conf')), 1);
+select soko_test.expect_denied('25B: description is not directly selectable',
+  $$select description from public.opportunities$$);
+select soko_test.expect_denied('25B: scope is not directly selectable',
+  $$select scope from public.opportunities$$);
+select soko_test.expect_denied('25B: project_name is not directly selectable',
+  $$select project_name from public.opportunities$$);
+select soko_test.expect_denied('25B: attachment_name is not directly selectable',
+  $$select attachment_name from public.opportunities$$);
+select soko_test.expect_denied('25B: full opportunity row is not selectable',
+  $$select * from public.opportunities$$);
+select soko_test.expect_count('25B: details hide identifying fields before connection',
+  format($$select count(*) from (select public.get_opportunity_details(%L) d) x
+           where d -> 'description' = 'null'::jsonb and d -> 'scope' = 'null'::jsonb
+             and d -> 'project_name' = 'null'::jsonb and d -> 'attachment_name' = 'null'::jsonb
+             and d ->> 'publisher_display' = 'Confidential publisher'$$, soko_test.id('mh_conf')), 1);
+select soko_test.expect_count('25B: public opportunity details include description and project',
+  format($$select count(*) from (select public.get_opportunity_details(%L) d) x
+           where d ->> 'description' = 'Public pipe description' and d ->> 'project_name' = 'Public Project'
+             and d ->> 'attachment_name' = 'public-boq.xlsx'$$, soko_test.id('mh_public')), 1);
+insert into public.opportunity_interests (opportunity_id, message) values (soko_test.id('mh_conf'), 'Interested');
+select soko_test.expect_count('25B: expressing interest alone does not reveal identifying fields',
+  format($$select count(*) from (select public.get_opportunity_details(%L) d) x
+           where d -> 'project_name' = 'null'::jsonb and d -> 'description' = 'null'::jsonb$$,
+         soko_test.id('mh_conf')), 1);
+reset role;
+
+select soko_test.as_user('mh_pub');
+set local role authenticated;
+select soko_test.expect_count('25B: publisher sees own confidential details',
+  format($$select count(*) from (select public.get_opportunity_details(%L) d) x
+           where d ->> 'project_name' = 'Secret Tower Project' and d ->> 'scope' = 'Secret scope'$$,
+         soko_test.id('mh_conf')), 1);
+select soko_test.expect_ok('25B: publisher connects with the responder',
+  format($$select public.set_interest_status(id, 'connected') from public.opportunity_interests
+           where opportunity_id = %L$$, soko_test.id('mh_conf')));
+reset role;
+
+select soko_test.as_user('mh_resp');
+set local role authenticated;
+select soko_test.expect_count('25B: connected responder sees identifying fields',
+  format($$select count(*) from (select public.get_opportunity_details(%L) d) x
+           where d ->> 'description' = 'Secret tower description' and d ->> 'scope' = 'Secret scope'
+             and d ->> 'project_name' = 'Secret Tower Project' and d ->> 'attachment_name' = 'secret-tower-boq.xlsx'$$,
+         soko_test.id('mh_conf')), 1);
+reset role;
+
+select soko_test.as_user('mh_out');
+set local role authenticated;
+select soko_test.expect_count('25B: unconnected user still cannot see identifying fields',
+  format($$select count(*) from (select public.get_opportunity_details(%L) d) x
+           where d -> 'project_name' = 'null'::jsonb and d -> 'attachment_name' = 'null'::jsonb$$,
+         soko_test.id('mh_conf')), 1);
+reset role;
 
 
 -- -----------------------------------------------------------------------------

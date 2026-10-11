@@ -279,8 +279,10 @@ alter table public.buyer_preferences     enable row level security;
 alter table public.supplier_mutes        enable row level security;
 
 select private.reset_table_grants('public.opportunities');
-grant select (id, type, opp_group, urgency, title, category, subcategory, location, description, scope,
-              required_by, response_deadline, identity, contact_visibility, project_name, attachment_name,
+-- Description, scope, project name and attachment name can identify a
+-- confidential publisher, so they are returned only by get_opportunity_details.
+grant select (id, type, opp_group, urgency, title, category, subcategory, location,
+              required_by, response_deadline, identity, contact_visibility,
               status, created_at, updated_at)
   on public.opportunities to authenticated;
 grant insert (owner_company_id, type, opp_group, urgency, title, category, subcategory, location, description,
@@ -334,7 +336,12 @@ create policy saved_opportunities_own_delete on public.saved_opportunities
 
 -- Campaign status, review and submission columns are never client-writable.
 select private.reset_table_grants('public.campaigns');
-grant select, delete on public.campaigns to authenticated;
+-- Recipients can read the row, so targeting and moderation columns are not
+-- selectable; owners and platform admins read them via get_campaign_private_details.
+grant select (id, owner_company_id, kind, promo_type, title, body, status, budget_credits,
+              starts_at, ends_at, submitted_at, created_by, created_at, updated_at),
+      delete
+  on public.campaigns to authenticated;
 grant insert (owner_company_id, kind, promo_type, title, body, audience_filter, budget_credits, starts_at, ends_at),
       update (promo_type, title, body, audience_filter, budget_credits, starts_at, ends_at)
   on public.campaigns to authenticated;
@@ -429,6 +436,11 @@ begin
     'is_mine', v_mine,
     'is_confidential', o.identity = 'confidential',
     'publisher_display', coalesce(v_publisher, 'Confidential publisher'),
+    -- Identifying fields of confidential opportunities are released only on connection.
+    'description',     case when o.identity = 'public' or v_mine or v_connected then o.description end,
+    'scope',           case when o.identity = 'public' or v_mine or v_connected then o.scope end,
+    'project_name',    case when o.identity = 'public' or v_mine or v_connected then o.project_name end,
+    'attachment_name', case when o.identity = 'public' or v_mine or v_connected then o.attachment_name end,
     -- Confidential publishers' contact details are released only on connection.
     'contact', case when v_mine or v_connected
                          or (o.contact_visibility = 'members' and o.identity = 'public')
@@ -625,6 +637,24 @@ begin
                               where e.campaign_id = p_campaign group by e.type) t), '{}'::jsonb));
 end $$;
 
+-- Targeting and moderation fields: owner company members and platform admins only.
+create or replace function public.get_campaign_private_details(p_campaign uuid) returns jsonb
+language plpgsql stable security definer set search_path = '' as $$
+declare c public.campaigns%rowtype;
+begin
+  perform private.require_user();
+  select * into c from public.campaigns where id = p_campaign;
+  if c.id is null or not (private.is_member(c.owner_company_id) or private.is_platform_admin()) then
+    raise exception 'not allowed' using errcode = '42501';
+  end if;
+  return jsonb_build_object(
+    'id', c.id,
+    'audience_filter', c.audience_filter,
+    'reviewed_by', c.reviewed_by,
+    'reviewed_at', c.reviewed_at,
+    'review_note', c.review_note);
+end $$;
+
 -- Responder identity is revealed only when the responder chose to share it.
 create or replace function public.get_campaign_responses(p_campaign uuid)
 returns table (id uuid, availability public.response_availability, message text, created_at timestamptz,
@@ -722,6 +752,7 @@ select private.allow_execute(array['authenticated'], array[
   'public.set_campaign_status(uuid, public.campaign_status)',
   'public.record_campaign_event(uuid, public.campaign_event_type, boolean, text)',
   'public.get_campaign_stats(uuid)',
+  'public.get_campaign_private_details(uuid)',
   'public.get_campaign_responses(uuid)'
 ]);
 

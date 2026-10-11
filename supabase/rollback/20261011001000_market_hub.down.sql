@@ -3,6 +3,7 @@
 drop function if exists private.activate_due_campaigns();
 drop function if exists public.get_campaign_responses(uuid);
 drop function if exists public.get_campaign_stats(uuid);
+drop function if exists public.get_campaign_private_details(uuid);
 drop function if exists public.record_campaign_event(uuid, public.campaign_event_type, boolean, text);
 drop function if exists public.set_campaign_status(uuid, public.campaign_status);
 drop function if exists public.review_campaign(uuid, boolean, text);
