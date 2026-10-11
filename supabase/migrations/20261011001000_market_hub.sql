@@ -135,7 +135,12 @@ create trigger campaigns_updated_at before update on public.campaigns
   for each row execute function private.set_updated_at();
 create trigger campaigns_created_by before insert on public.campaigns
   for each row execute function private.stamp_created_by();
-select private.attach_audit('public.campaigns');
+-- Body, audience filter and review note are redacted.
+select private.attach_audit('public.campaigns',
+  array['owner_company_id'],
+  array['id', 'owner_company_id', 'kind', 'promo_type', 'title', 'status', 'budget_credits',
+        'starts_at', 'ends_at', 'submitted_at', 'reviewed_by', 'reviewed_at', 'created_by'],
+  array['created_at', 'updated_at']);
 
 create table public.campaign_recipients (
   campaign_id  uuid not null references public.campaigns (id) on delete cascade,

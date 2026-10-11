@@ -1088,6 +1088,186 @@ select soko_test.expect_count('LA: cascade removed every membership of the delet
 select soko_test.expect_count('LA: cascade cleared the company''s guard row',
   format($$select count(*) from private.company_admin_guard where company_id = %L$$, soko_test.id('la_co')), 0);
 
+-- =============================================================================
+-- 11. Migration 04 — audit redaction, entity identification, notification isolation
+-- =============================================================================
+reset role;
+select soko_test.as_user('sup_admin');
+
+update public.companies
+set license_no = 'LIC-AUDIT-SECRET-77', issuing_authority = 'AUTH-SECRET-DED',
+    address = '1 Audit Secret Street', general_email = 'ceo@audit-secret.test',
+    phone = '+971500007777', trading_name = 'Audit Visible Trading'
+where id = soko_test.id('supplier');
+
+update public.vendor_records
+set contact_name = 'Vendor Secret Person', contact_email = 'vendor@audit-secret.test',
+    contact_phone = '+971509990000', approval_note = 'private approval reasoning'
+where id = soko_test.id('vendor_record');
+
+-- Redaction -------------------------------------------------------------------
+select soko_test.expect_count('AU: company audit holds no licence, address, email or phone values',
+  $$select count(*) from public.audit_log where entity = 'companies'
+    and diff::text ~ '(LIC-AUDIT-SECRET|AUTH-SECRET|Audit Secret Street|audit-secret\.test|500007777)'$$, 0);
+select soko_test.expect_count('AU: company audit names each redacted licence/contact field',
+  format($$select count(*) from public.audit_log where entity = 'companies' and entity_id = %L and action = 'update'
+    and diff -> 'redacted' ?& array['license_no','issuing_authority','address','general_email','phone']$$,
+    soko_test.id('supplier')), 1);
+select soko_test.expect_count('AU: allowlisted company change keeps its before/after value',
+  format($$select count(*) from public.audit_log where entity = 'companies' and entity_id = %L
+    and diff -> 'changed' -> 'trading_name' ->> 'to' = 'Audit Visible Trading'$$, soko_test.id('supplier')), 1);
+select soko_test.expect_count('AU: vendor contact details and approval note are redacted',
+  $$select count(*) from public.audit_log where entity = 'vendor_records'
+    and diff::text ~ '(Vendor Secret Person|audit-secret\.test|509990000|private approval reasoning)'$$, 0);
+select soko_test.expect_count('AU: vendor audit records which private fields changed, for the contractor only',
+  format($$select count(*) from public.audit_log where entity = 'vendor_records' and entity_id = %L and company_id = %L
+    and diff -> 'redacted' ?& array['contact_name','contact_email','contact_phone','approval_note']$$,
+    soko_test.id('vendor_record'), soko_test.id('contractor')), 1);
+select soko_test.expect_count('AU: invitation audits contain no invitee email',
+  $$select count(*) from public.audit_log where entity = 'company_invitations' and diff::text like '%soko-security.test%'$$, 0);
+select soko_test.expect_count('AU: invitation audits flag the email as redacted',
+  $$select (count(*) > 0)::int from public.audit_log where entity = 'company_invitations' and diff -> 'redacted' ? 'email'$$, 1);
+select soko_test.expect_count('AU: token hashes are never named or stored in audit diffs',
+  $$select count(*) from public.audit_log where diff::text like '%token_hash%'$$, 0);
+select soko_test.expect_count('AU: no audit diff contains a document storage path',
+  $$select count(*) from public.audit_log a join public.document_versions v on position(v.storage_path in a.diff::text) > 0$$, 0);
+select soko_test.expect_count('AU: document version audit flags storage path and file name as redacted',
+  format($$select count(*) from public.audit_log where entity = 'document_versions' and entity_id = %L and action = 'insert'
+    and diff -> 'redacted' ?& array['storage_path','file_name']$$, soko_test.id('document_version')), 1);
+select soko_test.expect_count('AU: platform admin note is redacted',
+  format($$select count(*) from public.audit_log where entity = 'platform_admins' and entity_id = %L
+    and diff -> 'redacted' ? 'note' and diff::text not like '%%security test fixture%%'$$, soko_test.id('padmin')), 1);
+
+-- Entity identification -------------------------------------------------------
+select soko_test.expect_count('AU: subscription audit is identified by its company_id primary key',
+  format($$select (count(*) > 0)::int from public.audit_log where entity = 'company_subscriptions'
+    and entity_id = %L and entity_key = jsonb_build_object('company_id', %L::uuid)$$,
+    soko_test.id('supplier'), soko_test.id('supplier')), 1);
+select soko_test.expect_count('AU: platform admin audit is identified by user_id and has no company',
+  format($$select count(*) from public.audit_log where entity = 'platform_admins' and entity_id = %L
+    and entity_key ->> 'user_id' = %L and company_id is null$$, soko_test.id('padmin'), soko_test.id('padmin')), 1);
+select soko_test.expect_count('AU: no audit row is missing its entity id',
+  $$select count(*) from public.audit_log a
+    where a.entity in (select table_name from private.audit_config) and a.entity_id is null$$, 0);
+select soko_test.expect_count('AU: every company-owned audit row names its company',
+  $$select count(*) from public.audit_log where entity <> 'platform_admins' and company_id is null$$, 0);
+select soko_test.expect_count('AU: a visit is audited once for each party',
+  format($$select count(distinct company_id) from public.audit_log
+    where entity = 'visits' and entity_id = %L and action = 'insert'$$, soko_test.id('visit')), 2);
+
+create table soko_test.audit_pair (
+  region text, seq int, label text, secret text, touched_at timestamptz,
+  primary key (seq, region)
+);
+select private.attach_audit('soko_test.audit_pair', '{}', array['region','seq','label'], array['touched_at']);
+insert into soko_test.audit_pair values ('ae', 7, 'visible', 'hidden-value', now());
+update soko_test.audit_pair set touched_at = now() + interval '1 hour';
+update soko_test.audit_pair set secret = 'hidden-value-2';
+delete from soko_test.audit_pair;
+
+select soko_test.expect_count('AU: composite key is joined in primary-key order',
+  $$select count(*) from public.audit_log where entity = 'audit_pair' and entity_id = '7/ae'
+    and entity_key = '{"seq": 7, "region": "ae"}'::jsonb$$, 3);
+select soko_test.expect_count('AU: composite-key insert logs allowlisted values and redacts the rest',
+  $$select count(*) from public.audit_log where entity = 'audit_pair' and action = 'insert'
+    and diff = '{"values": {"seq": 7, "label": "visible", "region": "ae"}, "redacted": ["secret"]}'::jsonb$$, 1);
+select soko_test.expect_count('AU: an update touching only omitted columns writes no audit row',
+  $$select count(*) from public.audit_log where entity = 'audit_pair' and action = 'update'$$, 1);
+select soko_test.expect_count('AU: a redacted-only update is still recorded, without values',
+  $$select count(*) from public.audit_log where entity = 'audit_pair' and action = 'update'
+    and diff = '{"changed": {}, "redacted": ["secret"]}'::jsonb$$, 1);
+select soko_test.expect_count('AU: no composite-table audit contains the secret value',
+  $$select count(*) from public.audit_log where entity = 'audit_pair' and diff::text like '%hidden-value%'$$, 0);
+
+create table soko_test.audit_nopk (a int);
+create table soko_test.audit_noconf (id int primary key, secret text);
+create trigger audit_row after insert on soko_test.audit_noconf
+  for each row execute function private.audit_row();
+insert into soko_test.audit_noconf values (1, 'leak-me');
+
+select soko_test.expect_denied('AU: attach_audit rejects an unknown column',
+  $$select private.attach_audit('soko_test.audit_pair', '{}', array['region','no_such_column'])$$);
+select soko_test.expect_denied('AU: attach_audit rejects a table without a primary key',
+  $$select private.attach_audit('soko_test.audit_nopk', '{}', array['a'])$$);
+select soko_test.expect_denied('AU: attach_audit rejects a column both logged and omitted',
+  $$select private.attach_audit('soko_test.audit_pair', '{}', array['label'], array['label'])$$);
+select soko_test.expect_count('AU: an unregistered audit trigger records nothing but the event',
+  $$select count(*) from public.audit_log where entity = 'audit_noconf' and diff = '{"unconfigured": true}'::jsonb
+    and diff::text not like '%leak-me%'$$, 1);
+
+-- Audit visibility and integrity ---------------------------------------------
+select soko_test.expect_denied('AU: even the table owner cannot delete audit rows',
+  $$delete from public.audit_log where entity = 'audit_pair'$$);
+
+select soko_test.as_user('con_admin');
+set local role authenticated;
+select soko_test.expect_count('AU: contractor admin sees its own vendor audit trail',
+  $$select (count(*) > 0)::int from public.audit_log where entity = 'vendor_records'$$, 1);
+select soko_test.expect_count('AU: contractor admin sees no supplier audit rows',
+  format($$select count(*) from public.audit_log where company_id = %L$$, soko_test.id('supplier')), 0);
+select soko_test.expect_count('AU: each visit party reads only its own copy of the visit audit',
+  format($$select count(*) from public.audit_log where entity = 'visits' and entity_id = %L and action = 'insert'$$,
+    soko_test.id('visit')), 1);
+select soko_test.expect_denied('AU: clients cannot read the audit registry',
+  $$select count(*) from private.audit_config$$);
+select soko_test.expect_denied('AU: clients cannot register audit tables',
+  $$select private.attach_audit('public.notifications', '{}', array['id'])$$);
+reset role;
+
+select soko_test.as_user('sup_viewer');
+set local role authenticated;
+select soko_test.expect_count('AU: a member without team.manage sees no audit rows',
+  $$select count(*) from public.audit_log$$, 0);
+reset role;
+
+-- Notification isolation -----------------------------------------------------
+select private.notify_permission_holders(soko_test.id('supplier'), 'team.manage', 'audit_test.ping',
+  jsonb_build_object('k', 'v'));
+select private.notify(null, soko_test.id('supplier'), 'audit_test.null');
+
+select soko_test.expect_count('NT: permission notifications reach only that company''s permission holders',
+  format($$select count(*) from public.notifications n where n.type = 'audit_test.ping'
+    and not exists (select 1 from public.company_memberships m
+      join public.role_permissions rp on rp.company_kind = m.company_kind and rp.role_key = m.role_key
+      where m.company_id = %L and m.user_id = n.user_id and m.status = 'active' and rp.permission = 'team.manage')$$,
+    soko_test.id('supplier')), 0);
+select soko_test.expect_count('NT: a notification with no recipient is dropped',
+  $$select count(*) from public.notifications where type = 'audit_test.null'$$, 0);
+select soko_test.expect_count('NT: no notification payload carries tokens, storage paths or licence numbers',
+  $$select count(*) from public.notifications n
+    where n.payload::text ~ '(token_hash|storage_path|license_no|LIC-AUDIT-SECRET)'
+       or exists (select 1 from public.document_versions v where position(v.storage_path in n.payload::text) > 0)$$, 0);
+
+select soko_test.as_user('sup_admin');
+set local role authenticated;
+select soko_test.expect_count('NT: the recipient sees its notification',
+  $$select count(*) from public.notifications where type = 'audit_test.ping'$$, 1);
+select soko_test.expect_denied('NT: recipient cannot rewrite the payload',
+  $$update public.notifications set payload = '{"forged": true}' where type = 'audit_test.ping'$$);
+select soko_test.expect_denied('NT: recipient cannot move a notification to another company',
+  format($$update public.notifications set company_id = %L where type = 'audit_test.ping'$$, soko_test.id('contractor')));
+select soko_test.expect_denied('NT: recipient cannot hand a notification to another user',
+  format($$update public.notifications set user_id = %L where type = 'audit_test.ping'$$, soko_test.id('con_admin')));
+select soko_test.expect_ok('NT: recipient can mark its notification read',
+  $$update public.notifications set read_at = now() where type = 'audit_test.ping'$$);
+reset role;
+
+select soko_test.as_user('con_admin');
+set local role authenticated;
+select soko_test.expect_count('NT: another company''s admin cannot see the notification',
+  $$select count(*) from public.notifications where type = 'audit_test.ping'$$, 0);
+select soko_test.expect_denied('NT: another company''s admin cannot mark it read',
+  $$update public.notifications set read_at = null where type = 'audit_test.ping'$$);
+select soko_test.expect_denied('NT: another company''s admin cannot delete it',
+  $$delete from public.notifications where type = 'audit_test.ping'$$);
+reset role;
+
+select soko_test.as_user('sup_viewer');
+set local role authenticated;
+select soko_test.expect_count('NT: a same-company member without the permission does not receive it',
+  $$select count(*) from public.notifications where type = 'audit_test.ping'$$, 0);
+reset role;
+
 -- -----------------------------------------------------------------------------
 -- Report
 -- -----------------------------------------------------------------------------

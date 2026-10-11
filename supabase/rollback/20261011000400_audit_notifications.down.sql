@@ -17,6 +17,7 @@ drop function if exists private.notify(uuid, uuid, text, jsonb);
 drop table if exists public.notifications cascade;
 
 -- Dropping the auditor removes every audit_row trigger that uses it.
-drop function if exists private.attach_audit(regclass);
+drop function if exists private.attach_audit(regclass, text[], text[], text[]);
+drop table if exists private.audit_config;
 drop function if exists private.audit_row() cascade;
 drop table if exists public.audit_log cascade;

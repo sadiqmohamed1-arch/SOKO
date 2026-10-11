@@ -83,9 +83,20 @@ alter table public.company_verifications
   add constraint company_verifications_license_document_fk
   foreign key (license_document_id) references public.documents (id) on delete set null;
 
-select private.attach_audit('public.documents');
-select private.attach_audit('public.document_versions');
-select private.attach_audit('public.document_shares');
+-- Document names are redacted (they often identify people or licences).
+select private.attach_audit('public.documents',
+  array['company_id'],
+  array['id', 'company_id', 'category', 'access_level', 'is_public', 'expiry', 'reminder_days',
+        'for_verification', 'archived', 'current_version', 'created_by'],
+  array['created_at', 'updated_at']);
+-- Storage path and file name are redacted.
+select private.attach_audit('public.document_versions',
+  array['company_id'],
+  array['id', 'document_id', 'company_id', 'version', 'mime_type', 'size_bytes', 'uploaded_by', 'uploaded_at']);
+select private.attach_audit('public.document_shares',
+  array['owner_company_id'],
+  array['id', 'document_id', 'owner_company_id', 'recipient_company_id', 'shared_by', 'shared_at',
+        'expires_at', 'revoked_at', 'revoked_by']);
 
 -- -----------------------------------------------------------------------------
 -- Access predicates

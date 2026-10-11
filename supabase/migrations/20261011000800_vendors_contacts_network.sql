@@ -121,7 +121,12 @@ create trigger vendor_records_updated_at before update on public.vendor_records
   for each row execute function private.set_updated_at();
 create trigger vendor_records_created_by before insert on public.vendor_records
   for each row execute function private.stamp_created_by();
-select private.attach_audit('public.vendor_records');
+-- Private to the contractor. Vendor contact details and approval note are redacted.
+select private.attach_audit('public.vendor_records',
+  array['contractor_company_id'],
+  array['id', 'contractor_company_id', 'contractor_kind', 'supplier_company_id', 'external_name',
+        'trade_category', 'approval_status', 'approved_by', 'approved_at', 'created_by'],
+  array['created_at', 'updated_at']);
 
 create table public.vendor_notes (
   id                    uuid primary key default gen_random_uuid(),
@@ -162,7 +167,11 @@ create table public.vendor_compliance_submissions (
   unique (requirement_id, vendor_record_id)
 );
 create index on public.vendor_compliance_submissions (supplier_company_id);
-select private.attach_audit('public.vendor_compliance_submissions');
+-- Evidence document reference and review note are redacted.
+select private.attach_audit('public.vendor_compliance_submissions',
+  array['supplier_company_id'],
+  array['id', 'requirement_id', 'vendor_record_id', 'supplier_company_id', 'status', 'submitted_by',
+        'submitted_at', 'reviewed_by', 'reviewed_at']);
 
 -- Supplier-side visibility helpers (the supplier cannot read vendor_records).
 create or replace function private.is_vendor_supplier(p_vendor_record uuid) returns boolean

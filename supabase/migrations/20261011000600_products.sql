@@ -62,7 +62,12 @@ begin
 end $$;
 create trigger products_published_at before insert or update of status on public.products
   for each row execute function private.products_published_at();
-select private.attach_audit('public.products');
+-- Description and image paths are redacted; the search vector is dropped.
+select private.attach_audit('public.products',
+  array['company_id'],
+  array['id', 'company_id', 'company_kind', 'name', 'type', 'category', 'subcategory', 'brand',
+        'status', 'published_at', 'created_by'],
+  array['search', 'created_at', 'updated_at']);
 
 create table public.product_specs (
   id         uuid primary key default gen_random_uuid(),

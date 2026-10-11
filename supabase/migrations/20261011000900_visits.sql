@@ -35,7 +35,13 @@ create index visits_host_time on public.visits (host_company_id, scheduled_at);
 create index visits_supplier_time on public.visits (supplier_company_id, scheduled_at);
 create trigger visits_updated_at before update on public.visits
   for each row execute function private.set_updated_at();
-select private.attach_audit('public.visits');
+-- Logged for both parties. Location, purpose, kiosk badge and reason are redacted.
+select private.attach_audit('public.visits',
+  array['host_company_id', 'supplier_company_id'],
+  array['id', 'supplier_company_id', 'host_company_id', 'requested_by_company', 'scheduled_at',
+        'duration_minutes', 'visit_type', 'status', 'check_in_at', 'check_out_at', 'created_by',
+        'confirmed_by', 'declined_by'],
+  array['created_at', 'updated_at']);
 
 create table public.visit_attendees (
   id         uuid primary key default gen_random_uuid(),

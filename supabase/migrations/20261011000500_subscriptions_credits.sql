@@ -48,7 +48,11 @@ insert into public.company_subscriptions (company_id, plan_id)
 select c.id, p.id from public.companies c join public.plans p on p.company_kind = c.kind and p.is_default
 on conflict (company_id) do nothing;
 
-select private.attach_audit('public.company_subscriptions');
+-- Payment-provider reference is redacted.
+select private.attach_audit('public.company_subscriptions',
+  array['company_id'],
+  array['company_id', 'plan_id', 'status', 'current_period_end'],
+  array['updated_at']);
 
 -- -----------------------------------------------------------------------------
 -- Credit ledger (append-only)

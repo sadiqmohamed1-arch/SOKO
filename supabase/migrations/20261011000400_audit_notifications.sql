@@ -15,63 +15,193 @@ create table public.audit_log (
   action     text not null,
   entity     text not null,
   entity_id  text,
+  entity_key jsonb,
   diff       jsonb not null default '{}'::jsonb,
   at         timestamptz not null default now()
 );
+comment on column public.audit_log.entity_id is
+  'Primary-key value of the audited row; composite keys are joined with "/" in key order.';
+comment on column public.audit_log.entity_key is
+  'Primary key of the audited row as {column: value}, for exact lookups on any key shape.';
 create index audit_log_company_at on public.audit_log (company_id, at desc);
 create index audit_log_entity on public.audit_log (entity, entity_id);
 create trigger audit_log_append_only before update or delete on public.audit_log
   for each row execute function private.forbid_mutation();
 
--- Generic row auditor. Company is resolved from the usual ownership columns.
--- Secrets and derived columns are stripped from the stored diff.
+-- -----------------------------------------------------------------------------
+-- Audit registry. Each audited table declares:
+--   company_columns  which row columns name the companies that may read the entry
+--                    (one entry per distinct company; none = platform admins only)
+--   logged_columns   columns whose VALUES are copied into the diff
+--   omitted_columns  noise or secrets dropped entirely (not even named)
+-- Every other column — including any added later — is default-deny: the diff
+-- records only that it was set or changed, under "redacted", never its value.
+-- -----------------------------------------------------------------------------
+create table private.audit_config (
+  schema_name     text   not null,
+  table_name      text   not null,
+  pk_columns      text[] not null,
+  company_columns text[] not null default '{}',
+  logged_columns  text[] not null,
+  omitted_columns text[] not null default '{}',
+  primary key (schema_name, table_name)
+);
+revoke all on table private.audit_config from public, anon, authenticated, service_role;
+
+-- Diff shape:
+--   insert/delete  {"values":  {col: value, ...},              "redacted": [col, ...]}
+--   update         {"changed": {col: {"from": v, "to": v}, ...}, "redacted": [col, ...]}
 create or replace function private.audit_row() returns trigger
 language plpgsql security definer set search_path = '' as $$
 declare
-  v_new jsonb := case when tg_op <> 'DELETE' then to_jsonb(new) end;
-  v_old jsonb := case when tg_op <> 'INSERT' then to_jsonb(old) end;
-  v_row jsonb := coalesce(v_new, v_old);
-  v_diff jsonb;
-  v_company uuid;
+  v_cfg       private.audit_config;
+  v_new       jsonb := case when tg_op <> 'DELETE' then to_jsonb(new) end;
+  v_old       jsonb := case when tg_op <> 'INSERT' then to_jsonb(old) end;
+  v_row       jsonb := coalesce(v_new, v_old);
+  v_key       jsonb;
+  v_entity_id text;
+  v_values    jsonb := '{}'::jsonb;
+  v_redacted  text[] := '{}';
+  v_diff      jsonb;
+  v_companies uuid[];
+  r           record;
 begin
-  v_company := private.try_uuid(case
-    when tg_table_name = 'companies' then v_row ->> 'id'
-    else coalesce(v_row ->> 'company_id', v_row ->> 'owner_company_id',
-                  v_row ->> 'contractor_company_id', v_row ->> 'host_company_id')
-  end);
+  select * into v_cfg from private.audit_config c
+  where c.schema_name = tg_table_schema and c.table_name = tg_table_name;
 
-  if tg_op = 'UPDATE' then
-    select coalesce(jsonb_object_agg(n.key, jsonb_build_object('from', v_old -> n.key, 'to', n.value)), '{}'::jsonb)
-    into v_diff
-    from jsonb_each(v_new) n
-    where n.value is distinct from (v_old -> n.key) and n.key not in ('updated_at', 'search');
-    if v_diff = '{}'::jsonb then
-      return new;
-    end if;
-  else
-    v_diff := v_row;
+  -- A trigger without a registry entry must never leak data nor block the write.
+  if not found then
+    insert into public.audit_log (company_id, actor_id, action, entity, diff)
+    values (null, auth.uid(), lower(tg_op), tg_table_name, jsonb_build_object('unconfigured', true));
+    return coalesce(new, old);
   end if;
 
-  v_diff := v_diff - 'token_hash' - 'search';
+  select jsonb_object_agg(p.col, v_row -> p.col),
+         string_agg(coalesce(v_row ->> p.col, ''), '/' order by p.ord)
+  into v_key, v_entity_id
+  from unnest(v_cfg.pk_columns) with ordinality as p(col, ord);
 
-  insert into public.audit_log (company_id, actor_id, action, entity, entity_id, diff)
-  values (v_company, auth.uid(), lower(tg_op), tg_table_name, v_row ->> 'id', v_diff);
+  for r in
+    select e.key, e.value as new_value, v_old -> e.key as old_value
+    from jsonb_each(v_row) e
+    where not (e.key = any (v_cfg.omitted_columns))
+      and case when tg_op = 'UPDATE' then e.value is distinct from (v_old -> e.key)
+               else e.value <> 'null'::jsonb end
+    order by e.key
+  loop
+    if r.key = any (v_cfg.logged_columns) then
+      v_values := v_values || jsonb_build_object(r.key,
+        case when tg_op = 'UPDATE' then jsonb_build_object('from', r.old_value, 'to', r.new_value)
+             else r.new_value end);
+    else
+      v_redacted := v_redacted || r.key;
+    end if;
+  end loop;
+
+  if tg_op = 'UPDATE' and v_values = '{}'::jsonb and cardinality(v_redacted) = 0 then
+    return new;
+  end if;
+
+  v_diff := jsonb_build_object(case when tg_op = 'UPDATE' then 'changed' else 'values' end, v_values);
+  if cardinality(v_redacted) > 0 then
+    v_diff := v_diff || jsonb_build_object('redacted', to_jsonb(v_redacted));
+  end if;
+
+  select array_agg(distinct s.company) into v_companies
+  from (select private.try_uuid(v_row ->> c) as company from unnest(v_cfg.company_columns) c) s
+  where s.company is not null;
+
+  insert into public.audit_log (company_id, actor_id, action, entity, entity_id, entity_key, diff)
+  select c, auth.uid(), lower(tg_op), tg_table_name, v_entity_id, v_key, v_diff
+  from unnest(coalesce(v_companies, array[null::uuid])) c;
+
   return coalesce(new, old);
 end $$;
 
-create or replace function private.attach_audit(p_table regclass) returns void
+-- Registers (or re-registers) a table and attaches the trigger. Fails loudly on
+-- unknown columns, overlapping lists or a missing primary key so a typo cannot
+-- silently widen what is logged.
+create or replace function private.attach_audit(
+  p_table regclass, p_company_columns text[], p_logged text[], p_omitted text[] default '{}'
+) returns void
 language plpgsql set search_path = '' as $$
+declare
+  v_schema text;
+  v_name   text;
+  v_pk     text[];
+  v_cols   text[];
+  v_bad    text[];
 begin
+  select n.nspname, c.relname into v_schema, v_name
+  from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+  where c.oid = p_table;
+
+  select array_agg(a.attname::text order by array_position(i.indkey::int[], a.attnum::int))
+  into v_pk
+  from pg_catalog.pg_index i
+  join pg_catalog.pg_attribute a on a.attrelid = i.indrelid and a.attnum = any (i.indkey)
+  where i.indrelid = p_table and i.indisprimary;
+  if v_pk is null then
+    raise exception 'attach_audit: % has no primary key', p_table;
+  end if;
+
+  select array_agg(a.attname::text) into v_cols
+  from pg_catalog.pg_attribute a
+  where a.attrelid = p_table and a.attnum > 0 and not a.attisdropped;
+
+  select array_agg(x) into v_bad
+  from unnest(coalesce(p_company_columns, '{}') || coalesce(p_logged, '{}') || coalesce(p_omitted, '{}')) x
+  where not (x = any (v_cols));
+  if v_bad is not null then
+    raise exception 'attach_audit: % has no column(s) %', p_table, v_bad;
+  end if;
+
+  select array_agg(x) into v_bad from unnest(p_logged) x where x = any (p_omitted);
+  if v_bad is not null then
+    raise exception 'attach_audit: column(s) % cannot be both logged and omitted', v_bad;
+  end if;
+
+  insert into private.audit_config as ac
+    (schema_name, table_name, pk_columns, company_columns, logged_columns, omitted_columns)
+  values (v_schema, v_name, v_pk, coalesce(p_company_columns, '{}'), coalesce(p_logged, '{}'), coalesce(p_omitted, '{}'))
+  on conflict (schema_name, table_name) do update
+    set pk_columns = excluded.pk_columns, company_columns = excluded.company_columns,
+        logged_columns = excluded.logged_columns, omitted_columns = excluded.omitted_columns;
+
+  execute format('drop trigger if exists audit_row on %s', p_table);
   execute format(
     'create trigger audit_row after insert or update or delete on %s for each row execute function private.audit_row()',
     p_table);
 end $$;
 
-select private.attach_audit('public.companies');
-select private.attach_audit('public.company_memberships');
-select private.attach_audit('public.company_invitations');
-select private.attach_audit('public.company_verifications');
-select private.attach_audit('public.platform_admins');
+-- Redacted by default here: licence number, issuing authority and expiry,
+-- address, email, phone, description and media paths.
+select private.attach_audit('public.companies',
+  array['id'],
+  array['id', 'soko_id', 'kind', 'legal_name', 'trading_name', 'country', 'emirate', 'website',
+        'established', 'is_public', 'verification_status', 'verified_at', 'is_suspended', 'created_by'],
+  array['created_at', 'updated_at']);
+
+select private.attach_audit('public.company_memberships',
+  array['company_id'],
+  array['id', 'company_id', 'company_kind', 'user_id', 'role_key', 'status', 'invited_by', 'removed_at'],
+  array['created_at', 'updated_at']);
+
+-- Invitee email is redacted; the token hash is dropped entirely.
+select private.attach_audit('public.company_invitations',
+  array['company_id'],
+  array['id', 'company_id', 'company_kind', 'role_key', 'expires_at', 'accepted_at', 'accepted_by',
+        'revoked_at', 'invited_by'],
+  array['token_hash', 'created_at']);
+
+-- Licence document reference and reviewer note are redacted.
+select private.attach_audit('public.company_verifications',
+  array['company_id'],
+  array['id', 'company_id', 'status', 'submitted_by', 'submitted_at', 'reviewed_by', 'reviewed_at']);
+
+select private.attach_audit('public.platform_admins',
+  array[]::text[],
+  array['user_id', 'granted_at']);
 
 -- -----------------------------------------------------------------------------
 -- Notifications
@@ -132,7 +262,7 @@ language plpgsql security definer set search_path = '' as $$
 begin
   if tg_op = 'UPDATE' and new.status is distinct from old.status then
     perform private.notify_permission_holders(new.company_id, 'team.manage', 'verification.' || new.status::text,
-      jsonb_build_object('verification_id', new.id, 'note', new.note));
+      jsonb_build_object('verification_id', new.id, 'note', left(new.note, 500)));
   end if;
   return new;
 end $$;
