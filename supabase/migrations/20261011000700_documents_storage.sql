@@ -298,7 +298,7 @@ create policy soko_verification_insert on storage.objects
 create policy soko_verification_select on storage.objects
   for select to authenticated
   using (bucket_id = 'verification'
-         and (private.is_company_admin(private.storage_company(name)) or private.is_platform_admin()));
+         and (private.holds_admin_role(private.storage_company(name)) or private.is_platform_admin()));
 
 create policy soko_avatars_select on storage.objects
   for select to authenticated using (bucket_id = 'avatars');

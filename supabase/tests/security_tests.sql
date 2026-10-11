@@ -92,7 +92,11 @@ insert into soko_test.ids (key, id) values
   ('rejoiner',    '00000000-0000-4000-8000-00000000000e'),
   ('pending_user','00000000-0000-4000-8000-00000000000f'),
   ('removed_user','00000000-0000-4000-8000-000000000010'),
-  ('revoked_user','00000000-0000-4000-8000-000000000011');
+  ('revoked_user','00000000-0000-4000-8000-000000000011'),
+  ('susp_admin',  '00000000-0000-4000-8000-000000000012'),
+  ('susp_member', '00000000-0000-4000-8000-000000000013'),
+  ('susp_invitee','00000000-0000-4000-8000-000000000014'),
+  ('susp_joiner', '00000000-0000-4000-8000-000000000015');
 
 insert into auth.users (id, email, aud, role, raw_user_meta_data, email_confirmed_at)
 select i.id, i.key || '@soko-security.test', 'authenticated', 'authenticated',
@@ -878,6 +882,152 @@ set local role authenticated;
 select soko_test.expect_denied('INV: clients cannot call private.user_can_assign_role',
   format($$select private.user_can_assign_role(%L, %L, 'supplier_admin')$$,
          soko_test.id('supplier'), soko_test.id('sup_admin')));
+reset role;
+
+-- -----------------------------------------------------------------------------
+-- 9. Suspended-company authorisation
+-- -----------------------------------------------------------------------------
+-- Setup while the company is active.
+select soko_test.as_user('susp_admin');
+set local role authenticated;
+insert into soko_test.ids values ('susp_co', public.create_company('supplier', 'Suspension Test Supplier LLC'));
+update public.companies set is_public = true where id = soko_test.id('susp_co');
+insert into soko_test.secrets values ('susp_member_token',
+  public.invite_member(soko_test.id('susp_co'), 'susp_member@soko-security.test', 'viewer'));
+insert into soko_test.secrets values ('susp_pre_token',
+  public.invite_member(soko_test.id('susp_co'), 'susp_invitee@soko-security.test', 'viewer'));
+select public.submit_verification(soko_test.id('susp_co'), 'LIC-SUSP-1', 'DED', current_date + 365);
+reset role;
+
+select soko_test.as_user('susp_member');
+set local role authenticated;
+select public.accept_invitation((select value from soko_test.secrets where key = 'susp_member_token'));
+reset role;
+
+select soko_test.as_user('susp_joiner');
+set local role authenticated;
+insert into soko_test.ids values ('susp_join_req', public.request_to_join(soko_test.id('susp_co')));
+reset role;
+
+insert into soko_test.ids
+select 'susp_member_m', id from public.company_memberships
+where company_id = soko_test.id('susp_co') and user_id = soko_test.id('susp_member');
+insert into soko_test.ids
+select 'susp_verification', id from public.company_verifications
+where company_id = soko_test.id('susp_co') and status = 'pending';
+
+-- Platform admin suspends the company.
+select soko_test.as_user('padmin');
+set local role authenticated;
+select public.admin_set_company_suspension(soko_test.id('susp_co'), true, 'security test');
+reset role;
+
+select soko_test.expect_count('SUSP: suspension revokes every open invitation',
+  format($$select count(*) from public.company_invitations
+           where company_id = %L and accepted_at is null and revoked_at is null$$, soko_test.id('susp_co')), 0);
+
+-- Privileged operations are denied to the suspended company's admin.
+select soko_test.as_user('susp_admin');
+set local role authenticated;
+select soko_test.expect_count('SUSP: is_company_admin is false while suspended',
+  format($$select count(*) from (select 1 where private.is_company_admin(%L)) x$$, soko_test.id('susp_co')), 0);
+select soko_test.expect_denied('SUSP: cannot submit verification',
+  format($$select public.submit_verification(%L, 'LIC-SUSP-2', 'DED', current_date + 365)$$, soko_test.id('susp_co')));
+select soko_test.expect_denied('SUSP: cannot invite a member',
+  format($$select public.invite_member(%L, 'susp_new@soko-security.test', 'viewer')$$, soko_test.id('susp_co')));
+select soko_test.expect_denied('SUSP: cannot invite an admin',
+  format($$select public.invite_member(%L, 'susp_new_admin@soko-security.test', 'supplier_admin')$$, soko_test.id('susp_co')));
+select soko_test.expect_denied('SUSP: cannot revoke invitations',
+  format($$select public.revoke_invitation((select id from public.company_invitations where company_id = %L limit 1))$$,
+         soko_test.id('susp_co')));
+select soko_test.expect_denied('SUSP: cannot approve a join request',
+  format($$select public.approve_join_request(%L, 'viewer')$$, soko_test.id('susp_join_req')));
+select soko_test.expect_denied('SUSP: cannot decline a join request',
+  format($$select public.decline_join_request(%L)$$, soko_test.id('susp_join_req')));
+select soko_test.expect_denied('SUSP: cannot change a member role (escalation)',
+  format($$select public.change_member_role(%L, 'supplier_admin')$$, soko_test.id('susp_member_m')));
+select soko_test.expect_denied('SUSP: cannot remove another member',
+  format($$select public.remove_member(%L)$$, soko_test.id('susp_member_m')));
+select soko_test.expect_denied('SUSP: cannot edit the company profile',
+  format($$update public.companies set description = 'x' where id = %L$$, soko_test.id('susp_co')));
+select soko_test.expect_denied('SUSP: cannot upload a verification licence',
+  format($$insert into storage.objects (bucket_id, name, metadata) values ('verification', %L, '{"size":1}')$$,
+         soko_test.id('susp_co')::text || '/licence.pdf'));
+
+-- Read-only access is preserved.
+select soko_test.expect_count('SUSP: admin can still read own company row',
+  format($$select count(*) from public.companies where id = %L$$, soko_test.id('susp_co')), 1);
+select soko_test.expect_count('SUSP: admin can still read memberships',
+  format($$select count(*) from public.company_memberships where company_id = %L$$, soko_test.id('susp_co')), 3);
+select soko_test.expect_ok('SUSP: admin can still read private company details',
+  format($$select public.get_company_private(%L)$$, soko_test.id('susp_co')));
+select soko_test.expect_count('SUSP: admin can still read verification history',
+  format($$select count(*) from public.company_verifications where company_id = %L$$, soko_test.id('susp_co')), 1);
+select soko_test.expect_count('SUSP: admin role still recognised for read-only licence access',
+  format($$select count(*) from (select 1 where private.holds_admin_role(%L)) x$$, soko_test.id('susp_co')), 1);
+reset role;
+
+-- The public cannot see a suspended company.
+select soko_test.as_anon();
+set local role anon;
+select soko_test.expect_count('SUSP: suspended company hidden from the public directory',
+  format($$select count(*) from public.companies where id = %L$$, soko_test.id('susp_co')), 0);
+reset role;
+
+-- Pre-suspension invitation is dead.
+select soko_test.as_user('susp_invitee');
+set local role authenticated;
+select soko_test.expect_denied('SUSP: pre-suspension invitation cannot be accepted while suspended',
+  $$select public.accept_invitation((select value from soko_test.secrets where key = 'susp_pre_token'))$$);
+reset role;
+
+-- Platform-admin recovery still works while suspended.
+select soko_test.as_user('padmin');
+set local role authenticated;
+select soko_test.expect_ok('SUSP: platform admin can review verification of a suspended company',
+  format($$select public.review_verification(%L, true, 'reviewed during suspension')$$, soko_test.id('susp_verification')));
+select soko_test.expect_ok('SUSP: platform admin can reinstate the company',
+  format($$select public.admin_set_company_suspension(%L, false, 'reinstated')$$, soko_test.id('susp_co')));
+reset role;
+
+-- After reinstatement: authority returns, but stale invitations stay dead.
+select soko_test.as_user('susp_invitee');
+set local role authenticated;
+select soko_test.expect_denied('SUSP: pre-suspension invitation stays invalid after reinstatement',
+  $$select public.accept_invitation((select value from soko_test.secrets where key = 'susp_pre_token'))$$);
+reset role;
+
+select soko_test.as_user('susp_admin');
+set local role authenticated;
+select soko_test.expect_count('SUSP: admin authority restored after reinstatement',
+  format($$select count(*) from (select 1 where private.is_company_admin(%L)) x$$, soko_test.id('susp_co')), 1);
+select soko_test.expect_ok('SUSP: join request can be approved after reinstatement (positive control)',
+  format($$select public.approve_join_request(%L, 'viewer')$$, soko_test.id('susp_join_req')));
+reset role;
+
+-- Invitation reactivation safeguards are intact after suspension cycles.
+select soko_test.as_user('susp_member');
+set local role authenticated;
+select soko_test.expect_ok('SUSP: member may leave the company (positive control)',
+  format($$select public.remove_member(%L)$$, soko_test.id('susp_member_m')));
+reset role;
+select soko_test.as_user('susp_admin');
+set local role authenticated;
+insert into soko_test.secrets values ('susp_rejoin_token',
+  public.invite_member(soko_test.id('susp_co'), 'susp_member@soko-security.test', 'viewer'));
+reset role;
+select soko_test.as_user('susp_member');
+set local role authenticated;
+select soko_test.expect_denied('SUSP: old accepted token cannot reactivate a removed member',
+  $$select public.accept_invitation((select value from soko_test.secrets where key = 'susp_member_token'))$$);
+select soko_test.expect_ok('SUSP: fresh post-removal invitation reactivates (positive control)',
+  $$select public.accept_invitation((select value from soko_test.secrets where key = 'susp_rejoin_token'))$$);
+select soko_test.expect_count('SUSP: reactivated member keeps the invited role, no escalation',
+  format($$select count(*) from public.company_memberships
+           where company_id = %L and user_id = auth.uid() and status = 'active' and role_key = 'viewer'$$,
+         soko_test.id('susp_co')), 1);
+select soko_test.expect_denied('SUSP: active member cannot re-accept an invitation',
+  $$select public.accept_invitation((select value from soko_test.secrets where key = 'susp_rejoin_token'))$$);
 reset role;
 
 -- -----------------------------------------------------------------------------

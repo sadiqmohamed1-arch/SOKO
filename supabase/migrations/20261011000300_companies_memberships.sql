@@ -180,7 +180,24 @@ language sql stable security definer set search_path = '' as $$
   );
 $$;
 
+-- Admin AUTHORITY: void while the company is suspended, like has_permission.
+-- Use this for every privileged action (verification, team management, invitations).
 create or replace function private.is_company_admin(p_company uuid) returns boolean
+language sql stable security definer set search_path = '' as $$
+  select exists (
+    select 1
+    from public.company_memberships m
+    join public.roles r on r.company_kind = m.company_kind and r.key = m.role_key
+    join public.companies c on c.id = m.company_id
+    where m.company_id = p_company and m.user_id = auth.uid()
+      and m.status = 'active' and r.is_admin
+      and not c.is_suspended
+  );
+$$;
+
+-- Admin ROLE regardless of suspension. Read-only paths only (e.g. a suspended
+-- company's admins can still view their own licence file); never grants writes.
+create or replace function private.holds_admin_role(p_company uuid) returns boolean
 language sql stable security definer set search_path = '' as $$
   select exists (
     select 1
@@ -229,6 +246,7 @@ select private.allow_execute(array['authenticated'], array['private.my_company_i
 select private.allow_execute(array['authenticated'], array['private.is_member(uuid)']);
 select private.allow_execute(array['authenticated'], array['private.has_permission(uuid, text)']);
 select private.allow_execute(array['authenticated'], array['private.is_company_admin(uuid)']);
+select private.allow_execute(array['authenticated'], array['private.holds_admin_role(uuid)']);
 select private.allow_execute(array['authenticated'], array['private.shares_company_with(uuid)']);
 
 -- -----------------------------------------------------------------------------
@@ -271,6 +289,22 @@ end $$;
 create trigger company_memberships_last_admin
   before update or delete on public.company_memberships
   for each row execute function private.guard_last_admin();
+
+-- Suspension kills every open invitation, so invitations issued before (or
+-- during) a suspension cannot be redeemed after reinstatement. Admins re-invite.
+create or replace function private.revoke_invitations_on_suspend() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  if new.is_suspended and not old.is_suspended then
+    update public.company_invitations
+    set revoked_at = now()
+    where company_id = new.id and accepted_at is null and revoked_at is null;
+  end if;
+  return new;
+end $$;
+create trigger companies_revoke_invitations_on_suspend
+  after update of is_suspended on public.companies
+  for each row execute function private.revoke_invitations_on_suspend();
 
 -- -----------------------------------------------------------------------------
 -- RLS
@@ -640,8 +674,10 @@ declare
   v_uid uuid := private.require_user();
   v_id uuid;
 begin
+  -- is_company_admin is false for suspended companies, so this also blocks
+  -- verification submission while suspended.
   if not private.is_company_admin(p_company) then
-    raise exception 'only company admins can submit verification' using errcode = '42501';
+    raise exception 'only company admins of an active company can submit verification' using errcode = '42501';
   end if;
   if (select c.verification_status from public.companies c where c.id = p_company) = 'verified' then
     raise exception 'company is already verified' using errcode = '22023';
