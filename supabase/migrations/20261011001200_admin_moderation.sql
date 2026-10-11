@@ -28,6 +28,10 @@ create unique index content_reports_one_open_per_reporter
 create or replace function private.content_reports_rate_limit() returns trigger
 language plpgsql security definer set search_path = '' as $$
 begin
+  -- Runs as definer before RLS's WITH CHECK, so verify the reporter before notifying anyone.
+  if new.reporter_id is distinct from auth.uid() then
+    raise exception 'reporter must be the current user' using errcode = '42501';
+  end if;
   if (select count(*) from public.content_reports r
       where r.reporter_id = new.reporter_id and r.created_at > now() - interval '1 day') >= 20 then
     raise exception 'report limit reached' using errcode = '54000';
@@ -87,8 +91,10 @@ begin
   update public.campaigns
   set status = 'suspended', review_note = left(p_reason, 2000), reviewed_by = v_uid, reviewed_at = now()
   where id = p_campaign and status in ('approved', 'scheduled', 'active', 'paused');
-  perform private.notify_permission_holders(v_company, 'campaigns.manage', 'campaign.suspended',
-    jsonb_build_object('campaign_id', p_campaign, 'reason', left(p_reason, 1000)));
+  if found then
+    perform private.notify_permission_holders(v_company, 'campaigns.manage', 'campaign.suspended',
+      jsonb_build_object('campaign_id', p_campaign, 'reason', left(p_reason, 1000)));
+  end if;
 end $$;
 
 create or replace function public.admin_resolve_report(p_report uuid, p_status text, p_resolution text default null)
