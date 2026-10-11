@@ -387,6 +387,9 @@ language sql stable security definer set search_path = '' as $$
       join public.documents d on d.id = p.document_id and d.company_id = p.company_id
       where p.version = d.current_version + 1 and not d.archived
         and not exists (select 1 from public.document_versions v where v.storage_path = p_name)
+        and exists (select 1 from private.storage_upload_reservations r
+                    where r.bucket_id = 'company-documents' and r.object_name = p_name
+                      and r.user_id = auth.uid() and r.rejected_at is null)
         and private.has_permission(d.company_id, 'documents.manage')
         and private.has_doc_access(d.company_id, d.access_level));
 $$;

@@ -422,6 +422,39 @@ try {
   check(dlS.error?.code === '42501', 'P: an expired share cannot authorise a new download', dlS.error?.code ?? JSON.stringify(dlS));
   dlS = await download(admin, verS);
   check(dlS.status === 200, 'P: the owner still downloads after the share ends', JSON.stringify(dlS.error?.message ?? dlS));
+
+  // Q. A pending upload is readable only by the user holding its reservation;
+  //    another document manager (same role, same company) reads it only once finalised.
+  const docQ = await newDoc('Pending holder only');
+  const qName = `${co}/${docQ}/v1/pending.pdf`;
+  check(!(await reserveDoc(admin, qName, 90)).error, 'Q: reserve a pending document upload');
+  r = await upload(userJwt(admin), 'company-documents', qName, 90, 'application/pdf');
+  check(r.status === 200, 'Q: pending upload accepted by Storage', `HTTP ${r.status} ${r.status === 200 ? '' : r.body}`);
+  let q = await directRead(userJwt(admin), qName);
+  check(q.status === 200 && q.bytes === 90, 'Q: the reservation holder reads their pending upload via Storage', JSON.stringify(q));
+  q = await directRead(userJwt(other), qName);
+  check(q.status !== 200, 'Q: another document manager cannot read the pending upload via Storage', `HTTP ${q.status}`);
+  const delQ = await fetch(`${storage}/object/company-documents`, {
+    method: 'DELETE', headers: { authorization: `Bearer ${userJwt(other)}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ prefixes: [qName] }),
+  });
+  await delQ.text();
+  check(!!(await object('company-documents', qName)), 'Q: another document manager cannot delete the pending upload', `HTTP ${delQ.status}`);
+  const finQ = await finalize(admin, docQ, qName);
+  const verQ = finQ.rows?.[0]?.id;
+  check(!!verQ, 'Q: the reservation holder finalises', finQ.error?.message);
+  q = await directRead(userJwt(other), qName);
+  check(q.status === 200 && q.bytes === 90, 'Q: after finalisation the other manager reads it via Storage', JSON.stringify(q));
+  const dlQ = await download(other, verQ);
+  check(dlQ.status === 200 && dlQ.bytes === 90, 'Q: after finalisation the other manager downloads via the Edge flow', JSON.stringify(dlQ.error?.message ?? dlQ));
+  r = await upload(serviceJwt(), 'company-documents', qName, 91, 'application/pdf', { upsert: true });
+  check(r.status === 200, 'Q: service role replaces the finalised bytes', `HTTP ${r.status}`);
+  for (const [who, uid] of [['holder', admin], ['other manager', other]]) {
+    q = await directRead(userJwt(uid), qName);
+    check(q.status !== 200, `Q: replaced finalised file is unreadable via Storage (${who})`, `HTTP ${q.status}`);
+    const d = await download(uid, verQ);
+    check(d.error?.code === '55000', `Q: replaced finalised file gets no Edge download (${who})`, d.error?.code ?? JSON.stringify(d));
+  }
 } finally {
   for (const co of created.companies) {
     await owner.query(`delete from storage.objects where name like $1`, [`${co}/%`]).catch(() => {});

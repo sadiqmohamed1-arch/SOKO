@@ -2888,10 +2888,26 @@ select soko_test.expect_denied('07D: a document with finalised versions cannot b
   format('delete from public.documents where id = %L', soko_test.id('dd_team')));
 select soko_test.expect_denied('07D: a finalised file cannot be deleted from Storage',
   format($$delete from storage.objects where bucket_id = 'company-documents' and name = %L$$, soko_test.dp('p_dd_team_v1')));
-select soko_test.expect_count('07D: never-finalised uploads can be cleaned up by managers',
+select soko_test.expect_count('07D: a manager cannot reach never-finalised uploads with no reservation holder',
+  format($$with d as (delete from storage.objects where bucket_id = 'company-documents' and name in (%L, %L, %L, %L) returning 1)
+           select count(*) from d$$,
+         soko_test.dp('p_dd_tech_v2'), soko_test.dp('p_dd_admins_v2'), soko_test.dp('p_dd_public_v2'), soko_test.dp('p_dd_verif_v2')), 0);
+reset role;
+select soko_test.stage_doc(soko_test.dp(k), 'd_admin')
+from unnest(array['p_dd_tech_v2','p_dd_admins_v2','p_dd_public_v2','p_dd_verif_v2']) k;
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_count('07D: never-finalised uploads can be cleaned up by their reservation holder',
   format($$with d as (delete from storage.objects where bucket_id = 'company-documents' and name in (%L, %L, %L, %L) returning 1)
            select count(*) from d$$,
          soko_test.dp('p_dd_tech_v2'), soko_test.dp('p_dd_admins_v2'), soko_test.dp('p_dd_public_v2'), soko_test.dp('p_dd_verif_v2')), 4);
+reset role;
+delete from private.storage_upload_reservations
+where bucket_id = 'company-documents' and settled_at is null
+  and object_name in (soko_test.dp('p_dd_tech_v2'), soko_test.dp('p_dd_admins_v2'),
+                      soko_test.dp('p_dd_public_v2'), soko_test.dp('p_dd_verif_v2'));
+select soko_test.as_user('d_admin');
+set local role authenticated;
 select soko_test.expect_count('07D: a document that never had a version can be deleted',
   format($$with d as (delete from public.documents where id = %L returning 1) select count(*) from d$$, soko_test.id('dd_empty')), 1);
 select soko_test.expect_denied('07D: users cannot run the orphan report',
@@ -3720,7 +3736,7 @@ select soko_test.expect_sqlstate('21: owner member gets no download for a missin
   format('select public.record_document_download(%L)', soko_test.id('v21_pub')), '55000');
 reset role;
 
--- Pending (not yet finalised) uploads keep their existing rule: managers read them.
+-- Pending (not yet finalised) uploads: the manager holding the reservation reads them.
 insert into storage.objects (bucket_id, name, metadata)
 values ('company-documents', soko_test.dp('p_i21_next'), '{"size": 50, "contentLength": 50, "mimetype": "application/pdf"}');
 select soko_test.stage_doc(soko_test.dp('p_i21_next'), 'd_admin');
@@ -3740,6 +3756,98 @@ delete from storage.objects where bucket_id = 'company-documents' and name like 
   and (name like '%' || soko_test.id('i21_team')::text || '%' or name like '%' || soko_test.id('i21_pub')::text || '%');
 delete from private.storage_upload_reservations
 where object_name like '%' || soko_test.id('i21_team')::text || '%' or object_name like '%' || soko_test.id('i21_pub')::text || '%';
+
+-- =============================================================================
+-- 22. Migration 07 — pending uploads are readable only by their reservation holder
+-- =============================================================================
+reset role;
+insert into soko_test.ids values ('i22_doc', gen_random_uuid()), ('i22_rej', gen_random_uuid());
+insert into public.documents (id, company_id, name, access_level, is_public, for_verification) values
+  (soko_test.id('i22_doc'), soko_test.id('d_sup'), 'Pending Read Doc', 'team', false, false),
+  (soko_test.id('i22_rej'), soko_test.id('d_sup'), 'Pending Rejected Doc', 'team', false, false);
+insert into soko_test.secrets values
+  ('p_i22_doc', soko_test.id('d_sup')::text || '/' || soko_test.id('i22_doc')::text || '/v1/a.pdf'),
+  ('p_i22_rej', soko_test.id('d_sup')::text || '/' || soko_test.id('i22_rej')::text || '/v1/a.pdf');
+
+-- d_tech (a document manager) reserves and uploads both files through the normal flow.
+select soko_test.as_user('d_tech');
+set local role authenticated;
+select soko_test.expect_ok('22: reservation holder reserves and uploads a pending file',
+  format($$select soko_test.put('company-documents', %L, 50)$$, soko_test.dp('p_i22_doc')));
+select soko_test.expect_ok('22: reservation holder reserves and uploads a second pending file',
+  format($$select soko_test.put('company-documents', %L, 50)$$, soko_test.dp('p_i22_rej')));
+select soko_test.expect_count('22: the reservation holder reads their pending upload',
+  format($$select count(*) from storage.objects where bucket_id = 'company-documents' and name = %L$$, soko_test.dp('p_i22_doc')), 1);
+reset role;
+
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_count('22: another document manager cannot read the pending upload',
+  format($$select count(*) from storage.objects where bucket_id = 'company-documents' and name in (%L, %L)$$,
+         soko_test.dp('p_i22_doc'), soko_test.dp('p_i22_rej')), 0);
+select soko_test.expect_count('22: another document manager cannot delete the pending upload',
+  format($$with d as (delete from storage.objects where bucket_id = 'company-documents' and name = %L returning 1)
+           select count(*) from d$$, soko_test.dp('p_i22_doc')), 0);
+reset role;
+select soko_test.as_user('x_admin');
+set local role authenticated;
+select soko_test.expect_count('22: an outsider cannot read the pending upload',
+  format($$select count(*) from storage.objects where bucket_id = 'company-documents' and name = %L$$, soko_test.dp('p_i22_doc')), 0);
+reset role;
+
+-- A rejected reservation gives its holder no read access either.
+update private.storage_upload_reservations set rejected_at = now(), object_version = 'put-' || md5(object_name)
+where bucket_id = 'company-documents' and object_name = soko_test.dp('p_i22_rej');
+select soko_test.as_user('d_tech');
+set local role authenticated;
+select soko_test.expect_count('22: a rejected reservation gives its holder no read access',
+  format($$select count(*) from storage.objects where bucket_id = 'company-documents' and name = %L$$, soko_test.dp('p_i22_rej')), 0);
+select soko_test.expect_ok('22: reservation holder finalises the pending upload',
+  format('select public.finalize_document_version(%L, %L, null)', soko_test.id('i22_doc'), soko_test.dp('p_i22_doc')));
+reset role;
+insert into soko_test.ids
+select 'v22_doc', v.id from public.document_versions v where v.storage_path = soko_test.dp('p_i22_doc');
+
+-- Finalised: existing permissions apply again.
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_count('22: after finalisation another manager reads the file',
+  format($$select count(*) from storage.objects where bucket_id = 'company-documents' and name = %L$$, soko_test.dp('p_i22_doc')), 1);
+select soko_test.expect_ok('22: after finalisation another manager gets a download',
+  format('select public.record_document_download(%L)', soko_test.id('v22_doc')));
+reset role;
+select soko_test.as_user('d_tech');
+set local role authenticated;
+select soko_test.expect_count('22: after finalisation the uploader still reads the file',
+  format($$select count(*) from storage.objects where bucket_id = 'company-documents' and name = %L$$, soko_test.dp('p_i22_doc')), 1);
+reset role;
+select soko_test.as_user('x_admin');
+set local role authenticated;
+select soko_test.expect_count('22: after finalisation an outsider still cannot read a team file',
+  format($$select count(*) from storage.objects where bucket_id = 'company-documents' and name = %L$$, soko_test.dp('p_i22_doc')), 0);
+reset role;
+
+-- Replaced after finalisation: inaccessible to everyone, uploader included.
+update storage.objects set version = 'replaced-22'
+where bucket_id = 'company-documents' and name = soko_test.dp('p_i22_doc');
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_count('22: a replaced finalised file cannot be read by a manager',
+  format($$select count(*) from storage.objects where bucket_id = 'company-documents' and name = %L$$, soko_test.dp('p_i22_doc')), 0);
+select soko_test.expect_sqlstate('22: a replaced finalised file gets no download',
+  format('select public.record_document_download(%L)', soko_test.id('v22_doc')), '55000');
+reset role;
+select soko_test.as_user('d_tech');
+set local role authenticated;
+select soko_test.expect_count('22: a replaced finalised file cannot be read by its uploader',
+  format($$select count(*) from storage.objects where bucket_id = 'company-documents' and name = %L$$, soko_test.dp('p_i22_doc')), 0);
+reset role;
+
+update public.documents set archived = true where id in (soko_test.id('i22_doc'), soko_test.id('i22_rej'));
+delete from storage.objects where bucket_id = 'company-documents'
+  and name in (soko_test.dp('p_i22_doc'), soko_test.dp('p_i22_rej'));
+delete from private.storage_upload_reservations
+where object_name in (soko_test.dp('p_i22_doc'), soko_test.dp('p_i22_rej'));
 
 
 -- -----------------------------------------------------------------------------
