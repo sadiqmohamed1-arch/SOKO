@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   ShieldCheck,
   AlertTriangle,
@@ -31,19 +31,139 @@ import {
 } from 'lucide-react';
 import { UserProfile, UserRole, CompanyProfileAudit, ModerationReportItem, BackendActivityLog, PlatformStats } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { getSupabaseClient } from '../lib/supabaseClient';
 
 interface SuperAdminPortalProps {
   currentUser: UserProfile;
   onNavigateToTab: (tab: string) => void;
   onSelectUserForDemo?: (role: UserRole) => void;
+  isDemo?: boolean;
 }
+
+const DEMO_STATS: PlatformStats = {
+  totalGrossSourcingValue: 'AED 284.5M',
+  totalProfiles: 58,
+  verifiedCompaniesCount: 52,
+  activeTendersCount: 34,
+  activeTendersValue: 'AED 68.2M',
+  reportedItemsCount: 3,
+  disputedEscrowsCount: 1,
+  suppliersCount: 24,
+  buyersCount: 18,
+  contractorsCount: 16,
+  monthlyGrowthRate: '+14.2%',
+  compliancePassRate: '98.8%',
+};
+
+// Must stay within the column-level SELECT grant on public.companies; select('*') is rejected.
+const LIVE_COMPANY_COLUMNS =
+  'id, soko_id, kind, legal_name, trading_name, country, emirate, general_email, phone, is_suspended, verification_status, verified_at, created_at, updated_at';
+
+type LiveVerificationStatus = 'not_submitted' | 'pending' | 'verified' | 'rejected';
+
+interface LiveCompanyRow {
+  id: string;
+  soko_id: string | null;
+  kind: 'supplier' | 'contractor';
+  legal_name: string;
+  trading_name: string | null;
+  country: string | null;
+  emirate: string | null;
+  general_email: string | null;
+  phone: string | null;
+  is_suspended: boolean;
+  verification_status: LiveVerificationStatus;
+  verified_at: string | null;
+  created_at: string;
+  updated_at: string | null;
+}
+
+interface LivePlatformStats {
+  companies: number | null;
+  suppliers: number | null;
+  contractors: number | null;
+  verified: number | null;
+  pendingVerifications: number | null;
+  campaignsPending: number | null;
+  openReports: number | null;
+}
+
+type AdminCompany = CompanyProfileAudit & {
+  liveVerificationStatus?: LiveVerificationStatus;
+};
+
+const VERIFICATION_LABELS: Record<LiveVerificationStatus, string> = {
+  not_submitted: 'Not submitted',
+  pending: 'Pending',
+  verified: 'Verified',
+  rejected: 'Rejected',
+};
+
+const LIVE_UNAVAILABLE_SUBJECT: Record<string, string> = {
+  moderation: 'Moderation reports',
+  escrow: 'Sourcing contracts and escrow',
+  audit_logs: 'The system audit trail',
+};
+
+function mapLiveCompany(row: LiveCompanyRow): AdminCompany {
+  const isVerified = row.verification_status === 'verified';
+  return {
+    id: row.id,
+    companyName: row.trading_name || row.legal_name,
+    contactPerson: '',
+    role: row.kind,
+    email: row.general_email ?? '',
+    phone: row.phone ?? '',
+    location: [row.emirate, row.country].filter(Boolean).join(', '),
+    isVerified,
+    status: row.is_suspended ? 'suspended' : isVerified ? 'active' : 'pending_verification',
+    icvScore: 0,
+    riskRating: 'low',
+    rating: 0,
+    registeredDate: row.created_at,
+    lastActive: row.updated_at ?? row.created_at,
+    complianceCertCount: 0,
+    liveVerificationStatus: row.verification_status,
+  };
+}
+
+function toCount(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value))) return Number(value);
+  return null;
+}
+
+// admin_platform_stats() returns a jsonb object of bigint counts keyed by snake_case names.
+function parseLiveStats(data: unknown): LivePlatformStats {
+  const raw = data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
+  return {
+    companies: toCount(raw.companies),
+    suppliers: toCount(raw.suppliers),
+    contractors: toCount(raw.contractors),
+    verified: toCount(raw.verified),
+    pendingVerifications: toCount(raw.pending_verifications),
+    campaignsPending: toCount(raw.campaigns_pending),
+    openReports: toCount(raw.open_reports),
+  };
+}
+
+function errorMessage(err: unknown): string {
+  if (err && typeof err === 'object' && 'message' in err && typeof (err as { message: unknown }).message === 'string') {
+    return (err as { message: string }).message;
+  }
+  return 'Unknown error';
+}
+
+const formatCount = (value: number | null | undefined) => (value == null ? '—' : value.toLocaleString());
 
 const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
   currentUser,
   onNavigateToTab,
+  isDemo = false,
 }) => {
-  const { user } = useAuth();
+  const { user, isAuthenticated, isPlatformAdmin } = useAuth();
   const isAdmin = currentUser.role === 'admin' || user?.role === 'admin';
+  const isLive = isAuthenticated && isPlatformAdmin && !isDemo;
 
   const [activeTab, setActiveTab] = useState<'companies' | 'moderation' | 'escrow' | 'audit_logs'>('companies');
   const [roleFilter, setRoleFilter] = useState<'all' | 'buyer' | 'supplier' | 'contractor'>('all');
@@ -64,73 +184,141 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
   const [selectedReport, setSelectedReport] = useState<ModerationReportItem | null>(null);
   const [moderationActionNote, setModerationActionNote] = useState('');
 
-  // Platform stats state
-  const [stats, setStats] = useState<PlatformStats>({
-    totalGrossSourcingValue: 'AED 284.5M',
-    totalProfiles: 58,
-    verifiedCompaniesCount: 52,
-    activeTendersCount: 34,
-    activeTendersValue: 'AED 68.2M',
-    reportedItemsCount: 3,
-    disputedEscrowsCount: 1,
-    suppliersCount: 24,
-    buyersCount: 18,
-    contractorsCount: 16,
-    monthlyGrowthRate: '+14.2%',
-    compliancePassRate: '98.8%',
-  });
+  // Demo-only platform stats; live mode reads admin_platform_stats() into liveStats instead.
+  const [stats, setStats] = useState<PlatformStats>(DEMO_STATS);
+  const [liveStats, setLiveStats] = useState<LivePlatformStats | null>(null);
 
   // Companies state
-  const [companies, setCompanies] = useState<CompanyProfileAudit[]>([]);
+  const [companies, setCompanies] = useState<AdminCompany[]>([]);
   // Moderation state
   const [reports, setReports] = useState<ModerationReportItem[]>([]);
   // Activity logs
   const [logs, setLogs] = useState<BackendActivityLog[]>([]);
+
+  const [syncState, setSyncState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
+  const requestIdRef = useRef(0);
+
+  const [suspendTarget, setSuspendTarget] = useState<AdminCompany | null>(null);
+  const [suspendReason, setSuspendReason] = useState('');
+  const [suspendError, setSuspendError] = useState<string | null>(null);
+  const [isSuspending, setIsSuspending] = useState(false);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  const fetchAdminData = async () => {
-    setIsRefreshing(true);
-    try {
-      const [statsRes, compRes, modRes, logRes] = await Promise.all([
-        fetch('/api/admin/stats'),
-        fetch('/api/admin/companies'),
-        fetch('/api/admin/moderation'),
-        fetch('/api/admin/activities'),
-      ]);
+  // Reads through the signed-in user's Supabase session, so RLS and platform_admins checks apply.
+  const fetchLiveData = async (requestId: number) => {
+    const supabase = getSupabaseClient();
+    const [companyRes, statsRes] = await Promise.all([
+      supabase.from('companies').select(LIVE_COMPANY_COLUMNS).order('created_at', { ascending: false }),
+      supabase.rpc('admin_platform_stats'),
+    ]);
+    if (companyRes.error) throw companyRes.error;
+    if (statsRes.error) throw statsRes.error;
+    if (requestId !== requestIdRef.current) return;
+    setCompanies(((companyRes.data ?? []) as LiveCompanyRow[]).map(mapLiveCompany));
+    setLiveStats(parseLiveStats(statsRes.data));
+  };
 
-      if (statsRes.ok) {
-        const data = await statsRes.json();
-        if (data.stats) setStats(data.stats);
-      }
-      if (compRes.ok) {
-        const data = await compRes.json();
-        if (data.companies) setCompanies(data.companies);
-      }
-      if (modRes.ok) {
-        const data = await modRes.json();
-        if (data.reports) setReports(data.reports);
-      }
-      if (logRes.ok) {
-        const data = await logRes.json();
-        if (data.logs) setLogs(data.logs);
-      }
+  const fetchDemoData = async () => {
+    const [statsRes, compRes, modRes, logRes] = await Promise.all([
+      fetch('/api/admin/stats'),
+      fetch('/api/admin/companies'),
+      fetch('/api/admin/moderation'),
+      fetch('/api/admin/activities'),
+    ]);
+
+    if (statsRes.ok) {
+      const data = await statsRes.json();
+      if (data.stats) setStats(data.stats);
+    }
+    if (compRes.ok) {
+      const data = await compRes.json();
+      if (data.companies) setCompanies(data.companies);
+    }
+    if (modRes.ok) {
+      const data = await modRes.json();
+      if (data.reports) setReports(data.reports);
+    }
+    if (logRes.ok) {
+      const data = await logRes.json();
+      if (data.logs) setLogs(data.logs);
+    }
+    if (!statsRes.ok && !compRes.ok && !modRes.ok && !logRes.ok) {
+      throw new Error('Demo data service is unavailable.');
+    }
+  };
+
+  const fetchAdminData = async () => {
+    const requestId = ++requestIdRef.current;
+    setIsRefreshing(true);
+    setSyncState('loading');
+    setSyncError(null);
+    try {
+      if (isLive) await fetchLiveData(requestId);
+      else await fetchDemoData();
+      if (requestId !== requestIdRef.current) return;
+      setSyncState('success');
+      setLastSyncedAt(new Date());
     } catch (err) {
-      console.warn('Failed to load admin data from server, using local defaults', err);
+      if (requestId !== requestIdRef.current) return;
+      setSyncState('error');
+      setSyncError(errorMessage(err));
     } finally {
-      setIsRefreshing(false);
+      if (requestId === requestIdRef.current) setIsRefreshing(false);
     }
   };
 
   useEffect(() => {
+    setCompanies([]);
+    setReports([]);
+    setLogs([]);
+    setLiveStats(null);
+    setStats(DEMO_STATS);
     fetchAdminData();
-  }, []);
+  }, [isLive]);
 
-  // Toggle company verification
+  const openSuspendDialog = (company: AdminCompany) => {
+    setSuspendTarget(company);
+    setSuspendReason('');
+    setSuspendError(null);
+  };
+
+  // Suspension changes only go through admin_set_company_suspension(p_company, p_suspended, p_reason).
+  const handleConfirmSuspension = async () => {
+    if (!isLive || !suspendTarget || isSuspending) return;
+    const reason = suspendReason.trim();
+    if (reason.length < 5) {
+      setSuspendError('Enter a reason of at least 5 characters.');
+      return;
+    }
+    const suspend = suspendTarget.status !== 'suspended';
+    setIsSuspending(true);
+    setSuspendError(null);
+    try {
+      const { error } = await getSupabaseClient().rpc('admin_set_company_suspension', {
+        p_company: suspendTarget.id,
+        p_suspended: suspend,
+        p_reason: reason,
+      });
+      if (error) throw error;
+      showToast(`${suspendTarget.companyName} ${suspend ? 'suspended' : 'reinstated'}.`);
+      setSuspendTarget(null);
+      fetchAdminData();
+    } catch (err) {
+      setSuspendError(errorMessage(err));
+    } finally {
+      setIsSuspending(false);
+    }
+  };
+
+  // Toggle company verification (demo only; live verification is not client-writable)
   const handleToggleVerification = async (company: CompanyProfileAudit) => {
+    if (isLive) return;
     const newVerified = !company.isVerified;
     try {
       const res = await fetch('/api/admin/verify-company', {
@@ -156,7 +344,7 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
 
   // Save company edits
   const handleSaveCompanyEdits = async () => {
-    if (!editModalCompany) return;
+    if (!editModalCompany || isLive) return;
     try {
       const res = await fetch('/api/admin/update-company-status', {
         method: 'POST',
@@ -197,6 +385,7 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
     reportId: string,
     actionStatus: 'resolved' | 'action_taken' | 'dismissed'
   ) => {
+    if (isLive) return;
     try {
       const res = await fetch('/api/admin/resolve-moderation', {
         method: 'POST',
@@ -242,15 +431,15 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
     const rows = companies.map((c) => [
       `"${c.companyName}"`,
       c.role,
-      `"${c.contactPerson}"`,
-      c.email,
-      c.phone,
+      `"${c.contactPerson ?? ''}"`,
+      c.email ?? '',
+      c.phone ?? '',
       c.dunsNumber || '',
       c.vatTrn || '',
       c.isVerified ? 'YES' : 'NO',
       c.status,
-      c.icvScore,
-      c.riskRating,
+      isLive ? '' : c.icvScore,
+      isLive ? '' : c.riskRating,
       `"${c.annualProcureVolume || ''}"`,
     ]);
 
@@ -274,10 +463,10 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
     if (statusFilter === 'suspended' && c.status !== 'suspended') return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      const matchName = c.companyName.toLowerCase().includes(q);
-      const matchPerson = c.contactPerson.toLowerCase().includes(q);
+      const matchName = (c.companyName ?? '').toLowerCase().includes(q);
+      const matchPerson = (c.contactPerson ?? '').toLowerCase().includes(q);
       const matchDuns = c.dunsNumber?.toLowerCase().includes(q);
-      const matchEmail = c.email.toLowerCase().includes(q);
+      const matchEmail = (c.email ?? '').toLowerCase().includes(q);
       if (!matchName && !matchPerson && !matchDuns && !matchEmail) return false;
     }
     return true;
@@ -306,8 +495,8 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
                 SOKO Super Admin Central
               </span>
               <span className="text-[11px] text-cyan-300 font-mono font-medium flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                Core Network Active • DIFC Regulatory Zone
+                <span className={`w-2 h-2 rounded-full ${isLive ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+                {isLive ? 'Live Supabase data • Platform admin session' : 'Demo data • Not live platform records'}
               </span>
             </div>
 
@@ -321,29 +510,104 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
           </div>
 
           {/* Action Toolbar */}
-          <div className="flex items-center gap-2 flex-wrap shrink-0">
-            <button
-              onClick={fetchAdminData}
-              disabled={isRefreshing}
-              className="p-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer text-xs font-semibold flex items-center gap-1.5"
-              title="Refresh Data"
-            >
-              <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">Sync Live</span>
-            </button>
+          <div className="flex flex-col items-start md:items-end gap-1.5 shrink-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={fetchAdminData}
+                disabled={isRefreshing}
+                className="p-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer text-xs font-semibold flex items-center gap-1.5 disabled:cursor-wait disabled:opacity-70"
+                title={isLive ? 'Re-query Supabase' : 'Refresh demo data'}
+              >
+                <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                <span className="hidden sm:inline">{isLive ? 'Sync Live' : 'Refresh Demo'}</span>
+              </button>
 
-            <button
-              onClick={handleExportReportCSV}
-              className="px-3.5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+              <button
+                onClick={handleExportReportCSV}
+                className="px-3.5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+              >
+                <Download className="w-4 h-4" />
+                <span>Export Governance Dossier</span>
+              </button>
+            </div>
+            <p
+              role="status"
+              aria-live="polite"
+              className={`text-[11px] font-mono min-h-4 ${syncState === 'error' ? 'text-rose-300' : 'text-slate-300'}`}
             >
-              <Download className="w-4 h-4" />
-              <span>Export Governance Dossier</span>
-            </button>
+              {syncState === 'loading' && (isLive ? 'Syncing with Supabase…' : 'Loading demo data…')}
+              {syncState === 'success' && lastSyncedAt &&
+                `${isLive ? 'Synced' : 'Demo data loaded'} ${lastSyncedAt.toLocaleTimeString()}${isLive ? ` • ${companies.length} companies` : ''}`}
+              {syncState === 'error' && `Sync failed: ${syncError}`}
+            </p>
           </div>
         </div>
       </div>
 
       {/* 4 Platform-Wide Statistics Cards */}
+      {isLive ? (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
+            <span className="font-bold uppercase tracking-wider text-[10px]">Gross Sourcing Volume</span>
+            <span className="text-slate-600 bg-slate-100 px-2 py-0.5 rounded font-mono text-[10px] font-bold">
+              Not tracked
+            </span>
+          </div>
+          <div className="text-2xl font-black text-slate-400 tracking-tight">—</div>
+          <div className="text-[11px] text-slate-500 mt-1">Sourcing volume is not tracked in live data yet</div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
+            <span className="font-bold uppercase tracking-wider text-[10px]">Enterprise Profiles</span>
+            <span className="text-blue-700 bg-blue-50 px-2 py-0.5 rounded font-mono text-[10px] font-bold">
+              {formatCount(liveStats?.verified)} Verified
+            </span>
+          </div>
+          <div className="text-2xl font-black text-slate-900 tracking-tight">
+            {formatCount(liveStats?.companies)} Companies
+          </div>
+          <div className="text-[11px] text-slate-500 mt-1 flex items-center gap-1.5">
+            <span>{formatCount(liveStats?.suppliers)} Suppliers</span>
+            <span>•</span>
+            <span>{formatCount(liveStats?.contractors)} Contractors</span>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
+            <span className="font-bold uppercase tracking-wider text-[10px]">Milestone Escrow Hold</span>
+            <span className="text-slate-600 bg-slate-100 px-2 py-0.5 rounded font-mono text-[10px] font-bold">
+              Not tracked
+            </span>
+          </div>
+          <div className="text-2xl font-black text-slate-400 tracking-tight">—</div>
+          <div className="text-[11px] text-slate-500 mt-1">Escrow is not connected to live data yet</div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
+            <span className="font-bold uppercase tracking-wider text-[10px]">Moderation Queue</span>
+            <span className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold ${
+              (liveStats?.openReports ?? 0) > 0 ? 'bg-amber-100 text-amber-900' : 'bg-emerald-50 text-emerald-800'
+            }`}>
+              {formatCount(liveStats?.openReports)} Open reports
+            </span>
+          </div>
+          <div className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+            <span>{formatCount(liveStats?.pendingVerifications)}</span>
+            <span className="text-xs font-semibold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">
+              Pending verifications
+            </span>
+          </div>
+          <div className="text-[11px] text-slate-500 mt-1 flex items-center gap-1">
+            <AlertCircle className="w-3.5 h-3.5 text-amber-500" />
+            <span>{formatCount(liveStats?.campaignsPending)} campaigns awaiting review</span>
+          </div>
+        </div>
+      </div>
+      ) : (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Card 1: Gross Sourcing Volume */}
         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
@@ -421,6 +685,7 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
           </div>
         </div>
       </div>
+      )}
 
       {/* Main Administrative Control Hub */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -428,9 +693,9 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
         <div className="border-b border-slate-200 px-4 sm:px-6 pt-3 flex items-center gap-2 overflow-x-auto scrollbar-thin">
           {[
             { id: 'companies', label: '🏢 Enterprise Profiles & Verification', count: companies.length },
-            { id: 'moderation', label: '🛡️ Moderation & Incident Logs', count: reports.filter(r => r.status === 'pending').length },
+            { id: 'moderation', label: '🛡️ Moderation & Incident Logs', count: isLive ? undefined : reports.filter(r => r.status === 'pending').length },
             { id: 'escrow', label: '🏗️ Sourcing Contracts & Escrow' },
-            { id: 'audit_logs', label: '📜 System Audit Trail', count: logs.length },
+            { id: 'audit_logs', label: '📜 System Audit Trail', count: isLive ? undefined : logs.length },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -533,9 +798,9 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
                           )}
                         </div>
                         <div className="text-[11px] text-slate-500 flex items-center gap-1.5 mt-0.5">
-                          <span>{comp.contactPerson}</span>
+                          <span>{comp.contactPerson || 'No contact on file'}</span>
                           <span>•</span>
-                          <span>{comp.location}</span>
+                          <span>{comp.location || 'Location not set'}</span>
                         </div>
                       </td>
 
@@ -557,15 +822,22 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
                       </td>
 
                       <td className="py-3 px-3">
+                        {isLive ? (
+                          <span className="font-mono text-xs text-slate-400" title="ICV score is not stored in live data">—</span>
+                        ) : (
                         <span className={`inline-flex items-center gap-1 font-mono font-bold text-xs ${
                           comp.icvScore >= 75 ? 'text-emerald-700' : comp.icvScore >= 50 ? 'text-amber-700' : 'text-slate-500'
                         }`}>
                           <Award className="w-3.5 h-3.5" />
                           {comp.icvScore}%
                         </span>
+                        )}
                       </td>
 
                       <td className="py-3 px-3">
+                        {isLive ? (
+                          <span className="font-mono text-xs text-slate-400" title="Risk rating is not stored in live data">—</span>
+                        ) : (
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
                           comp.riskRating === 'low'
                             ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
@@ -575,9 +847,35 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
                         }`}>
                           {comp.riskRating}
                         </span>
+                        )}
                       </td>
 
                       <td className="py-3 px-3">
+                        {isLive ? (
+                          <span
+                            className={`px-2.5 py-1 rounded-full text-[10px] font-bold inline-flex items-center gap-1 border ${
+                              comp.status === 'suspended'
+                                ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                : comp.isVerified
+                                ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                                : 'bg-slate-100 text-slate-600 border-slate-300'
+                            }`}
+                            title="Verification changes are not available from this dashboard in live mode"
+                          >
+                            {comp.status === 'suspended' ? (
+                              <Ban className="w-3 h-3" />
+                            ) : comp.isVerified ? (
+                              <Check className="w-3 h-3 text-emerald-700" />
+                            ) : (
+                              <Clock className="w-3 h-3 text-slate-500" />
+                            )}
+                            <span>
+                              {comp.status === 'suspended'
+                                ? 'Suspended'
+                                : VERIFICATION_LABELS[comp.liveVerificationStatus ?? 'not_submitted']}
+                            </span>
+                          </span>
+                        ) : (
                         <button
                           onClick={() => handleToggleVerification(comp)}
                           className={`px-2.5 py-1 rounded-full text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors ${
@@ -598,6 +896,7 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
                             </>
                           )}
                         </button>
+                        )}
                       </td>
 
                       <td className="py-3 px-4 text-right">
@@ -609,6 +908,20 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
                           >
                             <Eye className="w-3.5 h-3.5" />
                           </button>
+                          {isLive ? (
+                            <button
+                              onClick={() => openSuspendDialog(comp)}
+                              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                                comp.status === 'suspended'
+                                  ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700'
+                                  : 'bg-rose-50 hover:bg-rose-100 text-rose-700'
+                              }`}
+                              title={comp.status === 'suspended' ? 'Reinstate company' : 'Suspend company'}
+                              aria-label={`${comp.status === 'suspended' ? 'Reinstate' : 'Suspend'} ${comp.companyName}`}
+                            >
+                              {comp.status === 'suspended' ? <ShieldCheck className="w-3.5 h-3.5" /> : <Ban className="w-3.5 h-3.5" />}
+                            </button>
+                          ) : (
                           <button
                             onClick={() => {
                               setEditModalCompany(comp);
@@ -622,6 +935,7 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
                           >
                             <Edit3 className="w-3.5 h-3.5" />
                           </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -631,15 +945,32 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
 
               {filteredCompanies.length === 0 && (
                 <div className="p-8 text-center text-slate-500 text-xs">
-                  No company profiles match your current filter parameters.
+                  {syncState === 'loading'
+                    ? 'Loading company profiles…'
+                    : syncState === 'error' && companies.length === 0
+                    ? 'Company profiles could not be loaded. Use Sync to try again.'
+                    : 'No company profiles match your current filter parameters.'}
                 </div>
               )}
             </div>
           </div>
         )}
 
+        {isLive && activeTab !== 'companies' && (
+          <div className="p-8 sm:p-12 text-center flex flex-col items-center gap-2">
+            <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center">
+              <Clock className="w-5 h-5" />
+            </div>
+            <h3 className="text-sm font-bold text-slate-900">Not yet available in live mode</h3>
+            <p className="text-xs text-slate-500 max-w-md leading-relaxed text-pretty">
+              {LIVE_UNAVAILABLE_SUBJECT[activeTab]} is not connected to Supabase yet. Demo records are hidden here so
+              they are never mistaken for live platform data.
+            </p>
+          </div>
+        )}
+
         {/* TAB 2: MODERATION & INCIDENT LOG */}
-        {activeTab === 'moderation' && (
+        {activeTab === 'moderation' && !isLive && (
           <div className="p-4 sm:p-6 space-y-4">
             <div className="flex items-center justify-between">
               <div>
@@ -739,7 +1070,7 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
         )}
 
         {/* TAB 3: CONTRACT ESCROW & SOURCING OVERSIGHT */}
-        {activeTab === 'escrow' && (
+        {activeTab === 'escrow' && !isLive && (
           <div className="p-4 sm:p-6 space-y-4">
             <div className="flex items-center justify-between">
               <div>
@@ -840,7 +1171,7 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
         )}
 
         {/* TAB 4: SYSTEM AUDIT LOGS */}
-        {activeTab === 'audit_logs' && (
+        {activeTab === 'audit_logs' && !isLive && (
           <div className="p-4 sm:p-6 space-y-4">
             <div className="flex items-center justify-between">
               <div>
@@ -909,9 +1240,9 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
             <div className="grid grid-cols-2 gap-3 text-xs">
               <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
                 <span className="text-[10px] uppercase font-bold text-slate-400 block">Lead Executive</span>
-                <span className="font-bold text-slate-900">{selectedCompany.contactPerson}</span>
-                <div className="text-slate-500 text-[11px]">{selectedCompany.email}</div>
-                <div className="text-slate-500 text-[11px]">{selectedCompany.phone}</div>
+                <span className="font-bold text-slate-900">{selectedCompany.contactPerson || 'Not on file'}</span>
+                <div className="text-slate-500 text-[11px]">{selectedCompany.email || 'No email on file'}</div>
+                <div className="text-slate-500 text-[11px]">{selectedCompany.phone || 'No phone on file'}</div>
               </div>
 
               <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
@@ -925,15 +1256,15 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
             <div className="grid grid-cols-3 gap-2 text-center text-xs">
               <div className="bg-blue-50/70 p-2.5 rounded-lg border border-blue-200">
                 <span className="text-[10px] font-bold text-slate-500 block uppercase">ICV Certified</span>
-                <span className="text-base font-black text-blue-900">{selectedCompany.icvScore}%</span>
+                <span className="text-base font-black text-blue-900">{isLive ? '—' : `${selectedCompany.icvScore}%`}</span>
               </div>
               <div className="bg-emerald-50/70 p-2.5 rounded-lg border border-emerald-200">
                 <span className="text-[10px] font-bold text-slate-500 block uppercase">Risk Rating</span>
-                <span className="text-base font-black text-emerald-900 uppercase">{selectedCompany.riskRating}</span>
+                <span className="text-base font-black text-emerald-900 uppercase">{isLive ? '—' : selectedCompany.riskRating}</span>
               </div>
               <div className="bg-purple-50/70 p-2.5 rounded-lg border border-purple-200">
                 <span className="text-[10px] font-bold text-slate-500 block uppercase">Procure Capacity</span>
-                <span className="text-base font-black text-purple-900">{selectedCompany.annualProcureVolume || 'AED 50M+'}</span>
+                <span className="text-base font-black text-purple-900">{isLive ? selectedCompany.annualProcureVolume || '—' : selectedCompany.annualProcureVolume || 'AED 50M+'}</span>
               </div>
             </div>
 
@@ -951,6 +1282,15 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
               >
                 Close
               </button>
+              {isLive ? (
+                <button
+                  disabled
+                  title="Verification is not client-writable and has no admin RPC yet"
+                  className="px-4 py-2 bg-slate-200 text-slate-500 font-bold text-xs rounded-lg cursor-not-allowed"
+                >
+                  Verification changes unavailable in live mode
+                </button>
+              ) : (
               <button
                 onClick={() => {
                   handleToggleVerification(selectedCompany);
@@ -960,6 +1300,7 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
               >
                 {selectedCompany.isVerified ? 'Revoke Verification' : 'Grant Verified Badge'}
               </button>
+              )}
             </div>
           </div>
         </div>
@@ -1043,6 +1384,90 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg cursor-pointer"
               >
                 Save Audit Updates
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CONFIRM LIVE SUSPENSION CHANGE */}
+      {isLive && suspendTarget && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="suspend-dialog-title"
+            className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl flex flex-col gap-4"
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+              <h3
+                id="suspend-dialog-title"
+                className={`font-bold text-sm flex items-center gap-1.5 ${
+                  suspendTarget.status === 'suspended' ? 'text-emerald-700' : 'text-rose-700'
+                }`}
+              >
+                <AlertTriangle className="w-4 h-4" />
+                {suspendTarget.status === 'suspended' ? 'Confirm Company Reinstatement' : 'Confirm Company Suspension'}
+              </h3>
+              <button
+                onClick={() => setSuspendTarget(null)}
+                disabled={isSuspending}
+                aria-label="Close"
+                className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="text-xs text-slate-600 flex flex-col gap-2">
+              <p className="leading-relaxed">
+                {suspendTarget.status === 'suspended' ? (
+                  <>You are reinstating <strong>{suspendTarget.companyName}</strong> on the live platform.</>
+                ) : (
+                  <>
+                    You are suspending <strong>{suspendTarget.companyName}</strong> on the live platform. Pending
+                    invitations are revoked and the company&apos;s team managers are notified.
+                  </>
+                )}
+              </p>
+              <label htmlFor="suspend-reason" className="font-bold text-slate-700">
+                Reason (recorded in the audit log)
+              </label>
+              <textarea
+                id="suspend-reason"
+                rows={3}
+                maxLength={1000}
+                value={suspendReason}
+                onChange={(e) => setSuspendReason(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-slate-900 focus:bg-white resize-none text-xs"
+              />
+              {suspendError && (
+                <p role="alert" className="text-rose-700 font-semibold">
+                  {suspendError}
+                </p>
+              )}
+            </div>
+
+            <div className="pt-3 border-t border-slate-200 flex justify-end gap-2">
+              <button
+                onClick={() => setSuspendTarget(null)}
+                disabled={isSuspending}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-lg cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmSuspension}
+                disabled={isSuspending || suspendReason.trim().length < 5}
+                className={`px-4 py-2 text-white font-bold text-xs rounded-lg cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                  suspendTarget.status === 'suspended' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'
+                }`}
+              >
+                {isSuspending
+                  ? 'Saving…'
+                  : suspendTarget.status === 'suspended'
+                  ? 'Confirm Reinstatement'
+                  : 'Confirm Suspension'}
               </button>
             </div>
           </div>

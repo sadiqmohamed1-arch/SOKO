@@ -1316,6 +1316,7 @@ function MainApp() {
         {activeTab === 'admin' && currentUser.role !== 'buyer' && (
           <SuperAdminPortal
             currentUser={currentUser}
+            isDemo={demoActive}
             onNavigateToTab={(tab) => setActiveTab(tab)}
           />
         )}
