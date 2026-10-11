@@ -367,6 +367,61 @@ try {
   lists = await listedFor(stdName);
   check(lists.incident.length === 1 && lists.incident[0].incident === 'missing',
     'N: a missing finalised file is reported as an integrity incident', JSON.stringify(lists.incident));
+
+  // O. An expired reservation authorises no new upload (standard or resumable),
+  //    and its path cannot be re-reserved while it may still be in flight.
+  const expire = name => owner.query(`update private.storage_upload_reservations
+    set expires_at = now() - interval '1 second' where object_name = $1`, [name]);
+  const expMedia = path('expired.png');
+  check(!(await reserve(admin, expMedia, 40, 'image/png')).error, 'O: reservation for a media upload');
+  await expire(expMedia);
+  r = await upload(userJwt(admin), 'company-media', expMedia, 40, 'image/png');
+  check(r.status >= 400 && !(await object('company-media', expMedia)),
+    'O: a standard upload under an expired reservation is refused', `HTTP ${r.status}`);
+  const docE = await newDoc('Expired reservation');
+  const expDoc = `${co}/${docE}/v1/expired.pdf`;
+  check(!(await reserveDoc(admin, expDoc, 50)).error, 'O: reservation for a document upload');
+  await expire(expDoc);
+  r = await upload(userJwt(admin), 'company-documents', expDoc, 50, 'application/pdf');
+  check(r.status >= 400 && !(await object('company-documents', expDoc)),
+    'O: a standard document upload under an expired reservation is refused', `HTTP ${r.status}`);
+  t = await tusCreate(userJwt(admin), 'company-documents', expDoc, 50, 'application/pdf');
+  check(t.status >= 400, 'O: a resumable upload under an expired reservation is refused', `HTTP ${t.status}`);
+  const renew = await reserveDoc(admin, expDoc, 50);
+  check(renew.error?.code === '55006', 'O: an expired reservation in its grace period cannot be renewed', renew.error?.code);
+  const finE = await finalize(admin, docE, expDoc);
+  check(!!finE.error, 'O: nothing can be finalised from an expired, unused reservation', finE.error?.code);
+
+  // P. Shares authorise downloads only through the Edge Function flow, and only
+  //    while active. Recipients have no direct Storage read by design.
+  const docS = await newDoc('Shared lifecycle');
+  const shName = `${co}/${docS}/v1/shared.pdf`;
+  check(!(await reserveDoc(admin, shName, 90)).error, 'P: reserve the shared document');
+  r = await upload(userJwt(admin), 'company-documents', shName, 90, 'application/pdf');
+  check(r.status === 200, 'P: upload the shared document', `HTTP ${r.status}`);
+  const finS = await finalize(admin, docS, shName);
+  const verS = finS.rows?.[0]?.id;
+  check(!finS.error && verS, 'P: finalise the shared document', finS.error?.message ?? '');
+  const recip = await user();
+  const recCo = (await asUser(recip, `select public.create_company('contractor', 'Storage API Recipient ' || gen_random_uuid()) id`)).rows?.[0]?.id;
+  if (recCo) created.companies.push(recCo);
+  const share1 = (await asUser(admin, 'select public.share_document($1, $2, null) id', [docS, recCo])).rows?.[0]?.id;
+  check(!!share1, 'P: owner shares the document with another company');
+  let dlS = await download(recip, verS);
+  check(dlS.status === 200 && dlS.bytes === 90, 'P: an active share recipient downloads through the Edge Function flow', JSON.stringify(dlS.error?.message ?? dlS));
+  dr = await directRead(userJwt(recip), shName);
+  check(dr.status >= 400, 'P: a share recipient has no direct Storage read', `HTTP ${dr.status}`);
+  check(!(await asUser(admin, 'select public.revoke_document_share($1)', [share1])).error, 'P: owner revokes the share');
+  dlS = await download(recip, verS);
+  check(dlS.error?.code === '42501', 'P: a revoked share cannot authorise a new download', dlS.error?.code ?? JSON.stringify(dlS));
+  const share2 = (await asUser(admin, `select public.share_document($1, $2, now() + interval '1 day') id`, [docS, recCo])).rows?.[0]?.id;
+  dlS = await download(recip, verS);
+  check(share2 && dlS.status === 200, 'P: a fresh time-limited share works before it expires', JSON.stringify(dlS.error?.message ?? dlS));
+  await owner.query(`update public.document_shares set expires_at = now() - interval '1 second' where id = $1`, [share2]);
+  dlS = await download(recip, verS);
+  check(dlS.error?.code === '42501', 'P: an expired share cannot authorise a new download', dlS.error?.code ?? JSON.stringify(dlS));
+  dlS = await download(admin, verS);
+  check(dlS.status === 200, 'P: the owner still downloads after the share ends', JSON.stringify(dlS.error?.message ?? dlS));
 } finally {
   for (const co of created.companies) {
     await owner.query(`delete from storage.objects where name like $1`, [`${co}/%`]).catch(() => {});
