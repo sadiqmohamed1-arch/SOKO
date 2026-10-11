@@ -24,6 +24,7 @@ drop table if exists public.company_taxonomy cascade;
 drop table if exists public.companies cascade;
 
 drop function if exists private.guard_last_admin();
+drop table if exists private.company_admin_guard;
 drop function if exists private.revoke_invitations_on_suspend();
 drop function if exists private.user_can_assign_role(uuid, uuid, text);
 drop function if exists private.shares_company_with(uuid);

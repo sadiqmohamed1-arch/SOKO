@@ -1030,6 +1030,64 @@ select soko_test.expect_denied('SUSP: active member cannot re-accept an invitati
   $$select public.accept_invitation((select value from soko_test.secrets where key = 'susp_rejoin_token'))$$);
 reset role;
 
+-- =============================================================================
+-- Last-admin invariant (private.guard_last_admin)
+-- Sequential cases only: PGlite has a single connection. True concurrent races
+-- are verified separately against a multi-connection PostgreSQL server.
+-- =============================================================================
+insert into soko_test.ids (key, id) values
+  ('la_admin1', '00000000-0000-4000-8000-000000000016'),
+  ('la_admin2', '00000000-0000-4000-8000-000000000017'),
+  ('la_viewer', '00000000-0000-4000-8000-000000000018'),
+  ('la_co',     '00000000-0000-4000-8000-0000000000a1'),
+  ('la_m1',     '00000000-0000-4000-8000-0000000000a2'),
+  ('la_m2',     '00000000-0000-4000-8000-0000000000a3'),
+  ('la_mv',     '00000000-0000-4000-8000-0000000000a4');
+insert into auth.users (id, email, aud, role, email_confirmed_at)
+select id, key || '@soko-security.test', 'authenticated', 'authenticated', now()
+from soko_test.ids where key in ('la_admin1', 'la_admin2', 'la_viewer');
+insert into public.companies (id, kind, legal_name) values (soko_test.id('la_co'), 'supplier', 'Last Admin Test Co');
+insert into public.company_memberships (id, company_id, company_kind, user_id, role_key) values
+  (soko_test.id('la_m1'), soko_test.id('la_co'), 'supplier', soko_test.id('la_admin1'), 'supplier_admin'),
+  (soko_test.id('la_mv'), soko_test.id('la_co'), 'supplier', soko_test.id('la_viewer'), 'viewer');
+
+select soko_test.expect_denied('LA: deleting the only active admin is rejected',
+  format($$delete from public.company_memberships where id = %L$$, soko_test.id('la_m1')));
+select soko_test.expect_denied('LA: demoting the only active admin is rejected',
+  format($$update public.company_memberships set role_key = 'viewer' where id = %L$$, soko_test.id('la_m1')));
+select soko_test.expect_denied('LA: marking the only active admin removed is rejected',
+  format($$update public.company_memberships set status = 'removed', removed_at = now() where id = %L$$, soko_test.id('la_m1')));
+select soko_test.expect_denied('LA: deleting the only admin''s auth account is blocked by the cascade',
+  format($$delete from auth.users where id = %L$$, soko_test.id('la_admin1')));
+select soko_test.expect_ok('LA: removing a non-admin member is allowed',
+  format($$delete from public.company_memberships where id = %L$$, soko_test.id('la_mv')));
+
+insert into public.company_memberships (id, company_id, company_kind, user_id, role_key) values
+  (soko_test.id('la_m2'), soko_test.id('la_co'), 'supplier', soko_test.id('la_admin2'), 'supplier_admin');
+select soko_test.expect_denied('LA: one statement removing every admin is rejected',
+  format($$delete from public.company_memberships where company_id = %L$$, soko_test.id('la_co')));
+select soko_test.expect_count('LA: rejected multi-row delete left both admins in place',
+  format($$select count(*) from public.company_memberships where company_id = %L and status = 'active'$$, soko_test.id('la_co')), 2);
+select soko_test.expect_ok('LA: demoting an admin succeeds while another admin remains',
+  format($$update public.company_memberships set role_key = 'viewer' where id = %L$$, soko_test.id('la_m2')));
+select soko_test.expect_denied('LA: the remaining admin then cannot be removed',
+  format($$delete from public.company_memberships where id = %L$$, soko_test.id('la_m1')));
+
+select soko_test.as_user('la_admin1');
+set local role authenticated;
+select soko_test.expect_denied('LA: clients cannot read the admin guard table',
+  $$select count(*) from private.company_admin_guard$$);
+select soko_test.expect_denied('LA: remove_member RPC refuses to remove the last admin',
+  format($$select public.remove_member(%L)$$, soko_test.id('la_m1')));
+reset role;
+
+select soko_test.expect_ok('LA: deleting the company cascades past the guard',
+  format($$delete from public.companies where id = %L$$, soko_test.id('la_co')));
+select soko_test.expect_count('LA: cascade removed every membership of the deleted company',
+  format($$select count(*) from public.company_memberships where company_id = %L$$, soko_test.id('la_co')), 0);
+select soko_test.expect_count('LA: cascade cleared the company''s guard row',
+  format($$select count(*) from private.company_admin_guard where company_id = %L$$, soko_test.id('la_co')), 0);
+
 -- -----------------------------------------------------------------------------
 -- Report
 -- -----------------------------------------------------------------------------

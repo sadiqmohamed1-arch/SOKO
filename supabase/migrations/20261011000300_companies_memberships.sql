@@ -251,8 +251,19 @@ select private.allow_execute(array['authenticated'], array['private.shares_compa
 
 -- -----------------------------------------------------------------------------
 -- Invariant: a company always keeps at least one active admin.
--- The company row is locked so concurrent demotions are serialised.
+-- Every admin removal/demotion writes the company's guard row before counting.
+-- A real write (not a lock-only FOR UPDATE) is required: under READ COMMITTED
+-- the second transaction waits and then recounts with a fresh snapshot; under
+-- REPEATABLE READ / SERIALIZABLE it fails with 40001 instead of committing
+-- against a stale snapshot and leaving the company with zero admins.
+-- No FK to companies: the row is written while a company is being deleted.
 -- -----------------------------------------------------------------------------
+create table private.company_admin_guard (
+  company_id uuid primary key,
+  version    bigint not null default 0
+);
+revoke all on table private.company_admin_guard from public, anon, authenticated, service_role;
+
 create or replace function private.guard_last_admin() returns trigger
 language plpgsql security definer set search_path = '' as $$
 declare
@@ -274,13 +285,18 @@ begin
   end if;
 
   if not v_still_admin then
-    perform 1 from public.companies c where c.id = old.company_id for update;
+    -- Deleting the whole company cascades; allow that.
+    if not exists (select 1 from public.companies c where c.id = old.company_id) then
+      delete from private.company_admin_guard g where g.company_id = old.company_id;
+      return coalesce(new, old);
+    end if;
+    insert into private.company_admin_guard as g (company_id) values (old.company_id)
+    on conflict (company_id) do update set version = g.version + 1;
     select count(*) into v_others
     from public.company_memberships m
     join public.roles r on r.company_kind = m.company_kind and r.key = m.role_key
     where m.company_id = old.company_id and m.id <> old.id and m.status = 'active' and r.is_admin;
-    -- Deleting the whole company cascades; allow that.
-    if v_others = 0 and exists (select 1 from public.companies c where c.id = old.company_id) then
+    if v_others = 0 then
       raise exception 'a company must keep at least one active admin' using errcode = '23514';
     end if;
   end if;
