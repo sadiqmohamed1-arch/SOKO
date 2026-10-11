@@ -40,5 +40,6 @@ drop function if exists private.can_delete_document_object(text);
 drop function if exists private.can_read_document_object(text);
 drop function if exists private.can_upload_document_object(text);
 drop function if exists private.storage_company(text);
+drop function if exists private.has_doc_access(uuid, public.doc_access_level);
 drop function if exists private.storage_quota_ok(uuid);
 drop function if exists private.can_read_document(uuid);

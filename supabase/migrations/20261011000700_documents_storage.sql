@@ -128,6 +128,17 @@ language sql immutable set search_path = '' as $$
   select private.try_uuid((storage.foldername(p_name))[1]);
 $$;
 
+-- True when the caller's role in the company may see documents at this level.
+create or replace function private.has_doc_access(p_company uuid, p_level public.doc_access_level)
+returns boolean language sql stable security definer set search_path = '' as $$
+  select exists (
+    select 1 from public.company_memberships m
+    join public.role_document_access a on a.company_kind = m.company_kind and a.role_key = m.role_key
+    join public.companies c on c.id = m.company_id
+    where m.company_id = p_company and m.user_id = auth.uid() and m.status = 'active'
+      and a.access_level = p_level and not c.is_suspended);
+$$;
+
 create or replace function private.can_upload_document_object(p_name text) returns boolean
 language sql stable security definer set search_path = '' as $$
   select exists (
@@ -135,15 +146,31 @@ language sql stable security definer set search_path = '' as $$
     where d.company_id = private.storage_company(p_name)
       and d.id = private.try_uuid((storage.foldername(p_name))[2])
       and private.has_permission(d.company_id, 'documents.manage')
+      and private.has_doc_access(d.company_id, d.access_level)
       and private.storage_quota_ok(d.company_id)
   );
 $$;
 
+-- Direct Storage reads are for the OWNING company only (by access level), public
+-- documents, and platform admins reviewing verification evidence. Share
+-- recipients never sign URLs themselves: they go through the document-download
+-- Edge Function, which issues 60-second links (F5).
 create or replace function private.can_read_document_object(p_name text) returns boolean
 language sql stable security definer set search_path = '' as $$
-  select exists (select 1 from public.document_versions v
-                 where v.storage_path = p_name and private.can_read_document(v.document_id))
-      or private.has_permission(private.storage_company(p_name), 'documents.manage');
+  select exists (
+      select 1 from public.document_versions v join public.documents d on d.id = v.document_id
+      where v.storage_path = p_name and (
+        private.has_doc_access(d.company_id, d.access_level)
+        or (d.is_public and not d.archived and exists (
+              select 1 from public.companies c where c.id = d.company_id and c.is_public and not c.is_suspended))
+        or (d.for_verification and private.is_platform_admin())))
+    or (not exists (select 1 from public.document_versions v where v.storage_path = p_name)
+        and exists (
+          select 1 from public.documents d
+          where d.company_id = private.storage_company(p_name)
+            and d.id = private.try_uuid((storage.foldername(p_name))[2])
+            and private.has_permission(d.company_id, 'documents.manage')
+            and private.has_doc_access(d.company_id, d.access_level)));
 $$;
 
 -- Uploaded but never finalised objects may be deleted; finalised versions may not.
@@ -168,6 +195,7 @@ language sql stable security definer set search_path = '' as $$
         and private.has_permission(private.storage_company(p_name), 'products.manage')));
 $$;
 
+grant execute on function private.has_doc_access(uuid, public.doc_access_level) to authenticated;
 grant execute on function private.storage_company(text) to anon, authenticated;
 grant execute on function private.can_upload_document_object(text) to authenticated;
 grant execute on function private.can_read_document_object(text) to authenticated;
@@ -192,13 +220,21 @@ grant insert (company_id, name, category, access_level, is_public, expiry, remin
 create policy documents_read on public.documents
   for select to anon, authenticated using (private.can_read_document(id));
 create policy documents_insert on public.documents
-  for insert to authenticated with check (private.has_permission(company_id, 'documents.manage'));
+  for insert to authenticated
+  with check (private.has_permission(company_id, 'documents.manage')
+              and private.has_doc_access(company_id, access_level));
+-- USING checks the current level, WITH CHECK the new one: nobody can edit a
+-- document above their level or move one to a level they don't hold.
 create policy documents_update on public.documents
   for update to authenticated
-  using (private.has_permission(company_id, 'documents.manage'))
-  with check (private.has_permission(company_id, 'documents.manage'));
+  using (private.has_permission(company_id, 'documents.manage')
+         and private.has_doc_access(company_id, access_level))
+  with check (private.has_permission(company_id, 'documents.manage')
+              and private.has_doc_access(company_id, access_level));
 create policy documents_delete on public.documents
-  for delete to authenticated using (private.has_permission(company_id, 'records.delete'));
+  for delete to authenticated
+  using (private.has_permission(company_id, 'records.delete')
+         and private.has_doc_access(company_id, access_level));
 
 select private.reset_table_grants('public.document_versions');
 grant select on public.document_versions to anon, authenticated;
@@ -290,7 +326,8 @@ declare
   v_id uuid;
 begin
   select * into v_doc from public.documents where id = p_document for update;
-  if v_doc.id is null or not private.has_permission(v_doc.company_id, 'documents.manage') then
+  if v_doc.id is null or not private.has_permission(v_doc.company_id, 'documents.manage')
+     or not private.has_doc_access(v_doc.company_id, v_doc.access_level) then
     raise exception 'not allowed' using errcode = '42501';
   end if;
   if p_storage_path not like v_doc.company_id::text || '/' || v_doc.id::text || '/%' then
@@ -364,8 +401,10 @@ begin
   where id = p_share and revoked_at is null;
 end $$;
 
--- The client calls this, then asks Storage for a short-lived signed URL
--- (Storage re-checks soko_documents_select before signing).
+-- Called by the document-download Edge Function WITH THE CALLER'S JWT. It
+-- authorises (owner access level, public document, or an active unexpired
+-- share), writes the audit entry and returns the storage path. Only then does
+-- the function sign a 60-second URL with the service role.
 create or replace function public.record_document_download(p_version uuid) returns text
 language plpgsql security definer set search_path = '' as $$
 declare v_v public.document_versions%rowtype;

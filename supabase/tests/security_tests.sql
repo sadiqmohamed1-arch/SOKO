@@ -81,12 +81,18 @@ insert into soko_test.ids (key, id) values
   ('con_admin',  '00000000-0000-4000-8000-000000000003'),
   ('outsider',   '00000000-0000-4000-8000-000000000004'),
   ('padmin',     '00000000-0000-4000-8000-000000000005'),
-  ('con_member', '00000000-0000-4000-8000-000000000006');
+  ('con_member', '00000000-0000-4000-8000-000000000006'),
+  ('sup_tech',   '00000000-0000-4000-8000-000000000007'),
+  ('unconfirmed','00000000-0000-4000-8000-000000000008'),
+  ('noemail',    '00000000-0000-4000-8000-000000000009'),
+  ('expired_user','00000000-0000-4000-8000-00000000000a');
 
-insert into auth.users (id, email, aud, role, raw_user_meta_data)
+insert into auth.users (id, email, aud, role, raw_user_meta_data, email_confirmed_at)
 select i.id, i.key || '@soko-security.test', 'authenticated', 'authenticated',
-       jsonb_build_object('full_name', 'Test ' || i.key)
+       jsonb_build_object('full_name', 'Test ' || i.key),
+       case when i.key = 'unconfirmed' then null else now() end
 from soko_test.ids i;
+update auth.users set email = null where id = soko_test.id('noemail');
 
 insert into public.platform_admins (user_id, note) values (soko_test.id('padmin'), 'security test fixture');
 
@@ -303,8 +309,10 @@ select soko_test.as_user('con_admin');
 set local role authenticated;
 select soko_test.expect_count('contractor reads document after share (positive control)',
   format($$select count(*) from public.documents where id = %L$$, soko_test.id('document')), 1);
-select soko_test.expect_count('contractor reads shared file object (positive control)',
-  $$select count(*) from storage.objects where bucket_id = 'company-documents' and name like '%/v1/licence.pdf'$$, 1);
+select soko_test.expect_count('F5: share recipient cannot read the file directly from Storage',
+  $$select count(*) from storage.objects where bucket_id = 'company-documents'$$, 0);
+select soko_test.expect_ok('F5: share recipient is authorised by record_document_download (positive control)',
+  format($$select public.record_document_download(%L)$$, soko_test.id('document_version')));
 select soko_test.expect_denied('recipient cannot revoke or re-share the owner''s document',
   format($$select public.revoke_document_share(%L)$$, soko_test.id('share')));
 reset role;
@@ -320,6 +328,8 @@ select soko_test.expect_count('contractor loses access after revocation',
   format($$select count(*) from public.documents where id = %L$$, soko_test.id('document')), 0);
 select soko_test.expect_count('contractor loses file access after revocation',
   $$select count(*) from storage.objects where bucket_id = 'company-documents'$$, 0);
+select soko_test.expect_denied('F5: revoked recipient cannot obtain a download',
+  format($$select public.record_document_download(%L)$$, soko_test.id('document_version')));
 reset role;
 
 -- =============================================================================
@@ -381,6 +391,181 @@ select soko_test.expect_denied('audit log cannot be modified, even by the owner'
   $$update public.audit_log set action = 'tampered'$$);
 select soko_test.expect_denied('document versions are immutable, even for the owner',
   $$update public.document_versions set file_name = 'tampered.pdf'$$);
+
+-- =============================================================================
+-- 7. Step 10D regressions (F1–F7)
+-- =============================================================================
+
+-- F1 fixtures: invitations for the technical manager, an unconfirmed user and an expiring one.
+select soko_test.as_user('sup_admin');
+set local role authenticated;
+insert into soko_test.secrets values ('tech_token',
+  public.invite_member(soko_test.id('supplier'), 'sup_tech@soko-security.test', 'technical_manager'));
+insert into soko_test.secrets values ('unconfirmed_token',
+  public.invite_member(soko_test.id('supplier'), 'unconfirmed@soko-security.test', 'viewer'));
+insert into soko_test.secrets values ('expired_token',
+  public.invite_member(soko_test.id('supplier'), 'expired_user@soko-security.test', 'viewer'));
+reset role;
+update public.company_invitations set expires_at = now() - interval '1 minute'
+where lower(email) = 'expired_user@soko-security.test';
+
+select soko_test.as_user('unconfirmed');
+set local role authenticated;
+select soko_test.expect_denied('F1: unconfirmed email cannot accept a matching invitation',
+  $$select public.accept_invitation((select value from soko_test.secrets where key = 'unconfirmed_token'))$$);
+reset role;
+
+select soko_test.as_user('noemail');
+set local role authenticated;
+select soko_test.expect_denied('F1: user without an email cannot accept any invitation',
+  $$select public.accept_invitation((select value from soko_test.secrets where key = 'outsider_token'))$$);
+reset role;
+
+select soko_test.as_user('expired_user');
+set local role authenticated;
+select soko_test.expect_denied('F1: expired invitation is rejected',
+  $$select public.accept_invitation((select value from soko_test.secrets where key = 'expired_token'))$$);
+reset role;
+
+select soko_test.as_user('sup_tech');
+set local role authenticated;
+select soko_test.expect_ok('F1: confirmed matching email accepts (positive control)',
+  $$select public.accept_invitation((select value from soko_test.secrets where key = 'tech_token'))$$);
+reset role;
+
+select soko_test.as_user('sup_viewer');
+set local role authenticated;
+select soko_test.expect_denied('F1: an accepted token cannot be reused by anyone',
+  $$select public.accept_invitation((select value from soko_test.secrets where key = 'tech_token'))$$);
+reset role;
+
+-- F2: company privacy.
+select soko_test.as_user('outsider');
+set local role authenticated;
+select soko_test.expect_denied('F2: licence number is not selectable on companies',
+  $$select license_no from public.companies$$);
+select soko_test.expect_denied('F2: created_by is not selectable on companies',
+  $$select created_by from public.companies$$);
+select soko_test.expect_denied('F2: non-member cannot call get_company_private',
+  format($$select * from public.get_company_private(%L)$$, soko_test.id('supplier')));
+select soko_test.expect_count('F2: public columns remain readable (positive control)',
+  format($$select count(*) from (select id, legal_name from public.companies where id = %L) x$$, soko_test.id('supplier')), 1);
+reset role;
+
+select soko_test.as_user('sup_viewer');
+set local role authenticated;
+select soko_test.expect_count('F2: member reads private details (positive control)',
+  format($$select count(*) from public.get_company_private(%L) where license_no = 'LIC-1'$$, soko_test.id('supplier')), 1);
+reset role;
+
+select soko_test.as_user('padmin');
+set local role authenticated;
+select soko_test.expect_count('F2: platform admin reads private details (positive control)',
+  format($$select count(*) from public.get_company_private(%L)$$, soko_test.id('supplier')), 1);
+reset role;
+
+-- F3: licence squatting. The supplier is verified with LIC-1 / DED (section 2).
+select soko_test.as_user('outsider');
+set local role authenticated;
+insert into soko_test.ids values ('private_supplier',
+  public.create_company('supplier', 'Private Squatter LLC', null, 'LIC-1', 'DED'));
+select soko_test.expect_ok('F3: an unverified company may register a shared licence (positive control)',
+  format($$select public.submit_verification(%L, 'lic-1', 'ded', current_date + 365)$$, soko_test.id('private_supplier')));
+reset role;
+
+select soko_test.as_user('padmin');
+set local role authenticated;
+select soko_test.expect_denied('F3: a second company cannot be verified on a verified licence',
+  format($$select public.review_verification((select id from public.company_verifications
+           where company_id = %L and status = 'pending'))$$, soko_test.id('private_supplier')));
+reset role;
+select soko_test.expect_denied('F3: the unique index blocks a second verified holder even for the owner',
+  format($$update public.companies set verification_status = 'verified' where id = %L$$, soko_test.id('private_supplier')));
+
+-- F4: document access levels. technical_manager has documents.manage but not 'admins'.
+select soko_test.as_user('sup_tech');
+set local role authenticated;
+select soko_test.expect_count('F4: technical manager cannot read the admin-only document',
+  format($$select count(*) from public.documents where id = %L$$, soko_test.id('document')), 0);
+select soko_test.expect_count('F4: technical manager cannot read the admin-only file',
+  $$select count(*) from storage.objects where bucket_id = 'company-documents' and name like '%/v1/licence.pdf'$$, 0);
+select soko_test.expect_denied('F4: technical manager cannot download the admin-only version',
+  format($$select public.record_document_download(%L)$$, soko_test.id('document_version')));
+select soko_test.expect_denied('F4: technical manager cannot create an admins-level document',
+  format($$insert into public.documents (company_id, name, access_level) values (%L, 'Sneaky', 'admins')$$,
+         soko_test.id('supplier')));
+select soko_test.expect_denied('F4: technical manager cannot upload into the admin-only document folder',
+  format($$insert into storage.objects (bucket_id, name, metadata) values ('company-documents', %L, '{"size":1}')$$,
+         soko_test.id('supplier')::text || '/' || soko_test.id('document')::text || '/v9/x.pdf'));
+select soko_test.expect_denied('F4: technical manager cannot finalize a version of the admin-only document',
+  format($$select public.finalize_document_version(%L, %L, 'licence.pdf')$$, soko_test.id('document'),
+         soko_test.id('supplier')::text || '/' || soko_test.id('document')::text || '/v1/licence.pdf'));
+insert into public.documents (company_id, name, access_level) values (soko_test.id('supplier'), 'Team Datasheet', 'team');
+select soko_test.expect_count('F4: technical manager manages team-level documents (positive control)',
+  $$select count(*) from public.documents where name = 'Team Datasheet'$$, 1);
+select soko_test.expect_denied('F4: technical manager cannot raise a document to admins level',
+  $$update public.documents set access_level = 'admins' where name = 'Team Datasheet'$$);
+reset role;
+
+select soko_test.as_user('sup_viewer');
+set local role authenticated;
+select soko_test.expect_count('F4: viewer reads team-level documents (positive control)',
+  $$select count(*) from public.documents where name = 'Team Datasheet'$$, 1);
+reset role;
+
+-- F6: no relationships with arbitrary private companies.
+select soko_test.as_user('con_admin');
+set local role authenticated;
+select soko_test.expect_denied('F6: contractor cannot link a private supplier as a vendor',
+  format($$insert into public.vendor_records (contractor_company_id, supplier_company_id, trade_category)
+           values (%L, %L, 'MEP')$$, soko_test.id('contractor'), soko_test.id('private_supplier')));
+select soko_test.expect_denied('F6: contractor cannot request a visit with a private non-counterparty',
+  format($$select public.request_visit(%L, %L, now() + interval '3 days')$$,
+         soko_test.id('contractor'), soko_test.id('private_supplier')));
+select soko_test.expect_count('F6: private supplier stays invisible to the contractor',
+  format($$select count(*) from public.companies where id = %L$$, soko_test.id('private_supplier')), 0);
+select soko_test.expect_ok('F6: contractor can add an external vendor without a link (positive control)',
+  format($$insert into public.vendor_records (contractor_company_id, external_name, trade_category)
+           values (%L, 'Offline Vendor', 'Civil')$$, soko_test.id('contractor')));
+reset role;
+
+-- F7: campaign recipients and confidential contacts.
+insert into public.campaign_recipients (campaign_id, user_id, company_id)
+values (soko_test.id('campaign'), soko_test.id('outsider'), null);
+
+select soko_test.as_user('sup_admin');
+set local role authenticated;
+select soko_test.expect_count('F7: campaign owner cannot list recipient user ids',
+  $$select count(*) from public.campaign_recipients$$, 0);
+reset role;
+
+select soko_test.as_user('outsider');
+set local role authenticated;
+select soko_test.expect_count('F7: recipient sees own delivery (positive control)',
+  $$select count(*) from public.campaign_recipients$$, 1);
+reset role;
+
+select soko_test.as_user('con_admin');
+set local role authenticated;
+insert into public.opportunities (owner_company_id, type, opp_group, title, description, identity,
+                                  contact_visibility, contact_name, contact_email)
+values (soko_test.id('contractor'), 'material', 'requirements', 'Confidential members-visible', 'Details',
+        'confidential', 'members', 'Secret Buyer', 'secret@soko-security.test'),
+       (soko_test.id('contractor'), 'material', 'requirements', 'Public members-visible', 'Details',
+        'public', 'members', 'Open Buyer', 'open@soko-security.test');
+reset role;
+insert into soko_test.ids select 'opp_conf_members', id from public.opportunities where title = 'Confidential members-visible';
+insert into soko_test.ids select 'opp_public_members', id from public.opportunities where title = 'Public members-visible';
+
+select soko_test.as_user('sup_viewer');
+set local role authenticated;
+select soko_test.expect_count('F7: confidential publisher contact hidden even when members-visible',
+  format($$select count(*) from (select public.get_opportunity_details(%L) d) x
+           where d -> 'contact' = 'null'::jsonb$$, soko_test.id('opp_conf_members')), 1);
+select soko_test.expect_count('F7: public members-visible contact is shown (positive control)',
+  format($$select count(*) from (select public.get_opportunity_details(%L) d) x
+           where d -> 'contact' ->> 'email' = 'open@soko-security.test'$$, soko_test.id('opp_public_members')), 1);
+reset role;
 
 -- -----------------------------------------------------------------------------
 -- Report

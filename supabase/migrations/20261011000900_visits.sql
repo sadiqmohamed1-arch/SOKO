@@ -214,7 +214,11 @@ begin
     raise exception 'not allowed' using errcode = '42501';
   end if;
   select c.kind into v_my_kind from public.companies c where c.id = p_my_company;
-  select c.kind into v_other_kind from public.companies c where c.id = p_other_company and not c.is_suspended;
+  -- A visit makes the other company a counterparty, so it must already be public
+  -- or an existing counterparty; arbitrary private company ids are rejected.
+  select c.kind into v_other_kind from public.companies c
+  where c.id = p_other_company and not c.is_suspended
+    and (c.is_public or private.is_counterparty(c.id));
   if v_other_kind is null or v_other_kind = v_my_kind then
     raise exception 'a visit needs one supplier and one host company' using errcode = '22023';
   end if;

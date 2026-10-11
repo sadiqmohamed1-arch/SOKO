@@ -1,5 +1,6 @@
 -- Rollback for migration 03 — companies and memberships.
 -- DESTROYS every company, membership, invitation and verification.
+drop function if exists public.get_company_private(uuid);
 drop function if exists public.review_verification(uuid, boolean, text);
 drop function if exists public.submit_verification(uuid, text, text, date, uuid);
 drop function if exists public.remove_member(uuid);

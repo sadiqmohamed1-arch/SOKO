@@ -242,8 +242,16 @@ grant insert (contractor_company_id, supplier_company_id, external_name, trade_c
   on public.vendor_records to authenticated;
 create policy vendor_records_read on public.vendor_records
   for select to authenticated using (private.is_member(contractor_company_id));
+-- A vendor record makes the supplier a counterparty (readable profile), so only
+-- public, non-suspended SUPPLIER companies may be linked. Private suppliers are
+-- added as external vendors (supplier_company_id null). supplier_company_id is
+-- not in the UPDATE grant, so the link cannot be re-pointed later.
 create policy vendor_records_insert on public.vendor_records
-  for insert to authenticated with check (private.has_permission(contractor_company_id, 'contacts.manage'));
+  for insert to authenticated
+  with check (private.has_permission(contractor_company_id, 'contacts.manage')
+    and (supplier_company_id is null or exists (
+      select 1 from public.companies c
+      where c.id = supplier_company_id and c.kind = 'supplier' and c.is_public and not c.is_suspended)));
 create policy vendor_records_update on public.vendor_records
   for update to authenticated
   using (private.has_permission(contractor_company_id, 'contacts.manage'))

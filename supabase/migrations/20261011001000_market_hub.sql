@@ -349,7 +349,9 @@ select private.reset_table_grants('public.campaign_recipients');
 grant select on public.campaign_recipients to authenticated;
 create policy campaign_recipients_read on public.campaign_recipients
   for select to authenticated
-  using (user_id = auth.uid() or private.has_permission(private.campaign_company(campaign_id), 'campaigns.manage'));
+  -- Recipients see only their own row; campaign owners never list recipient
+  -- user ids (that would de-anonymise targeted buyers). Owners get aggregates.
+  using (user_id = auth.uid());
 
 -- Owners read responses only through get_campaign_responses (identity masking).
 select private.reset_table_grants('public.campaign_responses');
@@ -419,7 +421,9 @@ begin
     'is_mine', v_mine,
     'is_confidential', o.identity = 'confidential',
     'publisher_display', coalesce(v_publisher, 'Confidential publisher'),
-    'contact', case when v_mine or v_connected or o.contact_visibility = 'members'
+    -- Confidential publishers' contact details are released only on connection.
+    'contact', case when v_mine or v_connected
+                         or (o.contact_visibility = 'members' and o.identity = 'public')
                     then jsonb_build_object('name', o.contact_name, 'email', o.contact_email, 'phone', o.contact_phone)
                end,
     'interested_count', (select count(*) from public.opportunity_interests i where i.opportunity_id = o.id),

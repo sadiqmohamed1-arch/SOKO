@@ -34,9 +34,11 @@ create table public.companies (
   updated_at        timestamptz not null default now(),
   unique (id, kind)
 );
-create unique index companies_license_uq
+-- Unverified companies may share a licence number, so nobody can squat a real
+-- licence before its owner registers. Only one VERIFIED company may hold it.
+create unique index companies_license_verified_uq
   on public.companies (lower(issuing_authority), lower(license_no))
-  where license_no is not null and issuing_authority is not null;
+  where verification_status = 'verified' and license_no is not null and issuing_authority is not null;
 create index companies_public_idx on public.companies (kind) where is_public and not is_suspended;
 create trigger companies_updated_at before update on public.companies
   for each row execute function private.set_updated_at();
@@ -256,7 +258,12 @@ alter table public.company_verifications   enable row level security;
 -- fixed column list. Kind, licence, verification, suspension and soko_id are
 -- never client-writable. Insert and delete happen only through RPCs/support.
 select private.reset_table_grants('public.companies');
-grant select on public.companies to anon, authenticated;
+-- Column-level SELECT: licence fields and created_by are readable only through
+-- public.get_company_private. Clients must list columns (select('*') fails).
+grant select (id, soko_id, kind, legal_name, trading_name, country, emirate, address, website,
+              general_email, phone, established, description, logo_path, cover_path,
+              is_public, is_suspended, verification_status, verified_at, created_at, updated_at)
+  on public.companies to anon, authenticated;
 grant update (trading_name, emirate, address, website, general_email, phone,
               established, description, logo_path, cover_path, is_public)
   on public.companies to authenticated;
@@ -408,14 +415,18 @@ declare
   v_email text;
   v_inv public.company_invitations%rowtype;
 begin
-  select lower(u.email) into v_email from auth.users u where u.id = v_uid;
+  -- Only a confirmed email counts; null (phone-only / unconfirmed) never matches.
+  select lower(u.email) into v_email from auth.users u
+  where u.id = v_uid and u.email_confirmed_at is not null;
 
   select * into v_inv from public.company_invitations i
   where i.token_hash = encode(sha256(convert_to(coalesce(p_token, ''), 'UTF8')), 'hex')
   for update;
 
   if v_inv.id is null or v_inv.accepted_at is not null or v_inv.revoked_at is not null
-     or v_inv.expires_at < now() or v_inv.email <> v_email then
+     or v_inv.expires_at is null or v_inv.expires_at <= now()
+     or v_email is null or v_inv.email is null
+     or lower(v_inv.email) is distinct from v_email then
     raise exception 'invitation is invalid or expired' using errcode = '22023';
   end if;
 
@@ -597,6 +608,13 @@ begin
   if private.is_member(v_ver.company_id) then
     raise exception 'you cannot review a company you belong to' using errcode = '42501';
   end if;
+  if p_approve and exists (
+    select 1 from public.companies me join public.companies other
+      on lower(other.license_no) = lower(me.license_no)
+     and lower(other.issuing_authority) = lower(me.issuing_authority)
+    where me.id = v_ver.company_id and other.id <> me.id and other.verification_status = 'verified') then
+    raise exception 'another verified company already holds this licence' using errcode = '23505';
+  end if;
   update public.company_verifications
   set status = v_status, reviewed_by = v_uid, reviewed_at = now(), note = left(p_note, 2000)
   where id = p_verification;
@@ -604,6 +622,20 @@ begin
   set verification_status = v_status,
       verified_at = case when p_approve then now() else null end
   where id = v_ver.company_id;
+end $$;
+
+-- Licence and creator fields: active members of the company and platform admins only.
+create or replace function public.get_company_private(p_company uuid)
+returns table (license_no text, issuing_authority text, license_expiry date, created_by uuid)
+language plpgsql stable security definer set search_path = '' as $$
+begin
+  perform private.require_user();
+  if not (private.is_member(p_company) or private.is_platform_admin()) then
+    raise exception 'not allowed' using errcode = '42501';
+  end if;
+  return query
+    select c.license_no, c.issuing_authority, c.license_expiry, c.created_by
+    from public.companies c where c.id = p_company;
 end $$;
 
 select private.lock_down_public_functions();
