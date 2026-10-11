@@ -1126,14 +1126,11 @@ const SuperAdminRestrictedGate: React.FC<{
       </p>
 
       <div className="mt-6 p-4 rounded-xl bg-blue-50/80 border border-blue-200 max-w-md mx-auto text-left text-xs">
-        <span className="font-bold text-blue-900 block mb-1">
-          🔑 Authenticated Administrator Credentials:
-        </span>
-        <div className="font-mono text-slate-700 space-y-0.5">
-          <div>Email: <span className="font-bold text-blue-700">admin@soko.ae</span></div>
-          <div>Password: <span className="font-bold text-blue-700">Password123!</span></div>
-          <div>Profile: <span className="text-slate-600">Zackary Al-Hassan (Chief Governance Officer)</span></div>
-        </div>
+        <span className="font-bold text-blue-900 block mb-1">Platform administrator access</span>
+        <p className="text-slate-700 leading-relaxed">
+          Sign in with an account that has been granted platform administrator access by SOKO. If access was
+          granted recently, re-check it below.
+        </p>
       </div>
 
       <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
@@ -1143,7 +1140,7 @@ const SuperAdminRestrictedGate: React.FC<{
           className="w-full sm:w-auto px-6 py-3 bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs rounded-xl shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all"
         >
           <ShieldCheck className="w-4 h-4 text-cyan-300" />
-          <span>{isRefreshing ? 'Authenticating...' : 'Sign In as Super Admin (1-Click)'}</span>
+          <span>{isRefreshing ? 'Checking access...' : 'Re-check admin access'}</span>
           <ArrowRight className="w-4 h-4" />
         </button>
         <button
@@ -1158,13 +1155,14 @@ const SuperAdminRestrictedGate: React.FC<{
 );
 
 export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = (props) => {
-  const { user, login } = useAuth();
+  const { user, refreshAccess } = useAuth();
   const isAdmin = props.currentUser.role === 'admin' || user?.role === 'admin';
   const [isRefreshing, setIsRefreshing] = useState(false);
 
+  // Platform admin is granted only in public.platform_admins; this re-reads it for the current session.
   const handleQuickAdminLogin = async () => {
     setIsRefreshing(true);
-    await login({ email: 'admin@soko.ae', password: 'Password123!' });
+    await refreshAccess();
     setIsRefreshing(false);
   };
 

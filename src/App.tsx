@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { companyById, companyUser, effectiveRole, loadSupplierStore, membershipsOfUser, saveSupplierStore, syncDirectory } from './data/supplierStore';
 import { DEMO_ACCOUNTS, DemoAccount, roleMeta, SupplierStore } from './data/supplierTypes';
+import { realUserProfile, withRealWorkspaces, withoutRealWorkspaces } from './lib/realWorkspaces';
 import { DEMO_MODE_ENABLED } from './demoMode';
 import { DemoAccountSwitcher } from './components/DemoAccountSwitcher';
 import { leaveCompany, setTier } from './data/supplierService';
@@ -86,7 +87,16 @@ const PUBLIC_LANDING_PATH = '/welcome';
 const DEMO_SESSION_KEY = 'soko_demo_session';
 
 function MainApp() {
-  const { user: authUser, isAuthenticated, logout } = useAuth();
+  const {
+    user: authUser,
+    isAuthenticated,
+    isLoading: authLoading,
+    logout,
+    workspaces: authWorkspaces,
+    workspacesLoaded,
+    authNotice,
+    clearAuthNotice,
+  } = useAuth();
   const [viewMode, setViewMode] = useState<'app' | 'landing'>(() =>
     window.location.pathname === PUBLIC_LANDING_PATH ? 'landing' : 'app',
   );
@@ -154,12 +164,22 @@ function MainApp() {
     return saved ? JSON.parse(saved) : INITIAL_CURRENT_USER;
   });
 
-  const [supplierStore, setSupplierStoreState] = useState<SupplierStore>(loadSupplierStore);
+  const [localSupplierStore, setSupplierStoreState] = useState<SupplierStore>(loadSupplierStore);
+  // Real users' companies and memberships come only from Supabase; demo mode keeps the local store as-is.
+  const realIdentity = isAuthenticated && authUser ? authUser : null;
+  const supplierStore = useMemo(
+    () => (realIdentity ? withRealWorkspaces(localSupplierStore, realIdentity, authWorkspaces) : localSupplierStore),
+    [localSupplierStore, realIdentity, authWorkspaces],
+  );
+  const realScopeRef = React.useRef<{ userId: string; companyIds: ReadonlySet<string> }>({ userId: '', companyIds: new Set() });
+  realScopeRef.current = { userId: realIdentity?.id ?? '', companyIds: new Set(authWorkspaces.map((w) => w.company.id)) };
   const updateSupplierStore = useCallback((next: SupplierStore) => {
-    syncDirectory(next);
-    syncMarketPlans(next.companies);
-    saveSupplierStore(next);
-    setSupplierStoreState(next);
+    const { userId, companyIds } = realScopeRef.current;
+    const local = withoutRealWorkspaces(next, userId, companyIds);
+    syncDirectory(local);
+    syncMarketPlans(local.companies);
+    saveSupplierStore(local);
+    setSupplierStoreState(local);
   }, []);
   useEffect(() => {
     const corrections = syncMarketPlans(supplierStore.companies);
@@ -192,6 +212,8 @@ function MainApp() {
     [currentUser.id, currentUser.name, currentUser.email, currentUser.title],
   );
   const companyMemberships = membershipsOfUser(supplierStore, sessionUser.id);
+  const membershipsRef = React.useRef(companyMemberships);
+  membershipsRef.current = companyMemberships;
   const requestedCompanyId = activeWorkspaceId.startsWith('company:') ? activeWorkspaceId.slice(8) : null;
   const activeMembership = companyMemberships.find((m) => m.companyId === requestedCompanyId);
   const activeCompany = activeMembership ? companyById(supplierStore, activeMembership.companyId) : undefined;
@@ -233,7 +255,7 @@ function MainApp() {
       if (!s?.sokoTab || !s.sokoWorkspace) return;
       // Never restore a company workspace the current user is no longer a member of.
       const companyId = s.sokoWorkspace.startsWith('company:') ? s.sokoWorkspace.slice(8) : null;
-      const allowed = !companyId || membershipsOfUser(loadSupplierStore(), sessionUser.id).some((m) => m.companyId === companyId);
+      const allowed = !companyId || membershipsRef.current.some((m) => m.companyId === companyId);
       restoringFromHistory.current = true;
       if (allowed) {
         setActiveWorkspaceId(s.sokoWorkspace);
@@ -260,6 +282,7 @@ function MainApp() {
 
   const handleLeaveCompany = () => {
     if (!activeCompanyId) return;
+    if (activeCompany && !activeCompany.demo) return notifyApp('Leaving a company is not yet connected to your SOKO account. Ask a company admin to remove you.');
     const name = activeCompany?.profile.tradingName;
     const r = leaveCompany(supplierStore, sessionUser, activeCompanyId);
     if (!r.ok) return notifyApp(r.error);
@@ -270,6 +293,11 @@ function MainApp() {
 
   const handleCompanyPlanChange = (plan: Parameters<typeof planToTier>[0]) => {
     if (!activeCompany || !activeMembership) return;
+    if (!activeCompany.demo) {
+      syncMarketPlans(supplierStore.companies);
+      setMarketNonce((n) => n + 1);
+      return notifyApp('Plan changes are not yet connected to your SOKO account.');
+    }
     const tier = planToTier(plan);
     if (tier === activeCompany.tier) return;
     const r = setTier({ store: supplierStore, user: sessionUser, companyId: activeCompany.id, role: effectiveRole(supplierStore, activeMembership) }, tier);
@@ -287,27 +315,32 @@ function MainApp() {
   useEffect(() => {
     if (authUser) {
       // A different person must never inherit the previous person's company workspace or tab.
-      if (authUser.id !== identityIdRef.current) {
+      const isNewIdentity = authUser.id !== identityIdRef.current;
+      if (isNewIdentity) {
         setActiveWorkspaceId('personal');
         setActiveTab('feed');
       }
-      setCurrentUser((prev) => ({
-        ...prev,
-        id: authUser.id,
-        name: authUser.name,
-        email: authUser.email,
-        role: authUser.role,
-        company: authUser.company,
-        title: authUser.title,
-        phone: authUser.phone,
-        avatarUrl: authUser.avatarUrl || prev.avatarUrl,
-        location: authUser.location || prev.location,
-      }));
+      // A real account never inherits the demo persona's profile details.
+      setCurrentUser((prev) => realUserProfile(isNewIdentity ? INITIAL_CURRENT_USER : prev, authUser, isNewIdentity));
       if (authUser.role === 'admin') {
         setActiveTab('admin');
       }
     }
   }, [authUser]);
+
+  useEffect(() => {
+    if (!authNotice) return;
+    notifyApp(authNotice);
+    clearAuthNotice();
+  }, [authNotice, notifyApp, clearAuthNotice]);
+
+  const noMembershipNoticeFor = React.useRef<string | null>(null);
+  useEffect(() => {
+    if (!authUser || !workspacesLoaded || authUser.role === 'admin' || authWorkspaces.length > 0) return;
+    if (noMembershipNoticeFor.current === authUser.id) return;
+    noMembershipNoticeFor.current = authUser.id;
+    notifyApp('You are signed in to your personal account. You have no active company memberships yet.');
+  }, [authUser, workspacesLoaded, authWorkspaces, notifyApp]);
 
   const [posts, setPosts] = useState<FeedPost[]>(() => {
     const saved = localStorage.getItem('soko_feed_posts_v4_infographics');
@@ -943,9 +976,20 @@ function MainApp() {
       }),
   ];
 
+  if (viewMode === 'app' && authLoading && !demoActive) {
+    return (
+      <main className="min-h-screen bg-slate-100 flex items-center justify-center font-sans">
+        <p role="status" className="text-sm font-medium text-slate-600">
+          Checking your session...
+        </p>
+      </main>
+    );
+  }
+
   if (viewMode === 'landing' || !canAccessApp) {
     return (
       <>
+        <Toast message={appToast} />
         <LandingPage
           onOpenAuth={(mode) => {
             setAuthModalMode(mode);
