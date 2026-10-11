@@ -97,9 +97,17 @@ async function race(uid, isolation, jobs, work, { retry = true, max = 80 } = {})
   }
 }
 
-const upload = (bucket, size, mime) => (c, name) => c.query(
-  `insert into storage.objects (bucket_id, name, metadata) values ($1, $2, $3)`,
-  [bucket, name, JSON.stringify({ size, mimetype: mime })]);
+// The real client flow: reserve (the quota check, raced here), upload with a
+// declared contentLength, then settle. Documents settle in finalize instead.
+async function reservedUpload(c, bucket, name, size, mime) {
+  await c.query('select public.reserve_storage_upload($1, $2, $3, $4)', [bucket, name, size, mime]);
+  await c.query(`insert into storage.objects (bucket_id, name, metadata) values ($1, $2, $3)`,
+    [bucket, name, JSON.stringify({ size, mimetype: mime, contentLength: size })]);
+  if (bucket !== 'company-documents') {
+    await c.query('select public.complete_storage_upload($1, $2)', [bucket, name]);
+  }
+}
+const upload = (bucket, size, mime) => (c, name) => reservedUpload(c, bucket, name, size, mime);
 
 try {
   // 1. Quota race: 1,000 bytes left, 20 parallel 100-byte uploads. Exactly 10 fit.
@@ -112,7 +120,7 @@ try {
     const results = await race(admin, isolation, names, upload('company-media', 100, 'image/png'));
     const { used } = await quota(co);
     const finals = summary(results.map(r => r.outcome));
-    check(Number(used) === Number(limit) && finals.ok === 10 && finals['42501'] === 10,
+    check(Number(used) === Number(limit) && finals.ok === 10 && finals['53400'] === 10,
       `quota race (${isolation}) fills the quota exactly`,
       JSON.stringify({ over: Number(used) - Number(limit), finals, retries: summary(results.flatMap(r => r.retries)) }));
   }
@@ -127,7 +135,7 @@ try {
     const results = await race(admin, isolation, names, upload('company-media', 100, 'image/png'), { retry: false });
     const outcomes = results.map(r => r.outcome);
     const { used } = await quota(co);
-    check(Number(used) <= Number(limit) && outcomes.every(o => ['ok', '40001', '42501'].includes(o)),
+    check(Number(used) <= Number(limit) && outcomes.every(o => ['ok', '40001', '53400'].includes(o)),
       `quota race (${isolation}, no retry) never overshoots`, JSON.stringify({ over: Number(used) - Number(limit), ...summary(outcomes) }));
   }
 
@@ -145,8 +153,7 @@ try {
       ...Array.from({ length: 4 }, (_, i) => ['verification', `${co}/${crypto.randomUUID()}/v${i}.pdf`, 'application/pdf']),
     ];
     const results = await race(admin, 'read committed', jobs, (c, [bucket, name, mime]) =>
-      c.query(`insert into storage.objects (bucket_id, name, metadata) values ($1, $2, $3)`,
-        [bucket, name, JSON.stringify({ size: 100, mimetype: mime })]));
+      reservedUpload(c, bucket, name, 100, mime));
     const { used } = await quota(co);
     const finals = summary(results.map(r => r.outcome));
     check(Number(used) === Number(limit) && finals.ok === 3,
@@ -181,7 +188,7 @@ try {
       race(a.admin, 'serializable', Array.from({ length: 10 }, (_, i) => `${a.co}/gallery/x${i}.png`), upload('company-media', 10, 'image/png')),
       race(b.admin, 'serializable', Array.from({ length: 10 }, (_, i) => `${b.co}/gallery/y${i}.png`), upload('company-media', 10, 'image/png')),
     ]);
-    check(ra.every(r => r.outcome === '42501') && rb.every(r => r.outcome === 'ok'),
+    check(ra.every(r => r.outcome === '53400') && rb.every(r => r.outcome === 'ok'),
       'a full company does not limit another', JSON.stringify({ a: summary(ra.map(r => r.outcome)), b: summary(rb.map(r => r.outcome)) }));
   }
 } finally {
@@ -194,6 +201,7 @@ try {
   const left = (await owner.query(
     `select (select count(*) from storage.objects where split_part(name, '/', 1) = any($1::text[]))
           + (select count(*) from private.storage_quota_guard where company_id = any($2::uuid[]))
+          + (select count(*) from private.storage_upload_reservations where company_id = any($2::uuid[]))
           + (select count(*) from public.documents where company_id = any($2::uuid[])) as c`,
     [created.companies, created.companies])).rows[0].c;
   check(Number(left) === 0, 'cleanup removed all test objects, guards and documents', `left=${left}`);

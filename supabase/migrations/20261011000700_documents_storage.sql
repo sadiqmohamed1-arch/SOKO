@@ -185,6 +185,35 @@ create table private.storage_quota_guard (
 );
 revoke all on private.storage_quota_guard from public, anon, authenticated;
 
+-- Upload reservations. Supabase Storage checks RLS BEFORE the bytes arrive
+-- (testPermission, with only the client-declared contentLength and mimetype)
+-- and writes the real size afterwards as the storage superuser, which RLS never
+-- sees. So the quota is charged here, ahead of the upload, under the company's
+-- guard row lock: concurrent reservations queue and can never jointly exceed
+-- the quota. The INSERT/UPDATE policies then require an open reservation by the
+-- same user for the exact path, with a declared length that fits it.
+--
+-- A reservation keeps counting towards the quota until it is settled (by
+-- complete_storage_upload or finalize_document_version, which check the real
+-- size) AND one hour has passed since its 15-minute upload window closed, so an
+-- upload still in flight when it is settled stays covered. Unsettled rows count
+-- until release_stale_storage_reservations removes them.
+create table private.storage_upload_reservations (
+  id             uuid primary key default gen_random_uuid(),
+  company_id     uuid not null references public.companies (id) on delete cascade,
+  bucket_id      text not null check (bucket_id in ('company-documents', 'company-media', 'verification')),
+  object_name    text not null,
+  user_id        uuid not null references auth.users (id) on delete cascade,
+  reserved_bytes bigint not null check (reserved_bytes > 0),
+  mime_type      text not null,
+  created_at     timestamptz not null default now(),
+  expires_at     timestamptz not null,
+  settled_at     timestamptz,
+  unique (bucket_id, object_name)
+);
+create index storage_upload_reservations_company on private.storage_upload_reservations (company_id);
+revoke all on private.storage_upload_reservations from public, anon, authenticated;
+
 alter table public.company_verifications
   add constraint company_verifications_license_document_fk
   foreign key (license_document_id) references public.documents (id) on delete set null;
@@ -245,27 +274,45 @@ language sql stable security definer set search_path = '' as $$
 $$;
 select private.allow_execute(array['anon', 'authenticated'], array['private.can_read_document(uuid)']);
 
--- Serialised per company through storage_quota_guard. An unknown incoming size
--- counts as one byte, so a company at its limit cannot add even empty objects.
-create or replace function private.storage_quota_ok(p_company uuid, p_incoming bigint) returns boolean
-language plpgsql volatile security definer set search_path = '' as $$
-declare v_used bigint; v_limit bigint;
-begin
-  if p_company is null or not exists (select 1 from public.companies c where c.id = p_company) then
-    return false;
-  end if;
-  insert into private.storage_quota_guard as g (company_id) values (p_company)
-  on conflict (company_id) do update set checked_at = now();
+-- Bytes a company holds (real sizes written by Storage) plus, for every
+-- reservation still counting, the reserved bytes not yet covered by the object
+-- at its path — so a landed upload counts max(reserved, actual), never both.
+-- p_bucket/p_name exclude the object being replaced (and its reservation via
+-- p_exclude). Volatile so each call inside a plpgsql function takes a fresh
+-- snapshot after the caller has locked the guard row.
+create or replace function private.storage_usage(
+  p_company uuid, p_exclude uuid default null, p_bucket text default null, p_name text default null
+) returns bigint
+language sql volatile security definer set search_path = '' as $$
+  select coalesce((select sum(coalesce(private.object_size(o.metadata), 0)) from storage.objects o
+                   where o.bucket_id in ('company-documents', 'company-media', 'verification')
+                     and o.name like p_company::text || '/%'
+                     and not (o.bucket_id = p_bucket and o.name = p_name)), 0)
+       + coalesce((select sum(greatest(r.reserved_bytes - coalesce(
+                     (select private.object_size(o.metadata) from storage.objects o
+                      where o.bucket_id = r.bucket_id and o.name = r.object_name), 0), 0))
+                   from private.storage_upload_reservations r
+                   where r.company_id = p_company and r.id is distinct from p_exclude
+                     and (r.settled_at is null
+                          or (now() < r.expires_at + interval '1 hour'
+                              and exists (select 1 from storage.objects o
+                                          where o.bucket_id = r.bucket_id and o.name = r.object_name)))), 0);
+$$;
 
-  -- A fresh snapshot (volatile plpgsql), taken after the guard row lock, so it
-  -- includes every upload that committed while this one was waiting.
-  select coalesce(sum(coalesce(private.object_size(o.metadata), 0)), 0) into v_used
-  from storage.objects o
-  where o.bucket_id in ('company-documents', 'company-media', 'verification')
-    and o.name like p_company::text || '/%';
-  v_limit := private.entitlement_int(p_company, 'storageMb')::bigint * 1024 * 1024;
-  return v_used + greatest(coalesce(p_incoming, 0), 1) <= v_limit;
-end $$;
+-- RLS check at upload time: an open reservation by this user for this exact
+-- path, with a declared length and type that fit it. A missing declared length
+-- (e.g. a multipart form upload) is refused; clients upload a raw body
+-- (ArrayBuffer / Blob with Content-Length) or use resumable uploads.
+create or replace function private.upload_reserved(p_bucket text, p_name text, p_metadata jsonb) returns boolean
+language sql stable security definer set search_path = '' as $$
+  select exists (
+    select 1 from private.storage_upload_reservations r
+    where r.bucket_id = p_bucket and r.object_name = p_name and r.user_id = auth.uid()
+      and r.settled_at is null and now() < r.expires_at
+      and case when p_metadata ->> 'contentLength' ~ '^[0-9]{1,15}$'
+               then (p_metadata ->> 'contentLength')::bigint end between 1 and r.reserved_bytes
+      and p_metadata ->> 'mimetype' = r.mime_type);
+$$;
 
 create or replace function private.storage_company(p_name text) returns uuid
 language sql immutable set search_path = '' as $$
@@ -273,25 +320,16 @@ language sql immutable set search_path = '' as $$
 $$;
 
 -- Uploads go only to the exact next version folder of a live document the
--- caller manages, and only while the company is within quota.
-create or replace function private.can_upload_document_object(p_name text, p_size bigint) returns boolean
-language plpgsql volatile security definer set search_path = '' as $$
-declare v_path record; v_doc public.documents%rowtype;
-begin
-  select * into v_path from private.parse_document_path(p_name);
-  if v_path.company_id is null then
-    return false;
-  end if;
-  select * into v_doc from public.documents d
-  where d.id = v_path.document_id and d.company_id = v_path.company_id;
-  if v_doc.id is null or v_doc.archived
-     or v_path.version <> v_doc.current_version + 1
-     or not private.has_permission(v_doc.company_id, 'documents.manage')
-     or not private.has_doc_access(v_doc.company_id, v_doc.access_level) then
-    return false;
-  end if;
-  return private.storage_quota_ok(v_doc.company_id, p_size);
-end $$;
+-- caller manages. The quota is charged by reserve_storage_upload.
+create or replace function private.can_upload_document_object(p_name text) returns boolean
+language sql stable security definer set search_path = '' as $$
+  select exists (
+    select 1 from private.parse_document_path(p_name) p
+    join public.documents d on d.id = p.document_id and d.company_id = p.company_id
+    where not d.archived and p.version = d.current_version + 1
+      and private.has_permission(d.company_id, 'documents.manage')
+      and private.has_doc_access(d.company_id, d.access_level));
+$$;
 
 -- Direct Storage reads: finalised versions follow can_read_document minus the
 -- share branch (recipients use the document-download Edge Function, which
@@ -329,21 +367,23 @@ language sql stable security definer set search_path = '' as $$
        where not private.has_doc_access(d.company_id, d.access_level));
 $$;
 
--- Members read all of their company's media. Everyone else reads only a public,
--- non-suspended company's media, and within its products/ folder only images
--- referenced by a published product — draft and archived product images stay
--- private even though the bucket path is guessable. Malformed paths: nobody.
+-- Nobody reads a suspended company's media. Otherwise members read all of
+-- their company's media, and everyone else reads only a public company's
+-- media, and within its products/ folder only images referenced by a published
+-- product — draft and archived product images stay private even though the
+-- bucket path is guessable. Malformed paths: nobody.
 create or replace function private.can_read_company_media(p_name text) returns boolean
 language sql stable security definer set search_path = '' as $$
   select exists (
     select 1 from private.parse_media_path(p_name) m
     join public.companies c on c.id = m.company_id
-    where private.is_member(c.id)
-       or (c.is_public and not c.is_suspended
+    where not c.is_suspended
+      and (private.is_member(c.id)
+       or (c.is_public
            and (m.folder <> 'products'
                 or exists (select 1 from public.products p
                            where p.company_id = c.id and p.status = 'published'
-                             and p.image_paths @> array[p_name]))));
+                             and p.image_paths @> array[p_name])))));
 $$;
 
 -- Permission only (update / delete). products/ needs products.manage; logo,
@@ -358,30 +398,32 @@ language sql stable security definer set search_path = '' as $$
           end);
 $$;
 
--- New bytes (insert, overwrite): permission first, then quota.
-create or replace function private.can_store_company_media(p_name text, p_size bigint) returns boolean
-language plpgsql volatile security definer set search_path = '' as $$
-begin
-  if not private.can_write_company_media(p_name) then
-    return false;
-  end if;
-  return private.storage_quota_ok(private.storage_company(p_name), p_size);
-end $$;
-
 -- Verification evidence: uploaded by admins of an active (non-suspended)
 -- company, read by that company's admin-role holders (even while suspended,
 -- to resolve the suspension) and platform admins. Never updated or deleted by
 -- users; files of a deleted company are reported as orphans.
-create or replace function private.can_upload_verification_object(p_name text, p_size bigint) returns boolean
-language plpgsql volatile security definer set search_path = '' as $$
-declare v_company uuid;
-begin
-  select v.company_id into v_company from private.parse_verification_path(p_name) v;
-  if v_company is null or not private.is_company_admin(v_company) then
-    return false;
-  end if;
-  return private.storage_quota_ok(v_company, p_size);
-end $$;
+create or replace function private.can_upload_verification_object(p_name text) returns boolean
+language sql stable security definer set search_path = '' as $$
+  select coalesce((select private.is_company_admin(v.company_id)
+                   from private.parse_verification_path(p_name) v where v.company_id is not null), false);
+$$;
+
+-- document_shares visibility. Owners: members of a non-suspended owner company.
+-- Recipients: documents.view holders (void while the recipient is suspended),
+-- only while the share is in force, the document is not archived and the owner
+-- is not suspended — the same conditions as can_read_document's share branch.
+create or replace function private.can_see_share_as_owner(p_owner uuid) returns boolean
+language sql stable security definer set search_path = '' as $$
+  select private.is_member(p_owner)
+     and exists (select 1 from public.companies c where c.id = p_owner and not c.is_suspended);
+$$;
+
+create or replace function private.can_see_share_as_recipient(p_document uuid, p_recipient uuid) returns boolean
+language sql stable security definer set search_path = '' as $$
+  select private.has_permission(p_recipient, 'documents.view')
+     and exists (select 1 from public.documents d join public.companies c on c.id = d.company_id
+                 where d.id = p_document and not d.archived and not c.is_suspended);
+$$;
 
 create or replace function private.can_read_verification_object(p_name text) returns boolean
 language sql stable security definer set search_path = '' as $$
@@ -400,14 +442,16 @@ select private.allow_execute(array['authenticated'], array['private.has_doc_acce
 select private.allow_execute(array['anon', 'authenticated'], array['private.storage_company(text)']);
 select private.allow_execute(array['authenticated'], array['private.object_size(jsonb)']);
 select private.allow_execute(array['authenticated'], array[
-  'private.can_upload_document_object(text, bigint)',
+  'private.upload_reserved(text, text, jsonb)',
+  'private.can_upload_document_object(text)',
   'private.can_read_document_object(text)',
   'private.can_delete_document_object(text)',
   'private.can_write_company_media(text)',
-  'private.can_store_company_media(text, bigint)',
-  'private.can_upload_verification_object(text, bigint)',
+  'private.can_upload_verification_object(text)',
   'private.can_read_verification_object(text)',
-  'private.is_own_avatar_path(text)'
+  'private.is_own_avatar_path(text)',
+  'private.can_see_share_as_owner(uuid)',
+  'private.can_see_share_as_recipient(uuid, uuid)'
 ]);
 select private.allow_execute(array['anon', 'authenticated'], array['private.can_read_company_media(text)']);
 
@@ -456,9 +500,9 @@ select private.reset_table_grants('public.document_shares');
 grant select on public.document_shares to authenticated;
 create policy document_shares_read on public.document_shares
   for select to authenticated
-  using (private.is_member(owner_company_id)
-         or (private.is_member(recipient_company_id)
-             and revoked_at is null and (expires_at is null or expires_at > now())));
+  using (private.can_see_share_as_owner(owner_company_id)
+         or (revoked_at is null and (expires_at is null or expires_at > now())
+             and private.can_see_share_as_recipient(document_id, recipient_company_id)));
 
 select private.reset_table_grants('public.document_reminders_sent');
 
@@ -482,7 +526,8 @@ on conflict (id) do nothing;
 create policy soko_documents_insert on storage.objects
   for insert to authenticated
   with check (bucket_id = 'company-documents'
-              and private.can_upload_document_object(name, private.object_size(metadata)));
+              and private.can_upload_document_object(name)
+              and private.upload_reserved(bucket_id, name, metadata));
 create policy soko_documents_select on storage.objects
   for select to authenticated
   using (bucket_id = 'company-documents' and private.can_read_document_object(name));
@@ -496,12 +541,14 @@ create policy soko_media_select on storage.objects
 create policy soko_media_insert on storage.objects
   for insert to authenticated
   with check (bucket_id = 'company-media'
-              and private.can_store_company_media(name, private.object_size(metadata)));
+              and private.can_write_company_media(name)
+              and private.upload_reserved(bucket_id, name, metadata));
 create policy soko_media_update on storage.objects
   for update to authenticated
   using (bucket_id = 'company-media' and private.can_write_company_media(name))
   with check (bucket_id = 'company-media'
-              and private.can_store_company_media(name, private.object_size(metadata)));
+              and private.can_write_company_media(name)
+              and private.upload_reserved(bucket_id, name, metadata));
 -- Deleting frees space, so it is never blocked by the quota.
 create policy soko_media_delete on storage.objects
   for delete to authenticated
@@ -510,7 +557,8 @@ create policy soko_media_delete on storage.objects
 create policy soko_verification_insert on storage.objects
   for insert to authenticated
   with check (bucket_id = 'verification'
-              and private.can_upload_verification_object(name, private.object_size(metadata)));
+              and private.can_upload_verification_object(name)
+              and private.upload_reserved(bucket_id, name, metadata));
 create policy soko_verification_select on storage.objects
   for select to authenticated
   using (bucket_id = 'verification' and private.can_read_verification_object(name));
@@ -542,6 +590,7 @@ declare
   v_doc public.documents%rowtype;
   v_path record;
   v_bucket storage.buckets%rowtype;
+  v_res private.storage_upload_reservations%rowtype;
   v_size bigint;
   v_mime text;
   v_found boolean;
@@ -580,6 +629,15 @@ begin
   if v_bucket.allowed_mime_types is not null and (v_mime is null or not v_mime = any (v_bucket.allowed_mime_types)) then
     raise exception 'uploaded file type is not allowed' using errcode = '22023';
   end if;
+  -- The real file must fit the reservation it was uploaded under.
+  select * into v_res from private.storage_upload_reservations r
+  where r.bucket_id = 'company-documents' and r.object_name = p_storage_path for update;
+  if v_res.id is not null and v_res.settled_at is null then
+    if v_size > v_res.reserved_bytes or v_mime is distinct from v_res.mime_type then
+      raise exception 'uploaded file does not match its reservation' using errcode = '22023';
+    end if;
+    update private.storage_upload_reservations set settled_at = now() where id = v_res.id;
+  end if;
 
   v_name := left(coalesce(nullif(btrim(p_file_name), ''), v_path.file_name), 255);
   if v_name ~ '[[:cntrl:]]' then
@@ -592,6 +650,123 @@ begin
   update public.documents set current_version = v_path.version where id = v_doc.id;
   return v_id;
 end $$;
+
+-- Step 1 of every company-documents, company-media and verification upload.
+-- Authorises the path, then charges p_size against the quota under the guard
+-- row lock (READ COMMITTED: concurrent callers queue; REPEATABLE READ /
+-- SERIALIZABLE: they fail with a retryable 40001). Returns when the 15-minute
+-- upload window closes. Errors: 42501 not allowed, 22023 invalid size/type/
+-- bucket, 55006 another user's upload to this path is open, 53400 quota or
+-- open-upload limit reached.
+create or replace function public.reserve_storage_upload(p_bucket text, p_name text, p_size bigint, p_mime_type text)
+returns timestamptz
+language plpgsql security definer set search_path = '' as $$
+declare
+  v_uid uuid := private.require_user();
+  v_bucket storage.buckets%rowtype;
+  v_company uuid;
+  v_allowed boolean;
+  v_old private.storage_upload_reservations%rowtype;
+  v_bytes bigint := p_size;
+  v_expires timestamptz := now() + interval '15 minutes';
+begin
+  select * into v_bucket from storage.buckets b
+  where b.id = p_bucket and b.id in ('company-documents', 'company-media', 'verification');
+  if v_bucket.id is null then
+    raise exception 'unsupported bucket' using errcode = '22023';
+  end if;
+  if p_size is null or p_size <= 0 or (v_bucket.file_size_limit is not null and p_size > v_bucket.file_size_limit) then
+    raise exception 'invalid file size' using errcode = '22023';
+  end if;
+  if v_bucket.allowed_mime_types is not null
+     and (p_mime_type is null or not p_mime_type = any (v_bucket.allowed_mime_types)) then
+    raise exception 'file type is not allowed' using errcode = '22023';
+  end if;
+  v_allowed := case p_bucket
+    when 'company-documents' then private.can_upload_document_object(p_name)
+    when 'company-media'     then private.can_write_company_media(p_name)
+    else private.can_upload_verification_object(p_name) end;
+  if not coalesce(v_allowed, false) then
+    raise exception 'not allowed' using errcode = '42501';
+  end if;
+  v_company := private.storage_company(p_name);
+
+  insert into private.storage_quota_guard (company_id) values (v_company)
+  on conflict (company_id) do update set checked_at = now();
+
+  select * into v_old from private.storage_upload_reservations r
+  where r.bucket_id = p_bucket and r.object_name = p_name;
+  if v_old.id is not null and (v_old.settled_at is null or now() < v_old.expires_at + interval '1 hour') then
+    if v_old.user_id <> v_uid and v_old.settled_at is null and now() < v_old.expires_at then
+      raise exception 'another upload to this path is in progress' using errcode = '55006';
+    end if;
+    -- An upload admitted under the old reservation may still be in flight.
+    v_bytes := greatest(v_old.reserved_bytes, p_size);
+  end if;
+
+  if (select count(*) from private.storage_upload_reservations r
+      where r.company_id = v_company and r.id is distinct from v_old.id
+        and r.settled_at is null and now() < r.expires_at) >= 20 then
+    raise exception 'too many uploads in progress' using errcode = '53400';
+  end if;
+  if private.storage_usage(v_company, v_old.id, p_bucket, p_name) + v_bytes
+     > private.entitlement_int(v_company, 'storageMb')::bigint * 1024 * 1024 then
+    raise exception 'storage quota exceeded' using errcode = '53400';
+  end if;
+
+  insert into private.storage_upload_reservations
+    (company_id, bucket_id, object_name, user_id, reserved_bytes, mime_type, expires_at)
+  values (v_company, p_bucket, p_name, v_uid, v_bytes, p_mime_type, v_expires)
+  on conflict (bucket_id, object_name) do update
+    set company_id = excluded.company_id, user_id = excluded.user_id,
+        reserved_bytes = excluded.reserved_bytes, mime_type = excluded.mime_type,
+        created_at = now(), expires_at = excluded.expires_at, settled_at = null;
+  return v_expires;
+end $$;
+
+-- Step 3 for company-media and verification uploads (documents settle in
+-- finalize_document_version). Checks Storage's real size and type against the
+-- caller's reservation and settles it. Returns the real size.
+create or replace function public.complete_storage_upload(p_bucket text, p_name text) returns bigint
+language plpgsql security definer set search_path = '' as $$
+declare
+  v_uid uuid := private.require_user();
+  v_res private.storage_upload_reservations%rowtype;
+  v_size bigint;
+  v_mime text;
+  v_found boolean;
+begin
+  select * into v_res from private.storage_upload_reservations r
+  where r.bucket_id = p_bucket and r.object_name = p_name and r.user_id = v_uid and r.settled_at is null
+  for update;
+  if v_res.id is null then
+    raise exception 'no upload in progress for this path' using errcode = '22023';
+  end if;
+  select true, private.object_size(o.metadata), o.metadata ->> 'mimetype' into v_found, v_size, v_mime
+  from storage.objects o where o.bucket_id = p_bucket and o.name = p_name;
+  if v_found is null then
+    raise exception 'uploaded file not found' using errcode = '22023';
+  end if;
+  if v_size is null or v_size <= 0 or v_size > v_res.reserved_bytes or v_mime is distinct from v_res.mime_type then
+    raise exception 'uploaded file does not match its reservation' using errcode = '22023';
+  end if;
+  update private.storage_upload_reservations set settled_at = now() where id = v_res.id;
+  return v_size;
+end $$;
+
+-- Scheduled service-role job: drops reservations that no longer count, and
+-- unsettled ones older than p_min_age (abandoned uploads).
+create or replace function private.release_stale_storage_reservations(p_min_age interval default interval '1 day')
+returns integer
+language sql volatile security definer set search_path = '' as $$
+  with d as (
+    delete from private.storage_upload_reservations r
+    where (r.settled_at is not null and now() >= r.expires_at + interval '1 hour')
+       or r.created_at < now() - p_min_age
+    returning 1)
+  select count(*)::integer from d;
+$$;
+select private.allow_execute(array['service_role'], array['private.release_stale_storage_reservations(interval)']);
 
 create or replace function public.share_document(p_document uuid, p_recipient_company uuid, p_expires_at timestamptz default null)
 returns uuid
@@ -727,6 +902,8 @@ select private.allow_execute(array['service_role'], array['private.list_orphaned
 -- Approved RPCs: callable by signed-in users only; each checks its own authorization.
 select private.allow_execute(array['authenticated'], array[
   'public.finalize_document_version(uuid, text, text)',
+  'public.reserve_storage_upload(text, text, bigint, text)',
+  'public.complete_storage_upload(text, text)',
   'public.share_document(uuid, uuid, timestamptz)',
   'public.revoke_document_share(uuid)',
   'public.record_document_download(uuid)'

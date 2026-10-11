@@ -7,6 +7,9 @@ drop function if exists public.record_document_download(uuid);
 drop function if exists public.revoke_document_share(uuid);
 drop function if exists public.share_document(uuid, uuid, timestamptz);
 drop function if exists public.finalize_document_version(uuid, text, text);
+drop function if exists public.complete_storage_upload(text, text);
+drop function if exists public.reserve_storage_upload(text, text, bigint, text);
+drop function if exists private.release_stale_storage_reservations(interval);
 
 drop policy if exists soko_documents_insert on storage.objects;
 drop policy if exists soko_documents_select on storage.objects;
@@ -34,7 +37,14 @@ drop table if exists public.document_shares cascade;
 drop table if exists public.document_versions cascade;
 drop table if exists public.documents cascade;
 
+drop table if exists private.storage_upload_reservations;
 drop table if exists private.storage_quota_guard;
+
+drop function if exists private.can_see_share_as_recipient(uuid, uuid);
+drop function if exists private.can_see_share_as_owner(uuid);
+drop function if exists private.upload_reserved(text, text, jsonb);
+drop function if exists private.storage_usage(uuid, uuid, text, text);
+drop function if exists private.can_upload_verification_object(text);
 
 drop function if exists private.list_orphaned_storage_objects(interval);
 drop function if exists private.retain_document_version();

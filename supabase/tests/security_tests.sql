@@ -605,8 +605,8 @@ select soko_test.expect_count('10E: anon can execute no public-schema RPC',
   $$select count(*) from soko_fn where schema = 'public' and has_function_privilege('anon', oid, 'execute')$$, 0);
 select soko_test.expect_count('10E: service_role can execute no public-schema RPC',
   $$select count(*) from soko_fn where schema = 'public' and has_function_privilege('service_role', oid, 'execute')$$, 0);
-select soko_test.expect_count('10E: authenticated can execute exactly the 42 approved public RPCs',
-  $$select count(*) from soko_fn where schema = 'public' and has_function_privilege('authenticated', oid, 'execute')$$, 42);
+select soko_test.expect_count('10E: authenticated can execute exactly the 44 approved public RPCs',
+  $$select count(*) from soko_fn where schema = 'public' and has_function_privilege('authenticated', oid, 'execute')$$, 44);
 select soko_test.expect_count('10E: every authenticated grant is on the allowlist',
   $$select count(*) from soko_fn f
     where has_function_privilege('authenticated', f.oid, 'execute')
@@ -2328,10 +2328,16 @@ create function soko_test.dp(p_key text) returns text language sql stable as
   $$ select value from soko_test.secrets where key = p_key $$;
 -- Runs as the caller, so Storage RLS applies exactly as for a client upload.
 create function soko_test.put(p_bucket text, p_name text, p_size bigint, p_mime text default 'application/pdf')
-returns void language sql as $$
+returns void language plpgsql as $$
+begin
+  -- A signed-in client reserves before uploading, as the real upload flow does.
+  -- Fixtures run without a user and insert directly as the owner.
+  if auth.uid() is not null and p_bucket in ('company-documents', 'company-media', 'verification') then
+    perform public.reserve_storage_upload(p_bucket, p_name, p_size, p_mime);
+  end if;
   insert into storage.objects (bucket_id, name, metadata)
-  values (p_bucket, p_name, jsonb_build_object('size', p_size, 'mimetype', p_mime));
-$$;
+  values (p_bucket, p_name, jsonb_build_object('size', p_size, 'contentLength', p_size, 'mimetype', p_mime));
+end $$;
 grant execute on function soko_test.dp(text), soko_test.put(text, text, bigint, text) to anon, authenticated, service_role;
 
 insert into soko_test.ids select k, gen_random_uuid()
@@ -2921,6 +2927,9 @@ select soko_test.expect_ok('07Q: another company''s quota is unaffected',
 reset role;
 select soko_test.as_user('d_mgr');
 set local role authenticated;
+select soko_test.expect_count('07Q: completing the upload settles its reservation at the real size',
+  format($$select count(*) from (select public.complete_storage_upload('company-media', %L) s) x where s > 0$$,
+         soko_test.id('d_sup')::text || '/gallery/fit.png'), 1);
 select soko_test.expect_count('07Q: deleting media frees quota',
   format($$with d as (delete from storage.objects where bucket_id = 'company-media' and name = %L returning 1) select count(*) from d$$,
          soko_test.id('d_sup')::text || '/gallery/fit.png'), 1);
@@ -2928,6 +2937,317 @@ select soko_test.expect_ok('07Q: freed quota can be used again',
   format($$select soko_test.put('company-media', %L, 50, 'image/png')$$, soko_test.id('d_sup')::text || '/gallery/again.png'));
 reset role;
 delete from storage.objects where bucket_id = 'company-media' and name = soko_test.id('d_sup')::text || '/gallery/filler.png';
+
+-- =============================================================================
+-- 17. Migration 07 — upload reservations, archival, shares and suspension
+-- =============================================================================
+-- 17A. Uploads need a reservation matching Storage's declared length and type.
+-- Storage INSERTs the row with metadata.contentLength (from the request) before
+-- the body is stored; size is only written afterwards, so RLS cannot rely on it.
+insert into soko_test.secrets values
+  ('m_res',   soko_test.id('d_sup')::text || '/gallery/reserved.png'),
+  ('m_nores', soko_test.id('d_sup')::text || '/gallery/unreserved.png'),
+  ('m_race',  soko_test.id('d_sup')::text || '/gallery/race.png');
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_denied('07R: an upload with no reservation is rejected',
+  format($$insert into storage.objects (bucket_id, name, metadata) values ('company-media', %L,
+           '{"contentLength": 10, "mimetype": "image/png"}')$$, soko_test.dp('m_nores')));
+select soko_test.expect_count('07R: reserving returns a 15-minute window',
+  format($$select count(*) from (select public.reserve_storage_upload('company-media', %L, 100, 'image/png') e) x
+           where e between now() + interval '14 minutes' and now() + interval '16 minutes'$$, soko_test.dp('m_res')), 1);
+select soko_test.expect_denied('07R: a declared length above the reservation is rejected',
+  format($$insert into storage.objects (bucket_id, name, metadata) values ('company-media', %L,
+           '{"contentLength": 101, "mimetype": "image/png"}')$$, soko_test.dp('m_res')));
+select soko_test.expect_denied('07R: a different file type from the reservation is rejected',
+  format($$insert into storage.objects (bucket_id, name, metadata) values ('company-media', %L,
+           '{"contentLength": 50, "mimetype": "image/jpeg"}')$$, soko_test.dp('m_res')));
+select soko_test.expect_denied('07R: an upload with no declared length is rejected',
+  format($$insert into storage.objects (bucket_id, name, metadata) values ('company-media', %L,
+           '{"mimetype": "image/png"}')$$, soko_test.dp('m_res')));
+select soko_test.expect_denied('07R: a non-numeric declared length is rejected',
+  format($$insert into storage.objects (bucket_id, name, metadata) values ('company-media', %L,
+           '{"contentLength": "1e9", "mimetype": "image/png"}')$$, soko_test.dp('m_res')));
+select soko_test.expect_sqlstate('07R: a zero-byte reservation is rejected',
+  format($$select public.reserve_storage_upload('company-media', %L, 0, 'image/png')$$, soko_test.dp('m_nores')), '22023');
+select soko_test.expect_sqlstate('07R: a reservation above the bucket file limit is rejected',
+  format($$select public.reserve_storage_upload('company-media', %L, 1099511627776, 'image/png')$$, soko_test.dp('m_nores')), '22023');
+select soko_test.expect_sqlstate('07R: a file type the bucket does not allow is rejected',
+  format($$select public.reserve_storage_upload('company-media', %L, 10, 'text/html')$$, soko_test.dp('m_nores')), '22023');
+select soko_test.expect_sqlstate('07R: reserving another company''s path is refused',
+  format($$select public.reserve_storage_upload('company-media', %L, 10, 'image/png')$$,
+         soko_test.id('d_other')::text || '/gallery/x.png'), '42501');
+select soko_test.expect_denied('07R: users cannot read reservations',
+  $$select count(*) from private.storage_upload_reservations$$);
+select soko_test.expect_denied('07R: users cannot write reservations',
+  format($$insert into private.storage_upload_reservations (company_id, bucket_id, object_name, user_id, reserved_bytes, mime_type, expires_at)
+           values (%L, 'company-media', %L, auth.uid(), 1, 'image/png', now() + interval '1 day')$$,
+         soko_test.id('d_sup'), soko_test.dp('m_nores')));
+select soko_test.expect_ok('07R: an upload that fits its reservation is accepted',
+  format($$insert into storage.objects (bucket_id, name, metadata) values ('company-media', %L,
+           '{"contentLength": 80, "mimetype": "image/png"}')$$, soko_test.dp('m_res')));
+reset role;
+-- Storage records the real size after the body is stored; a body larger than
+-- reserved (a lying client) is caught when the upload is completed.
+update storage.objects set metadata = metadata || '{"size": 5000}'
+where bucket_id = 'company-media' and name = soko_test.dp('m_res');
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_sqlstate('07R: completing refuses a stored size above the reservation',
+  format($$select public.complete_storage_upload('company-media', %L)$$, soko_test.dp('m_res')), '22023');
+reset role;
+update storage.objects set metadata = metadata || '{"size": 80}'
+where bucket_id = 'company-media' and name = soko_test.dp('m_res');
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_count('07R: completing returns the real stored size',
+  format($$select public.complete_storage_upload('company-media', %L)$$, soko_test.dp('m_res')), 80);
+select soko_test.expect_sqlstate('07R: a settled reservation cannot be completed twice',
+  format($$select public.complete_storage_upload('company-media', %L)$$, soko_test.dp('m_res')), '22023');
+select soko_test.expect_denied('07R: a settled reservation admits no further upsert',
+  format($$update storage.objects set metadata = '{"contentLength": 10, "mimetype": "image/png"}'
+           where bucket_id = 'company-media' and name = %L$$, soko_test.dp('m_res')));
+select soko_test.expect_ok('07R: a replacement upload is reserved again',
+  format($$select public.reserve_storage_upload('company-media', %L, 60, 'image/png')$$, soko_test.dp('m_res')));
+select soko_test.expect_count('07R: a reserved upsert (Storage UPDATE) is accepted',
+  format($$with u as (update storage.objects set metadata = '{"contentLength": 60, "mimetype": "image/png"}'
+           where bucket_id = 'company-media' and name = %L returning 1) select count(*) from u$$, soko_test.dp('m_res')), 1);
+select soko_test.expect_ok('07R: an open upload window is held for its owner',
+  format($$select public.reserve_storage_upload('company-media', %L, 10, 'image/png')$$, soko_test.dp('m_race')));
+reset role;
+select soko_test.as_user('d_editor');
+set local role authenticated;
+select soko_test.expect_sqlstate('07R: another user cannot take over an open upload window',
+  format($$select public.reserve_storage_upload('company-media', %L, 10, 'image/png')$$, soko_test.dp('m_race')), '55006');
+select soko_test.expect_denied('07R: another user cannot upload under someone else''s reservation',
+  format($$insert into storage.objects (bucket_id, name, metadata) values ('company-media', %L,
+           '{"contentLength": 10, "mimetype": "image/png"}')$$, soko_test.dp('m_race')));
+select soko_test.expect_sqlstate('07R: another user cannot complete someone else''s reservation',
+  format($$select public.complete_storage_upload('company-media', %L)$$, soko_test.dp('m_race')), '22023');
+reset role;
+select soko_test.as_anon();
+set local role anon;
+select soko_test.expect_denied('07R: anon cannot reserve uploads',
+  format($$select public.reserve_storage_upload('company-media', %L, 10, 'image/png')$$, soko_test.dp('m_nores')));
+reset role;
+-- An expired, never-used window is ignored by the RLS check.
+update private.storage_upload_reservations set expires_at = now() - interval '1 second'
+where bucket_id = 'company-media' and object_name = soko_test.dp('m_race');
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_denied('07R: an expired reservation admits no upload',
+  format($$insert into storage.objects (bucket_id, name, metadata) values ('company-media', %L,
+           '{"contentLength": 10, "mimetype": "image/png"}')$$, soko_test.dp('m_race')));
+reset role;
+select soko_test.expect_count('07R: the stale-reservation job keeps a recent unsettled window',
+  format($$select count(*) from private.storage_upload_reservations
+           where object_name = %L and private.release_stale_storage_reservations() >= 0$$, soko_test.dp('m_race')), 1);
+update private.storage_upload_reservations set created_at = now() - interval '2 days'
+where bucket_id = 'company-media' and object_name = soko_test.dp('m_race');
+select soko_test.expect_count('07R: the stale-reservation job removes abandoned windows',
+  $$select count(*) from (select private.release_stale_storage_reservations() n) x where n >= 1$$, 1);
+select soko_test.expect_count('07R: only service_role runs the stale-reservation job',
+  $$select count(*) from pg_proc where oid = 'private.release_stale_storage_reservations(interval)'::regprocedure
+      and has_function_privilege('service_role', oid, 'execute')
+      and not has_function_privilege('authenticated', oid, 'execute')
+      and not has_function_privilege('anon', oid, 'execute')$$, 1);
+
+-- 17B. Archived documents: internal members keep history, outsiders lose it.
+insert into soko_test.ids select k, gen_random_uuid() from unnest(array['ar_doc','rv_doc','ex_doc','su_doc']) k;
+insert into public.documents (id, company_id, name, access_level, is_public, for_verification) values
+  (soko_test.id('ar_doc'), soko_test.id('d_sup'), 'Archived Brochure', 'team', true,  false),
+  (soko_test.id('rv_doc'), soko_test.id('d_sup'), 'Revoked Share',     'team', false, false),
+  (soko_test.id('ex_doc'), soko_test.id('d_sup'), 'Expiring Share',    'team', false, false),
+  (soko_test.id('su_doc'), soko_test.id('d_sup'), 'Suspension Share',  'team', false, false);
+insert into soko_test.secrets
+select 'p_' || k, soko_test.id('d_sup')::text || '/' || soko_test.id(k)::text || '/v1/file.pdf'
+from unnest(array['ar_doc','rv_doc','ex_doc','su_doc']) k;
+insert into storage.objects (bucket_id, name, metadata)
+select 'company-documents', soko_test.dp('p_' || k), '{"size": 500, "mimetype": "application/pdf"}'
+from unnest(array['ar_doc','rv_doc','ex_doc','su_doc']) k;
+select soko_test.as_user('d_admin');
+set local role authenticated;
+insert into soko_test.ids
+select 'v_' || k, public.finalize_document_version(soko_test.id(k), soko_test.dp('p_' || k), 'file.pdf')
+from unnest(array['ar_doc','rv_doc','ex_doc','su_doc']) k;
+insert into soko_test.ids
+select 's_' || k, public.share_document(soko_test.id(k), soko_test.id('d_rec'), now() + interval '1 day')
+from unnest(array['ar_doc','rv_doc','ex_doc','su_doc']) k;
+reset role;
+
+select soko_test.as_user('r_officer');
+set local role authenticated;
+select soko_test.expect_count('07S: a share recipient sees the live shared document',
+  format($$select count(*) from public.documents where id = %L$$, soko_test.id('ar_doc')), 1);
+select soko_test.expect_ok('07S: a share recipient can obtain a download before archival',
+  format($$select public.record_document_download(%L)$$, soko_test.id('v_ar_doc')));
+select soko_test.expect_count('07S: share recipients have no direct Storage read of a private shared file',
+  format($$select count(*) from storage.objects where bucket_id = 'company-documents' and name = %L$$, soko_test.dp('p_rv_doc')), 0);
+reset role;
+
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_count('07S: an authorised member can archive a document',
+  format($$with u as (update public.documents set archived = true where id = %L returning 1) select count(*) from u$$,
+         soko_test.id('ar_doc')), 1);
+reset role;
+
+select soko_test.as_anon();
+set local role anon;
+select soko_test.expect_count('07S: archived public document metadata is hidden from anon',
+  format($$select count(*) from public.documents where id = %L$$, soko_test.id('ar_doc')), 0);
+select soko_test.expect_count('07S: archived public versions are hidden from anon',
+  format($$select count(*) from public.document_versions where document_id = %L$$, soko_test.id('ar_doc')), 0);
+select soko_test.expect_count('07S: archived public files are hidden from anon in Storage',
+  format($$select count(*) from storage.objects where bucket_id = 'company-documents' and name = %L$$, soko_test.dp('p_ar_doc')), 0);
+reset role;
+select soko_test.as_user('x_admin');
+set local role authenticated;
+select soko_test.expect_count('07S: archived public documents are hidden from other companies',
+  format($$select count(*) from public.documents where id = %L$$, soko_test.id('ar_doc')), 0);
+select soko_test.expect_sqlstate('07S: other companies cannot download an archived public document',
+  format($$select public.record_document_download(%L)$$, soko_test.id('v_ar_doc')), '42501');
+reset role;
+select soko_test.as_user('r_officer');
+set local role authenticated;
+select soko_test.expect_count('07S: share recipients lose archived metadata immediately',
+  format($$select count(*) from public.documents where id = %L$$, soko_test.id('ar_doc')), 0);
+select soko_test.expect_count('07S: share recipients lose archived versions immediately',
+  format($$select count(*) from public.document_versions where document_id = %L$$, soko_test.id('ar_doc')), 0);
+select soko_test.expect_count('07S: share recipients no longer see the share of an archived document',
+  format($$select count(*) from public.document_shares where id = %L$$, soko_test.id('s_ar_doc')), 0);
+select soko_test.expect_sqlstate('07S: share recipients cannot get a new download link after archival',
+  format($$select public.record_document_download(%L)$$, soko_test.id('v_ar_doc')), '42501');
+reset role;
+select soko_test.as_user('d_tech');
+set local role authenticated;
+select soko_test.expect_count('07S: internal members keep archived metadata',
+  format($$select count(*) from public.documents where id = %L and archived$$, soko_test.id('ar_doc')), 1);
+select soko_test.expect_count('07S: internal members keep archived versions',
+  format($$select count(*) from public.document_versions where document_id = %L$$, soko_test.id('ar_doc')), 1);
+select soko_test.expect_count('07S: internal members keep direct Storage read of archived files',
+  format($$select count(*) from storage.objects where bucket_id = 'company-documents' and name = %L$$, soko_test.dp('p_ar_doc')), 1);
+select soko_test.expect_ok('07S: internal members can still download archived files',
+  format($$select public.record_document_download(%L)$$, soko_test.id('v_ar_doc')));
+select soko_test.expect_sqlstate('07S: an archived document accepts no new version reservation',
+  format($$select public.reserve_storage_upload('company-documents', %L, 10, 'application/pdf')$$,
+         soko_test.id('d_sup')::text || '/' || soko_test.id('ar_doc')::text || '/v2/file.pdf'), '42501');
+reset role;
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_sqlstate('07S: an archived document cannot be shared again',
+  format($$select public.share_document(%L, %L)$$, soko_test.id('ar_doc'), soko_test.id('d_rec')), '22023');
+select soko_test.expect_count('07S: unarchiving restores share access',
+  format($$with u as (update public.documents set archived = false where id = %L returning 1) select count(*) from u$$,
+         soko_test.id('ar_doc')), 1);
+reset role;
+select soko_test.as_user('r_officer');
+set local role authenticated;
+select soko_test.expect_count('07S: the share works again once unarchived',
+  format($$select count(*) from public.documents where id = %L$$, soko_test.id('ar_doc')), 1);
+reset role;
+
+-- 17C. Revoked and expired shares stop new download links immediately.
+select soko_test.as_user('r_officer');
+set local role authenticated;
+select soko_test.expect_ok('07T: an active share can download',
+  format($$select public.record_document_download(%L)$$, soko_test.id('v_rv_doc')));
+reset role;
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_ok('07T: the owner revokes the share',
+  format($$select public.revoke_document_share(%L)$$, soko_test.id('s_rv_doc')));
+reset role;
+select soko_test.as_user('r_officer');
+set local role authenticated;
+select soko_test.expect_sqlstate('07T: a revoked share cannot download',
+  format($$select public.record_document_download(%L)$$, soko_test.id('v_rv_doc')), '42501');
+select soko_test.expect_count('07T: a revoked share hides the document',
+  format($$select count(*) from public.documents where id = %L$$, soko_test.id('rv_doc')), 0);
+select soko_test.expect_denied('07T: a recipient cannot revoke or restore a share',
+  format($$select public.revoke_document_share(%L)$$, soko_test.id('s_ex_doc')));
+select soko_test.expect_denied('07T: a recipient cannot extend a share',
+  format($$update public.document_shares set expires_at = now() + interval '1 year' where id = %L$$, soko_test.id('s_ex_doc')));
+reset role;
+update public.document_shares set expires_at = now() - interval '1 second' where id = soko_test.id('s_ex_doc');
+select soko_test.as_user('r_officer');
+set local role authenticated;
+select soko_test.expect_sqlstate('07T: an expired share cannot download',
+  format($$select public.record_document_download(%L)$$, soko_test.id('v_ex_doc')), '42501');
+select soko_test.expect_count('07T: an expired share hides the versions',
+  format($$select count(*) from public.document_versions where document_id = %L$$, soko_test.id('ex_doc')), 0);
+reset role;
+select soko_test.expect_count('07T: refused downloads write no audit entry',
+  format($$select count(*) from public.audit_log where action = 'download' and entity_id in (%L, %L)
+           and actor_id = %L and at >= now()$$,
+         soko_test.id('v_ex_doc'), soko_test.id('v_ar_doc'), soko_test.id('r_officer')), 1);
+
+-- 17D. Suspension blocks ordinary access; only admins' verification evidence remains.
+insert into soko_test.secrets values ('m_live', soko_test.id('d_sup')::text || '/gallery/live.png');
+insert into storage.objects (bucket_id, name, metadata)
+values ('company-media', soko_test.dp('m_live'), '{"size": 10, "mimetype": "image/png"}'),
+       ('verification', soko_test.dp('p_verif'), '{"size": 10, "mimetype": "application/pdf"}')
+on conflict do nothing;
+select soko_test.as_user('r_officer');
+set local role authenticated;
+select soko_test.expect_ok('07U: a share works before the owner is suspended',
+  format($$select public.record_document_download(%L)$$, soko_test.id('v_su_doc')));
+reset role;
+update public.companies set is_suspended = true where id = soko_test.id('d_sup');
+
+select soko_test.as_anon();
+set local role anon;
+select soko_test.expect_count('07U: anon loses a suspended company''s public documents',
+  format($$select count(*) from public.documents where id = %L$$, soko_test.id('dd_public')), 0);
+select soko_test.expect_count('07U: anon loses a suspended company''s media',
+  format($$select count(*) from storage.objects where bucket_id = 'company-media' and name = %L$$, soko_test.dp('m_live')), 0);
+reset role;
+select soko_test.as_user('r_officer');
+set local role authenticated;
+select soko_test.expect_sqlstate('07U: shares of a suspended owner cannot download',
+  format($$select public.record_document_download(%L)$$, soko_test.id('v_su_doc')), '42501');
+select soko_test.expect_count('07U: shares of a suspended owner are hidden',
+  format($$select count(*) from public.document_shares where id = %L$$, soko_test.id('s_su_doc')), 0);
+reset role;
+select soko_test.as_user('d_tech');
+set local role authenticated;
+select soko_test.expect_count('07U: members lose ordinary documents while suspended',
+  format($$select count(*) from public.documents where id = %L$$, soko_test.id('dd_team')), 0);
+select soko_test.expect_count('07U: members lose ordinary document files while suspended',
+  format($$select count(*) from storage.objects where bucket_id = 'company-documents' and name = %L$$, soko_test.dp('p_dd_team_v1')), 0);
+select soko_test.expect_sqlstate('07U: members cannot download while suspended',
+  format($$select public.record_document_download(%L)$$, soko_test.id('v_dd_team')), '42501');
+select soko_test.expect_count('07U: members lose company media while suspended',
+  format($$select count(*) from storage.objects where bucket_id = 'company-media' and name = %L$$, soko_test.dp('m_live')), 0);
+select soko_test.expect_count('07U: non-admin members cannot read verification evidence',
+  format($$select count(*) from public.documents where id = %L$$, soko_test.id('dd_verif')), 0);
+reset role;
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_count('07U: admins lose ordinary documents while suspended',
+  format($$select count(*) from public.documents where id = %L$$, soko_test.id('dd_team')), 0);
+select soko_test.expect_count('07U: admins lose company media while suspended',
+  format($$select count(*) from storage.objects where bucket_id = 'company-media' and name = %L$$, soko_test.dp('m_live')), 0);
+select soko_test.expect_count('07U: admins keep verification evidence metadata',
+  format($$select count(*) from public.documents where id = %L$$, soko_test.id('dd_verif')), 1);
+select soko_test.expect_count('07U: admins keep verification document files',
+  format($$select count(*) from storage.objects where bucket_id = 'company-documents' and name = %L$$, soko_test.dp('p_dd_verif_v1')), 1);
+select soko_test.expect_count('07U: admins keep verification bucket evidence',
+  format($$select count(*) from storage.objects where bucket_id = 'verification' and name = %L$$, soko_test.dp('p_verif')), 1);
+select soko_test.expect_ok('07U: admins can still download verification evidence',
+  format($$select public.record_document_download(%L)$$, soko_test.id('v_dd_verif')));
+select soko_test.expect_denied('07U: admins cannot modify verification evidence while suspended',
+  format($$update public.documents set name = 'Changed' where id = %L$$, soko_test.id('dd_verif')));
+select soko_test.expect_sqlstate('07U: admins cannot upload new evidence while suspended',
+  format($$select public.reserve_storage_upload('verification', %L, 10, 'application/pdf')$$, soko_test.dp('p_verif2')), '42501');
+select soko_test.expect_sqlstate('07U: admins cannot upload media while suspended',
+  format($$select public.reserve_storage_upload('company-media', %L, 10, 'image/png')$$, soko_test.dp('m_nores')), '42501');
+select soko_test.expect_denied('07U: admins cannot delete media while suspended',
+  format($$delete from storage.objects where bucket_id = 'company-media' and name = %L$$, soko_test.dp('m_live')));
+select soko_test.expect_denied('07U: admins cannot share while suspended',
+  format($$select public.share_document(%L, %L)$$, soko_test.id('dd_team'), soko_test.id('d_rec')));
+reset role;
+update public.companies set is_suspended = false where id = soko_test.id('d_sup');
 
 -- -----------------------------------------------------------------------------
 -- Report
