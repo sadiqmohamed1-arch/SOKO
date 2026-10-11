@@ -95,6 +95,9 @@ create table public.company_memberships (
   role_key     text not null,
   status       public.membership_status not null default 'active',
   invited_by   uuid references auth.users (id) on delete set null,
+  -- Set when the membership is removed or a join request is declined. Invitations
+  -- created at or before this moment can never reactivate the membership.
+  removed_at   timestamptz,
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now(),
   unique (company_id, user_id),
@@ -196,6 +199,29 @@ language sql stable security definer set search_path = '' as $$
     join public.company_memberships theirs on theirs.company_id = mine.company_id
     where mine.user_id = auth.uid() and mine.status = 'active'
       and theirs.user_id = p_user and theirs.status in ('active', 'pending_approval')
+  );
+$$;
+
+-- Can p_user (not necessarily the caller) currently grant p_role_key in p_company?
+-- Requires an active membership with team.manage in a non-suspended company, and
+-- an admin role when p_role_key is an admin role. Used to re-check an inviter's
+-- authority at acceptance time. Internal only: no EXECUTE grant to any client role.
+create or replace function private.user_can_assign_role(p_company uuid, p_user uuid, p_role_key text)
+returns boolean
+language sql stable security definer set search_path = '' as $$
+  select exists (
+    select 1
+    from public.company_memberships m
+    join public.companies c on c.id = m.company_id and not c.is_suspended
+    join public.roles granter on granter.company_kind = m.company_kind and granter.key = m.role_key
+    join public.roles target  on target.company_kind  = m.company_kind and target.key  = p_role_key
+    where m.company_id = p_company
+      and m.user_id = p_user
+      and m.status = 'active'
+      and exists (select 1 from public.role_permissions rp
+                  where rp.company_kind = m.company_kind and rp.role_key = m.role_key
+                    and rp.permission = 'team.manage')
+      and (not target.is_admin or granter.is_admin)
   );
 $$;
 
@@ -384,6 +410,13 @@ begin
   if v_is_admin_role and not private.is_company_admin(p_company) then
     raise exception 'only admins can invite admins' using errcode = '42501';
   end if;
+  -- Role changes for existing members go through change_member_role, never invitations.
+  if exists (select 1 from public.company_memberships m
+             join auth.users u on u.id = m.user_id
+             where m.company_id = p_company and m.status = 'active'
+               and lower(u.email) = lower(btrim(p_email))) then
+    raise exception 'this person is already a member; change their role instead' using errcode = '23505';
+  end if;
   if (select count(*) from public.company_invitations i
       where i.company_id = p_company and i.created_at > now() - interval '1 day') >= 50 then
     raise exception 'invitation limit reached' using errcode = '54000';
@@ -391,9 +424,9 @@ begin
 
   v_token := replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', '');
 
-  insert into public.company_invitations (company_id, company_kind, email, role_key, token_hash, expires_at, invited_by)
+  insert into public.company_invitations (company_id, company_kind, email, role_key, token_hash, expires_at, invited_by, created_at)
   values (p_company, v_kind, lower(btrim(p_email)), p_role_key,
-          encode(sha256(convert_to(v_token, 'UTF8')), 'hex'), now() + interval '7 days', v_uid);
+          encode(sha256(convert_to(v_token, 'UTF8')), 'hex'), now() + interval '7 days', v_uid, clock_timestamp());
   return v_token;
 end $$;
 
@@ -411,12 +444,19 @@ begin
 end $$;
 
 -- The signed-in user's email must match the invitation email.
+-- Outcomes by existing membership state:
+--   none              -> new active membership with the invited role
+--   pending_approval  -> activated with the invited role (the invite acts as approval)
+--   removed           -> reactivated ONLY if the invitation was created after removal
+--   active            -> rejected; an invitation never changes an existing role
+-- The inviter's authority is re-checked now, not just when the invite was issued.
 create or replace function public.accept_invitation(p_token text) returns uuid
 language plpgsql security definer set search_path = '' as $$
 declare
   v_uid uuid := private.require_user();
   v_email text;
   v_inv public.company_invitations%rowtype;
+  v_m public.company_memberships%rowtype;
 begin
   -- Only a confirmed email counts; null (phone-only / unconfirmed) never matches.
   select lower(u.email) into v_email from auth.users u
@@ -433,10 +473,30 @@ begin
     raise exception 'invitation is invalid or expired' using errcode = '22023';
   end if;
 
-  insert into public.company_memberships (company_id, company_kind, user_id, role_key, status, invited_by)
-  values (v_inv.company_id, v_inv.company_kind, v_uid, v_inv.role_key, 'active', v_inv.invited_by)
-  on conflict (company_id, user_id) do update
-    set role_key = excluded.role_key, status = 'active', invited_by = excluded.invited_by;
+  if v_inv.invited_by is null
+     or not private.user_can_assign_role(v_inv.company_id, v_inv.invited_by, v_inv.role_key) then
+    raise exception 'invitation is invalid or expired' using errcode = '22023';
+  end if;
+
+  select * into v_m from public.company_memberships m
+  where m.company_id = v_inv.company_id and m.user_id = v_uid
+  for update;
+
+  if v_m.id is null then
+    insert into public.company_memberships (company_id, company_kind, user_id, role_key, status, invited_by)
+    values (v_inv.company_id, v_inv.company_kind, v_uid, v_inv.role_key, 'active', v_inv.invited_by);
+  elsif v_m.status = 'active' then
+    raise exception 'you are already a member of this company' using errcode = '23505';
+  -- Checked for every non-active state: a removed user who re-requests to join
+  -- (pending_approval) must not use a pre-removal invite to skip approval.
+  elsif (v_m.status = 'removed' and v_m.removed_at is null)
+        or v_inv.created_at <= v_m.removed_at then
+    raise exception 'invitation is invalid or expired' using errcode = '22023';
+  else
+    update public.company_memberships
+    set role_key = v_inv.role_key, status = 'active', invited_by = v_inv.invited_by, removed_at = null
+    where id = v_m.id;
+  end if;
 
   update public.company_invitations set accepted_at = now(), accepted_by = v_uid where id = v_inv.id;
   return v_inv.company_id;
@@ -503,7 +563,7 @@ begin
      or not private.has_permission(v_m.company_id, 'team.manage') then
     raise exception 'not allowed' using errcode = '42501';
   end if;
-  update public.company_memberships set status = 'removed' where id = p_membership;
+  update public.company_memberships set status = 'removed', removed_at = clock_timestamp() where id = p_membership;
 end $$;
 
 -- Nobody can change their own role: this blocks self-promotion outright.
@@ -558,7 +618,13 @@ begin
       raise exception 'only admins can remove admins' using errcode = '42501';
     end if;
   end if;
-  update public.company_memberships set status = 'removed' where id = p_membership;
+  update public.company_memberships set status = 'removed', removed_at = clock_timestamp() where id = p_membership;
+  -- Defence in depth: open invitations to the removed person die with the membership.
+  update public.company_invitations i set revoked_at = now()
+  from auth.users u
+  where u.id = v_m.user_id and i.company_id = v_m.company_id
+    and lower(i.email) = lower(u.email)
+    and i.accepted_at is null and i.revoked_at is null;
 end $$;
 
 -- Company admins submit; the company becomes "pending", never "verified".

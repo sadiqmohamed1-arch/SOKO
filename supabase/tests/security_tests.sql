@@ -85,7 +85,14 @@ insert into soko_test.ids (key, id) values
   ('sup_tech',   '00000000-0000-4000-8000-000000000007'),
   ('unconfirmed','00000000-0000-4000-8000-000000000008'),
   ('noemail',    '00000000-0000-4000-8000-000000000009'),
-  ('expired_user','00000000-0000-4000-8000-00000000000a');
+  ('expired_user','00000000-0000-4000-8000-00000000000a'),
+  ('lead',        '00000000-0000-4000-8000-00000000000b'),
+  ('lead_invitee','00000000-0000-4000-8000-00000000000c'),
+  ('lead_admin_inv','00000000-0000-4000-8000-00000000000d'),
+  ('rejoiner',    '00000000-0000-4000-8000-00000000000e'),
+  ('pending_user','00000000-0000-4000-8000-00000000000f'),
+  ('removed_user','00000000-0000-4000-8000-000000000010'),
+  ('revoked_user','00000000-0000-4000-8000-000000000011');
 
 insert into auth.users (id, email, aud, role, raw_user_meta_data, email_confirmed_at)
 select i.id, i.key || '@soko-security.test', 'authenticated', 'authenticated',
@@ -691,6 +698,186 @@ select soko_test.expect_denied('10E: authenticated cannot call apply_function_gr
   $$select private.apply_function_grants()$$);
 select soko_test.expect_ok('10E: authenticated member can still call an approved RPC',
   format($$select public.get_credit_balance(%L)$$, soko_test.id('supplier')));
+reset role;
+
+-- =============================================================================
+-- 9. Migration 03 invitation hardening
+-- =============================================================================
+
+-- Role escalation: an invitation can never change an existing active member's role.
+select soko_test.as_user('sup_admin');
+set local role authenticated;
+select soko_test.expect_denied('INV: cannot invite someone who is already an active member',
+  format($$select public.invite_member(%L, 'sup_viewer@soko-security.test', 'supplier_admin')$$,
+         soko_test.id('supplier')));
+reset role;
+
+-- Simulate a pre-existing open admin invitation for the active viewer (as owner).
+insert into soko_test.secrets values ('escalate_token', 'escalate-' || gen_random_uuid()::text);
+insert into public.company_invitations (company_id, company_kind, email, role_key, token_hash, expires_at, invited_by)
+select soko_test.id('supplier'), 'supplier', 'sup_viewer@soko-security.test', 'supplier_admin',
+       encode(sha256(convert_to(s.value, 'UTF8')), 'hex'), now() + interval '1 day', soko_test.id('sup_admin')
+from soko_test.secrets s where s.key = 'escalate_token';
+
+select soko_test.as_user('sup_viewer');
+set local role authenticated;
+select soko_test.expect_denied('INV: active member cannot accept an admin invitation to escalate',
+  $$select public.accept_invitation((select value from soko_test.secrets where key = 'escalate_token'))$$);
+reset role;
+select soko_test.expect_count('INV: active member role is unchanged after the attempt',
+  format($$select count(*) from public.company_memberships
+           where company_id = %L and user_id = %L and role_key = 'viewer' and status = 'active'$$,
+         soko_test.id('supplier'), soko_test.id('sup_viewer')), 1);
+
+-- Admin invitations from a real admin still work (positive control).
+select soko_test.as_user('sup_admin');
+set local role authenticated;
+insert into soko_test.secrets values ('lead_token',
+  public.invite_member(soko_test.id('supplier'), 'lead@soko-security.test', 'supplier_admin'));
+reset role;
+select soko_test.as_user('lead');
+set local role authenticated;
+select soko_test.expect_ok('INV: admin invitation issued by an admin is accepted',
+  $$select public.accept_invitation((select value from soko_test.secrets where key = 'lead_token'))$$);
+insert into soko_test.secrets values ('lead_member_token',
+  public.invite_member(soko_test.id('supplier'), 'lead_invitee@soko-security.test', 'viewer'));
+insert into soko_test.secrets values ('lead_admin_token',
+  public.invite_member(soko_test.id('supplier'), 'lead_admin_inv@soko-security.test', 'supplier_admin'));
+reset role;
+
+-- The inviter loses authority before the invitations are accepted.
+select soko_test.as_user('sup_admin');
+set local role authenticated;
+select public.change_member_role(
+  (select id from public.company_memberships
+   where company_id = soko_test.id('supplier') and user_id = soko_test.id('lead')), 'viewer');
+reset role;
+
+select soko_test.as_user('lead_invitee');
+set local role authenticated;
+select soko_test.expect_denied('INV: invitation is void once the inviter loses team.manage',
+  $$select public.accept_invitation((select value from soko_test.secrets where key = 'lead_member_token'))$$);
+reset role;
+select soko_test.as_user('lead_admin_inv');
+set local role authenticated;
+select soko_test.expect_denied('INV: admin invitation is void once the inviter is no longer admin',
+  $$select public.accept_invitation((select value from soko_test.secrets where key = 'lead_admin_token'))$$);
+reset role;
+select soko_test.expect_count('INV: no membership was created from the void invitations',
+  format($$select count(*) from public.company_memberships where company_id = %L and user_id in (%L, %L)$$,
+         soko_test.id('supplier'), soko_test.id('lead_invitee'), soko_test.id('lead_admin_inv')), 0);
+
+-- Pending join request + invitation from an authorised admin activates it.
+select soko_test.as_user('pending_user');
+set local role authenticated;
+select public.request_to_join(soko_test.id('supplier'));
+reset role;
+select soko_test.as_user('sup_admin');
+set local role authenticated;
+insert into soko_test.secrets values ('pending_token',
+  public.invite_member(soko_test.id('supplier'), 'pending_user@soko-security.test', 'technical_manager'));
+reset role;
+select soko_test.as_user('pending_user');
+set local role authenticated;
+select soko_test.expect_ok('INV: pending requester accepts an authorised invitation',
+  $$select public.accept_invitation((select value from soko_test.secrets where key = 'pending_token'))$$);
+reset role;
+select soko_test.expect_count('INV: pending requester is active with the invited role',
+  format($$select count(*) from public.company_memberships where company_id = %L and user_id = %L
+           and status = 'active' and role_key = 'technical_manager'$$,
+         soko_test.id('supplier'), soko_test.id('pending_user')), 1);
+
+-- Stale invitation: issued while pending, then the request is declined.
+select soko_test.as_user('rejoiner');
+set local role authenticated;
+select public.request_to_join(soko_test.id('supplier'));
+reset role;
+select soko_test.as_user('sup_admin');
+set local role authenticated;
+insert into soko_test.secrets values ('stale_token',
+  public.invite_member(soko_test.id('supplier'), 'rejoiner@soko-security.test', 'viewer'));
+select public.decline_join_request(
+  (select id from public.company_memberships
+   where company_id = soko_test.id('supplier') and user_id = soko_test.id('rejoiner')));
+reset role;
+select soko_test.as_user('rejoiner');
+set local role authenticated;
+select soko_test.expect_denied('INV: pre-removal invitation cannot reactivate a removed member',
+  $$select public.accept_invitation((select value from soko_test.secrets where key = 'stale_token'))$$);
+select public.request_to_join(soko_test.id('supplier'));
+select soko_test.expect_denied('INV: re-requesting to join does not revive a pre-removal invitation',
+  $$select public.accept_invitation((select value from soko_test.secrets where key = 'stale_token'))$$);
+reset role;
+select soko_test.expect_count('INV: rejoiner is still pending, not active',
+  format($$select count(*) from public.company_memberships where company_id = %L and user_id = %L
+           and status = 'pending_approval'$$, soko_test.id('supplier'), soko_test.id('rejoiner')), 1);
+
+-- A fresh invitation issued after removal is a deliberate re-invite and works.
+select soko_test.as_user('sup_admin');
+set local role authenticated;
+select public.revoke_invitation(
+  (select id from public.company_invitations
+   where lower(email) = 'rejoiner@soko-security.test' and accepted_at is null and revoked_at is null));
+insert into soko_test.secrets values ('fresh_token',
+  public.invite_member(soko_test.id('supplier'), 'rejoiner@soko-security.test', 'viewer'));
+reset role;
+select soko_test.as_user('rejoiner');
+set local role authenticated;
+select soko_test.expect_ok('INV: post-removal invitation from an admin is accepted',
+  $$select public.accept_invitation((select value from soko_test.secrets where key = 'fresh_token'))$$);
+reset role;
+
+-- Removing a member revokes their open invitations.
+select soko_test.as_user('sup_admin');
+set local role authenticated;
+insert into soko_test.secrets values ('removed_token',
+  public.invite_member(soko_test.id('supplier'), 'removed_user@soko-security.test', 'viewer'));
+reset role;
+select soko_test.as_user('removed_user');
+set local role authenticated;
+select public.accept_invitation((select value from soko_test.secrets where key = 'removed_token'));
+reset role;
+insert into soko_test.secrets values ('removed_open_token', 'open-' || gen_random_uuid()::text);
+insert into public.company_invitations (company_id, company_kind, email, role_key, token_hash, expires_at, invited_by)
+select soko_test.id('supplier'), 'supplier', 'removed_user@soko-security.test', 'supplier_admin',
+       encode(sha256(convert_to(s.value, 'UTF8')), 'hex'), now() + interval '1 day', soko_test.id('sup_admin')
+from soko_test.secrets s where s.key = 'removed_open_token';
+select soko_test.as_user('sup_admin');
+set local role authenticated;
+select public.remove_member(
+  (select id from public.company_memberships
+   where company_id = soko_test.id('supplier') and user_id = soko_test.id('removed_user')));
+reset role;
+select soko_test.expect_count('INV: removal revokes the member''s open invitations',
+  $$select count(*) from public.company_invitations
+    where lower(email) = 'removed_user@soko-security.test' and accepted_at is null and revoked_at is null$$, 0);
+select soko_test.as_user('removed_user');
+set local role authenticated;
+select soko_test.expect_denied('INV: removed member cannot rejoin as admin with an older invitation',
+  $$select public.accept_invitation((select value from soko_test.secrets where key = 'removed_open_token'))$$);
+reset role;
+
+-- Explicitly revoked invitation cannot be accepted.
+select soko_test.as_user('sup_admin');
+set local role authenticated;
+insert into soko_test.secrets values ('revoked_token',
+  public.invite_member(soko_test.id('supplier'), 'revoked_user@soko-security.test', 'viewer'));
+select public.revoke_invitation(
+  (select id from public.company_invitations
+   where lower(email) = 'revoked_user@soko-security.test' and revoked_at is null));
+reset role;
+select soko_test.as_user('revoked_user');
+set local role authenticated;
+select soko_test.expect_denied('INV: revoked invitation cannot be accepted',
+  $$select public.accept_invitation((select value from soko_test.secrets where key = 'revoked_token'))$$);
+reset role;
+
+-- The re-authorisation helper is not callable by clients.
+select soko_test.as_user('sup_admin');
+set local role authenticated;
+select soko_test.expect_denied('INV: clients cannot call private.user_can_assign_role',
+  format($$select private.user_can_assign_role(%L, %L, 'supplier_admin')$$,
+         soko_test.id('supplier'), soko_test.id('sup_admin')));
 reset role;
 
 -- -----------------------------------------------------------------------------
