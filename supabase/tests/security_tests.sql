@@ -15,9 +15,9 @@ create schema soko_test;
 create table soko_test.results (n serial primary key, label text not null, passed boolean not null, detail text);
 create table soko_test.ids (key text primary key, id uuid not null);
 create table soko_test.secrets (key text primary key, value text not null);
-grant usage on schema soko_test to anon, authenticated;
-grant all on all tables in schema soko_test to anon, authenticated;
-grant all on all sequences in schema soko_test to anon, authenticated;
+grant usage on schema soko_test to anon, authenticated, service_role;
+grant all on all tables in schema soko_test to anon, authenticated, service_role;
+grant all on all sequences in schema soko_test to anon, authenticated, service_role;
 
 create function soko_test.id(p_key text) returns uuid language sql stable as
   $$ select id from soko_test.ids where key = p_key $$;
@@ -70,7 +70,7 @@ begin
   end;
 end $$;
 
-grant execute on all functions in schema soko_test to anon, authenticated;
+grant execute on all functions in schema soko_test to anon, authenticated, service_role;
 
 -- -----------------------------------------------------------------------------
 -- Fixtures (as owner)
@@ -1267,6 +1267,189 @@ set local role authenticated;
 select soko_test.expect_count('NT: a same-company member without the permission does not receive it',
   $$select count(*) from public.notifications where type = 'audit_test.ping'$$, 0);
 reset role;
+
+-- =============================================================================
+-- 12. Migration 04 — audit lifecycle integrity
+-- Exact INSERT/UPDATE/DELETE records, company deletion cascades, redaction of
+-- deleted rows, append-only enforcement and per-user notification isolation.
+-- =============================================================================
+reset role;
+insert into soko_test.ids (key, id) values
+  ('ai_admin',  '00000000-0000-4000-8000-000000000019'),
+  ('ai_member', '00000000-0000-4000-8000-00000000001a'),
+  ('ai_temp',   '00000000-0000-4000-8000-00000000001b'),
+  ('ai_co',     '00000000-0000-4000-8000-0000000000b1'),
+  ('ai_m_admin','00000000-0000-4000-8000-0000000000b2'),
+  ('ai_m_member','00000000-0000-4000-8000-0000000000b3'),
+  ('ai_m_temp', '00000000-0000-4000-8000-0000000000b4');
+insert into auth.users (id, email, aud, role, email_confirmed_at)
+select id, key || '@soko-security.test', 'authenticated', 'authenticated', now()
+from soko_test.ids where key in ('ai_admin', 'ai_member', 'ai_temp');
+
+select soko_test.as_user('ai_admin');
+insert into public.companies (id, kind, legal_name, license_no, issuing_authority, address, general_email, phone)
+values (soko_test.id('ai_co'), 'supplier', 'Audit Lifecycle Co', 'LIC-DEL-SECRET-91', 'AUTH-DEL-SECRET',
+        '9 Deleted Secret Road', 'owner@audit-del.test', '+971500009191');
+insert into public.company_memberships (id, company_id, company_kind, user_id, role_key) values
+  (soko_test.id('ai_m_admin'),  soko_test.id('ai_co'), 'supplier', soko_test.id('ai_admin'),  'supplier_admin'),
+  (soko_test.id('ai_m_member'), soko_test.id('ai_co'), 'supplier', soko_test.id('ai_member'), 'viewer'),
+  (soko_test.id('ai_m_temp'),   soko_test.id('ai_co'), 'supplier', soko_test.id('ai_temp'),   'viewer');
+update public.company_memberships set role_key = 'supplier_admin' where id = soko_test.id('ai_m_member');
+delete from public.company_memberships where id = soko_test.id('ai_m_temp');
+
+-- INSERT / UPDATE / DELETE records ------------------------------------------
+select soko_test.expect_count('AI: membership INSERT has action, entity id, actor and exact allowlisted values',
+  format($$select count(*) from public.audit_log
+    where entity = 'company_memberships' and action = 'insert' and entity_id = %1$L
+      and entity_key = jsonb_build_object('id', %1$L::uuid) and company_id = %2$L and actor_id = %3$L
+      and diff = jsonb_build_object('values', jsonb_build_object(
+        'id', %1$L::uuid, 'company_id', %2$L::uuid, 'company_kind', 'supplier',
+        'user_id', %4$L::uuid, 'role_key', 'viewer', 'status', 'active'))$$,
+    soko_test.id('ai_m_member'), soko_test.id('ai_co'), soko_test.id('ai_admin'), soko_test.id('ai_member')), 1);
+select soko_test.expect_count('AI: membership UPDATE records only the changed field, without timestamps',
+  format($$select count(*) from public.audit_log
+    where entity = 'company_memberships' and action = 'update' and entity_id = %L and company_id = %L
+      and diff = '{"changed": {"role_key": {"from": "viewer", "to": "supplier_admin"}}}'::jsonb$$,
+    soko_test.id('ai_m_member'), soko_test.id('ai_co')), 1);
+select soko_test.expect_count('AI: membership DELETE records the removed row''s allowlisted values',
+  format($$select count(*) from public.audit_log
+    where entity = 'company_memberships' and action = 'delete' and entity_id = %1$L and company_id = %2$L
+      and diff = jsonb_build_object('values', jsonb_build_object(
+        'id', %1$L::uuid, 'company_id', %2$L::uuid, 'company_kind', 'supplier',
+        'user_id', %3$L::uuid, 'role_key', 'viewer', 'status', 'active'))$$,
+    soko_test.id('ai_m_temp'), soko_test.id('ai_co'), soko_test.id('ai_temp')), 1);
+select soko_test.expect_count('AI: company INSERT logs safe values and only names the sensitive fields',
+  format($$select count(*) from public.audit_log
+    where entity = 'companies' and action = 'insert' and entity_id = %1$L and company_id = %1$L
+      and diff -> 'values' ->> 'legal_name' = 'Audit Lifecycle Co'
+      and diff -> 'redacted' ?& array['license_no','issuing_authority','address','general_email','phone']
+      and not (diff -> 'values' ?| array['license_no','issuing_authority','address','general_email','phone',
+                                          'created_at','updated_at'])$$,
+    soko_test.id('ai_co')), 1);
+
+-- Pending invitation that the company deletion will cascade away.
+select soko_test.as_user('ai_admin');
+set local role authenticated;
+insert into soko_test.secrets values ('ai_invite_token',
+  public.invite_member(soko_test.id('ai_co'), 'cascade-invitee@audit-del.test', 'viewer'));
+reset role;
+
+-- Member-scoped notification created by the role change.
+select soko_test.as_user('ai_member');
+set local role authenticated;
+select soko_test.expect_count('AI: the promoted member sees its own role-change notification',
+  format($$select count(*) from public.notifications where type = 'membership.role_changed' and company_id = %L$$,
+    soko_test.id('ai_co')), 1);
+reset role;
+select soko_test.as_user('ai_admin');
+set local role authenticated;
+select soko_test.expect_count('AI: a same-company admin cannot see another member''s notification',
+  format($$select count(*) from public.notifications where type = 'membership.role_changed' and company_id = %L$$,
+    soko_test.id('ai_co')), 0);
+select soko_test.expect_denied('AI: a client cannot forge a notification for itself',
+  format($$insert into public.notifications (user_id, company_id, type) values (%L, %L, 'forged')$$,
+    soko_test.id('ai_admin'), soko_test.id('ai_co')));
+select soko_test.expect_denied('AI: a client cannot forge a notification for another user',
+  format($$insert into public.notifications (user_id, company_id, type) values (%L, %L, 'forged')$$,
+    soko_test.id('ai_member'), soko_test.id('ai_co')));
+select soko_test.expect_denied('AI: a client cannot call the internal notify function',
+  format($$select private.notify(%L, %L, 'forged')$$, soko_test.id('ai_member'), soko_test.id('ai_co')));
+select soko_test.expect_denied('AI: a client cannot broadcast to permission holders',
+  format($$select private.notify_permission_holders(%L, 'team.manage', 'forged')$$, soko_test.id('ai_co')));
+select soko_test.expect_denied('AI: a client cannot insert audit entries',
+  format($$insert into public.audit_log (company_id, action, entity) values (%L, 'insert', 'forged')$$,
+    soko_test.id('ai_co')));
+select soko_test.expect_denied('AI: a client cannot rewrite audit entries',
+  format($$update public.audit_log set diff = '{}' where company_id = %L$$, soko_test.id('ai_co')));
+select soko_test.expect_denied('AI: a client cannot delete audit entries',
+  format($$delete from public.audit_log where company_id = %L$$, soko_test.id('ai_co')));
+reset role;
+
+-- Company deletion and cascades ---------------------------------------------
+create table soko_test.ai_before as
+  select id from public.audit_log where company_id = soko_test.id('ai_co');
+
+select soko_test.as_user('padmin');
+select soko_test.expect_ok('AI: deleting the company cascades through memberships and invitations',
+  format($$delete from public.companies where id = %L$$, soko_test.id('ai_co')));
+
+select soko_test.expect_count('AI: every pre-deletion audit row survives the company deletion',
+  $$select count(*) from soko_test.ai_before b where not exists (select 1 from public.audit_log a where a.id = b.id)$$, 0);
+select soko_test.expect_count('AI: pre-deletion audit rows keep the original company id',
+  format($$select count(*) from public.audit_log a join soko_test.ai_before b using (id)
+    where a.company_id is distinct from %L$$, soko_test.id('ai_co')), 0);
+select soko_test.expect_count('AI: company DELETE is audited under the deleted company id, with actor',
+  format($$select count(*) from public.audit_log
+    where entity = 'companies' and action = 'delete' and entity_id = %1$L and company_id = %1$L
+      and entity_key = jsonb_build_object('id', %1$L::uuid) and actor_id = %2$L$$,
+    soko_test.id('ai_co'), soko_test.id('padmin')), 1);
+select soko_test.expect_count('AI: cascaded membership DELETEs are each audited under the original company id',
+  format($$select count(*) from public.audit_log
+    where entity = 'company_memberships' and action = 'delete' and company_id = %L
+      and entity_id in (%L, %L) and not (id in (select id from soko_test.ai_before))$$,
+    soko_test.id('ai_co'), soko_test.id('ai_m_admin'), soko_test.id('ai_m_member')), 2);
+select soko_test.expect_count('AI: cascaded invitation DELETE is audited under the original company id',
+  format($$select count(*) from public.audit_log
+    where entity = 'company_invitations' and action = 'delete' and company_id = %L$$, soko_test.id('ai_co')), 1);
+select soko_test.expect_count('AI: no audit row for the deleted company is left without a company id',
+  format($$select count(*) from public.audit_log
+    where company_id is null and entity in ('companies','company_memberships','company_invitations')
+      and (entity_id in (%L, %L, %L) or entity_key ->> 'company_id' = %L)$$,
+    soko_test.id('ai_co'), soko_test.id('ai_m_admin'), soko_test.id('ai_m_member'), soko_test.id('ai_co')), 0);
+
+-- Deleted rows stay redacted -------------------------------------------------
+select soko_test.expect_count('AI: company DELETE keeps safe values and names redacted fields only',
+  format($$select count(*) from public.audit_log
+    where entity = 'companies' and action = 'delete' and entity_id = %L
+      and diff -> 'values' ->> 'legal_name' = 'Audit Lifecycle Co'
+      and diff -> 'redacted' ?& array['license_no','issuing_authority','address','general_email','phone']
+      and not (diff -> 'values' ?| array['license_no','issuing_authority','address','general_email','phone'])$$,
+    soko_test.id('ai_co')), 1);
+select soko_test.expect_count('AI: no audit row ever holds the deleted company''s licence or contact values',
+  $$select count(*) from public.audit_log
+    where diff::text ~ '(LIC-DEL-SECRET|AUTH-DEL-SECRET|Deleted Secret Road|audit-del\.test|500009191)'$$, 0);
+select soko_test.expect_count('AI: cascaded invitation DELETE redacts the email and drops the token hash',
+  format($$select count(*) from public.audit_log
+    where entity = 'company_invitations' and action = 'delete' and company_id = %L
+      and diff -> 'redacted' ? 'email' and not (diff -> 'values' ? 'email')
+      and diff::text not like '%%token_hash%%' and diff::text not like '%%cascade-invitee%%'$$,
+    soko_test.id('ai_co')), 1);
+select soko_test.expect_count('AI: the deleted company''s notifications are removed with it',
+  format($$select count(*) from public.notifications where company_id = %L$$, soko_test.id('ai_co')), 0);
+
+-- Post-deletion visibility --------------------------------------------------
+select soko_test.as_user('ai_admin');
+set local role authenticated;
+select soko_test.expect_count('AI: the former admin can no longer read the deleted company''s audit trail',
+  format($$select count(*) from public.audit_log where company_id = %L$$, soko_test.id('ai_co')), 0);
+reset role;
+select soko_test.as_user('padmin');
+set local role authenticated;
+select soko_test.expect_count('AI: a platform admin can still read the deleted company''s audit trail',
+  format($$select (count(*) >= 8)::int from public.audit_log where company_id = %L$$, soko_test.id('ai_co')), 1);
+reset role;
+
+-- Append-only enforcement ---------------------------------------------------
+select soko_test.expect_denied('AI: the table owner cannot update audit rows',
+  format($$update public.audit_log set diff = '{}' where company_id = %L$$, soko_test.id('ai_co')));
+select soko_test.expect_denied('AI: the table owner cannot delete audit rows',
+  format($$delete from public.audit_log where company_id = %L$$, soko_test.id('ai_co')));
+select soko_test.expect_denied('AI: the table owner cannot truncate the audit log',
+  $$truncate public.audit_log$$);
+set local role service_role;
+select soko_test.expect_ok('AI: the service role can read the audit log',
+  $$select count(*) from public.audit_log$$);
+select soko_test.expect_denied('AI: the service role cannot insert audit entries',
+  $$insert into public.audit_log (action, entity) values ('insert', 'forged')$$);
+select soko_test.expect_denied('AI: the service role cannot update audit entries',
+  $$update public.audit_log set diff = '{}'$$);
+select soko_test.expect_denied('AI: the service role cannot delete audit entries',
+  $$delete from public.audit_log$$);
+select soko_test.expect_denied('AI: the service role cannot truncate the audit log',
+  $$truncate public.audit_log$$);
+reset role;
+select soko_test.expect_count('AI: audit rows are intact after every mutation attempt',
+  $$select count(*) from soko_test.ai_before b where not exists (select 1 from public.audit_log a where a.id = b.id)$$, 0);
 
 -- -----------------------------------------------------------------------------
 -- Report

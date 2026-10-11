@@ -27,6 +27,9 @@ create index audit_log_company_at on public.audit_log (company_id, at desc);
 create index audit_log_entity on public.audit_log (entity, entity_id);
 create trigger audit_log_append_only before update or delete on public.audit_log
   for each row execute function private.forbid_mutation();
+-- TRUNCATE skips row triggers, so it needs its own statement-level guard.
+create trigger audit_log_no_truncate before truncate on public.audit_log
+  for each statement execute function private.forbid_mutation();
 
 -- -----------------------------------------------------------------------------
 -- Audit registry. Each audited table declares:
@@ -276,6 +279,9 @@ alter table public.audit_log enable row level security;
 alter table public.notifications enable row level security;
 
 select private.reset_table_grants('public.audit_log');
+-- Entries are written only by triggers and owner-run trusted functions; even the
+-- service role may read but never insert, rewrite or truncate the trail.
+revoke insert, update, delete, truncate on public.audit_log from service_role;
 grant select on public.audit_log to authenticated;
 create policy audit_log_read on public.audit_log
   for select to authenticated
