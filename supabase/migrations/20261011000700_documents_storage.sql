@@ -939,9 +939,15 @@ language plpgsql security definer set search_path = '' as $$
 declare
   v_uid uuid := private.require_user();
   v_owner uuid;
+  v_level public.doc_access_level;
 begin
-  select s.owner_company_id into v_owner from public.document_shares s where s.id = p_share;
-  if v_owner is null or not private.has_permission(v_owner, 'documents.share') then
+  -- Same rule as share_document: documents.share in the owning company and
+  -- internal access at the document's current level (both void while suspended).
+  select s.owner_company_id, d.access_level into v_owner, v_level
+  from public.document_shares s join public.documents d on d.id = s.document_id
+  where s.id = p_share for share of d;
+  if v_owner is null or not private.has_permission(v_owner, 'documents.share')
+     or not private.has_doc_access(v_owner, v_level) then
     raise exception 'not allowed' using errcode = '42501';
   end if;
   update public.document_shares set revoked_at = now(), revoked_by = v_uid

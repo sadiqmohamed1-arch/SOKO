@@ -3451,6 +3451,64 @@ select soko_test.expect_ok('07W: a member with documents.share and the level can
 select soko_test.expect_sqlstate('07W: documents.share without access to the document''s level is refused',
   format($$select public.share_document(%L, %L)$$, soko_test.id('sh_adm'), soko_test.id('d_rec')), '42501');
 reset role;
+
+-- 18C. Revoking a share needs documents.share and the document's level too.
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_ok('07X: an owner admin can share an admin-only document',
+  format($$select public.share_document(%L, %L)$$, soko_test.id('sh_adm'), soko_test.id('d_rec')));
+reset role;
+insert into soko_test.ids
+select 'sh_adm_share', s.id from public.document_shares s
+where s.document_id = soko_test.id('sh_adm') and s.recipient_company_id = soko_test.id('d_rec') and s.revoked_at is null;
+insert into soko_test.ids
+select 'sh_pub_share', s.id from public.document_shares s
+where s.document_id = soko_test.id('sh_pub') and s.recipient_company_id = soko_test.id('d_rec') and s.revoked_at is null;
+select soko_test.as_user('d_mgr');
+set local role authenticated;
+select soko_test.expect_sqlstate('07X: documents.share without access to the document''s level cannot revoke',
+  format($$select public.revoke_document_share(%L)$$, soko_test.id('sh_adm_share')), '42501');
+reset role;
+select soko_test.expect_count('07X: the refused revoke leaves the share active',
+  format($$select count(*) from public.document_shares where id = %L and revoked_at is null$$, soko_test.id('sh_adm_share')), 1);
+select soko_test.as_user('d_tech');
+set local role authenticated;
+select soko_test.expect_sqlstate('07X: an owner member without documents.share cannot revoke',
+  format($$select public.revoke_document_share(%L)$$, soko_test.id('sh_pub_share')), '42501');
+reset role;
+select soko_test.as_user('r_admin');
+set local role authenticated;
+select soko_test.expect_sqlstate('07X: a share recipient cannot revoke',
+  format($$select public.revoke_document_share(%L)$$, soko_test.id('sh_pub_share')), '42501');
+reset role;
+select soko_test.as_user('d_mgr');
+set local role authenticated;
+select soko_test.expect_ok('07X: documents.share with the document''s level can revoke an active share',
+  format($$select public.revoke_document_share(%L)$$, soko_test.id('sh_pub_share')));
+reset role;
+select soko_test.expect_count('07X: the authorised revoke is recorded',
+  format($$select count(*) from public.document_shares where id = %L and revoked_at is not null and revoked_by = %L$$,
+         soko_test.id('sh_pub_share'), soko_test.id('d_mgr')), 1);
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_ok('07X: an admin can revoke the admin-only share',
+  format($$select public.revoke_document_share(%L)$$, soko_test.id('sh_adm_share')));
+reset role;
+select soko_test.expect_count('07X: the admin-only share is revoked',
+  format($$select count(*) from public.document_shares where id = %L and revoked_at is not null$$, soko_test.id('sh_adm_share')), 1);
+update public.companies set is_suspended = true where id = soko_test.id('d_sup');
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_sqlstate('07X: a suspended owner company cannot revoke',
+  format($$select public.revoke_document_share(%L)$$, soko_test.id('sh_adm_share')), '42501');
+reset role;
+update public.companies set is_suspended = false where id = soko_test.id('d_sup');
+-- Restore the active sh_pub share that the following download tests rely on.
+select soko_test.as_user('d_mgr');
+set local role authenticated;
+select soko_test.expect_ok('07X: the revoked share can be re-granted',
+  format($$select public.share_document(%L, %L)$$, soko_test.id('sh_pub'), soko_test.id('d_rec')));
+reset role;
 select soko_test.as_user('r_officer');
 set local role authenticated;
 select soko_test.expect_ok('07W: the recipient can download the shared public document',
