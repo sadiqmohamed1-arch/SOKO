@@ -196,11 +196,11 @@ language sql stable security definer set search_path = '' as $$
   );
 $$;
 
-grant execute on function private.my_company_ids() to authenticated;
-grant execute on function private.is_member(uuid) to authenticated;
-grant execute on function private.has_permission(uuid, text) to authenticated;
-grant execute on function private.is_company_admin(uuid) to authenticated;
-grant execute on function private.shares_company_with(uuid) to authenticated;
+select private.allow_execute(array['authenticated'], array['private.my_company_ids()']);
+select private.allow_execute(array['authenticated'], array['private.is_member(uuid)']);
+select private.allow_execute(array['authenticated'], array['private.has_permission(uuid, text)']);
+select private.allow_execute(array['authenticated'], array['private.is_company_admin(uuid)']);
+select private.allow_execute(array['authenticated'], array['private.shares_company_with(uuid)']);
 
 -- -----------------------------------------------------------------------------
 -- Invariant: a company always keeps at least one active admin.
@@ -638,4 +638,20 @@ begin
     from public.companies c where c.id = p_company;
 end $$;
 
-select private.lock_down_public_functions();
+-- Approved RPCs: callable by signed-in users only; each checks its own authorization.
+select private.allow_execute(array['authenticated'], array[
+  'public.create_company(public.company_kind, text, text, text, text, text)',
+  'public.invite_member(uuid, text, text)',
+  'public.revoke_invitation(uuid)',
+  'public.accept_invitation(text)',
+  'public.request_to_join(uuid)',
+  'public.approve_join_request(uuid, text)',
+  'public.decline_join_request(uuid)',
+  'public.change_member_role(uuid, text)',
+  'public.remove_member(uuid)',
+  'public.submit_verification(uuid, text, text, date, uuid)',
+  'public.review_verification(uuid, boolean, text)',
+  'public.get_company_private(uuid)'
+]);
+
+select private.apply_function_grants();

@@ -228,11 +228,11 @@ language sql stable security definer set search_path = '' as $$
   select c.owner_company_id from public.campaigns c where c.id = p_campaign;
 $$;
 
-grant execute on function private.is_opportunity_member(uuid) to authenticated;
-grant execute on function private.is_opportunity_manager(uuid) to authenticated;
-grant execute on function private.can_express_interest(uuid, uuid) to authenticated;
-grant execute on function private.is_campaign_recipient(uuid) to authenticated;
-grant execute on function private.campaign_company(uuid) to authenticated;
+select private.allow_execute(array['authenticated'], array['private.is_opportunity_member(uuid)']);
+select private.allow_execute(array['authenticated'], array['private.is_opportunity_manager(uuid)']);
+select private.allow_execute(array['authenticated'], array['private.can_express_interest(uuid, uuid)']);
+select private.allow_execute(array['authenticated'], array['private.is_campaign_recipient(uuid)']);
+select private.allow_execute(array['authenticated'], array['private.campaign_company(uuid)']);
 
 -- Connected Market Hub parties become counterparties too.
 create or replace function private.is_counterparty(p_company uuid) returns boolean
@@ -702,6 +702,19 @@ begin
   end loop;
   return v_count;
 end $$;
-grant execute on function private.activate_due_campaigns() to service_role;
+select private.allow_execute(array['service_role'], array['private.activate_due_campaigns()']);
 
-select private.lock_down_public_functions();
+-- Approved RPCs: callable by signed-in users only; each checks its own authorization.
+select private.allow_execute(array['authenticated'], array[
+  'public.get_opportunity_details(uuid)',
+  'public.my_opportunity_ids()',
+  'public.set_interest_status(uuid, public.interest_status)',
+  'public.submit_campaign(uuid)',
+  'public.review_campaign(uuid, boolean, text)',
+  'public.set_campaign_status(uuid, public.campaign_status)',
+  'public.record_campaign_event(uuid, public.campaign_event_type, boolean, text)',
+  'public.get_campaign_stats(uuid)',
+  'public.get_campaign_responses(uuid)'
+]);
+
+select private.apply_function_grants();

@@ -568,6 +568,81 @@ select soko_test.expect_count('F7: public members-visible contact is shown (posi
 reset role;
 
 -- -----------------------------------------------------------------------------
+-- Step 10E: least-privilege function execution
+-- -----------------------------------------------------------------------------
+create temporary view soko_fn as
+  select p.oid, n.nspname as schema, p.proname as name
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname in ('public', 'private');
+
+select soko_test.expect_count('10E: no public/private function is executable by PUBLIC',
+  $$select count(*) from soko_fn where has_function_privilege('public', oid, 'execute')$$, 0);
+select soko_test.expect_count('10E: anon can execute no public-schema RPC',
+  $$select count(*) from soko_fn where schema = 'public' and has_function_privilege('anon', oid, 'execute')$$, 0);
+select soko_test.expect_count('10E: service_role can execute no public-schema RPC',
+  $$select count(*) from soko_fn where schema = 'public' and has_function_privilege('service_role', oid, 'execute')$$, 0);
+select soko_test.expect_count('10E: authenticated can execute exactly the 41 approved public RPCs',
+  $$select count(*) from soko_fn where schema = 'public' and has_function_privilege('authenticated', oid, 'execute')$$, 41);
+select soko_test.expect_count('10E: every authenticated grant is on the allowlist',
+  $$select count(*) from soko_fn f
+    where has_function_privilege('authenticated', f.oid, 'execute')
+      and not exists (select 1 from private.function_grants g
+                      where g.grantee = 'authenticated' and to_regprocedure(g.signature) = f.oid)$$, 0);
+select soko_test.expect_count('10E: anon executes only the 4 public-read policy helpers',
+  $$select count(*) from soko_fn where has_function_privilege('anon', oid, 'execute')
+      and name in ('try_uuid', 'storage_company', 'can_read_document', 'can_read_company_media')$$, 4);
+select soko_test.expect_count('10E: anon executes nothing else',
+  $$select count(*) from soko_fn where has_function_privilege('anon', oid, 'execute')$$, 4);
+select soko_test.expect_count('10E: ledger, notification and admin helpers are owner-only',
+  $$select count(*) from soko_fn
+    where name in ('spend_credits', 'add_credits', 'notify', 'notify_permission_holders',
+                   'notify_platform_admins', 'attach_audit', 'reset_table_grants',
+                   'allow_execute', 'apply_function_grants', 'require_platform_admin', 'handle_new_user')
+      and (has_function_privilege('anon', oid, 'execute')
+           or has_function_privilege('authenticated', oid, 'execute')
+           or has_function_privilege('service_role', oid, 'execute'))$$, 0);
+select soko_test.expect_count('10E: scheduled jobs are executable by service_role only',
+  $$select count(*) from soko_fn
+    where name in ('grant_monthly_credits', 'queue_document_expiry_reminders',
+                   'activate_due_campaigns', 'refresh_supplier_metrics')
+      and has_function_privilege('service_role', oid, 'execute')
+      and not has_function_privilege('authenticated', oid, 'execute')
+      and not has_function_privilege('anon', oid, 'execute')$$, 4);
+
+create function public.soko_test_default_probe() returns int language sql as $$ select 1 $$;
+create function private.soko_test_default_probe() returns int language sql as $$ select 1 $$;
+select soko_test.expect_count('10E: new functions get no default EXECUTE for PUBLIC/anon/authenticated/service_role',
+  $$select count(*) from soko_fn where name = 'soko_test_default_probe'
+      and (has_function_privilege('public', oid, 'execute')
+           or has_function_privilege('anon', oid, 'execute')
+           or has_function_privilege('authenticated', oid, 'execute')
+           or has_function_privilege('service_role', oid, 'execute'))$$, 0);
+select soko_test.expect_denied('10E: allow_execute rejects an unknown signature',
+  $$select private.allow_execute(array['authenticated'], array['public.does_not_exist(uuid)'])$$);
+select soko_test.expect_denied('10E: allow_execute rejects an unsupported grantee',
+  $$select private.allow_execute(array['postgres'], array['public.get_credit_balance(uuid)'])$$);
+
+select soko_test.as_anon();
+set local role anon;
+select soko_test.expect_denied('10E: anon cannot call an approved RPC',
+  $$select public.get_credit_balance(gen_random_uuid())$$);
+select soko_test.expect_denied('10E: anon cannot call a private ledger helper',
+  $$select private.add_credits(gen_random_uuid(), 100, 'x', null)$$);
+reset role;
+
+select soko_test.as_user('sup_admin');
+set local role authenticated;
+select soko_test.expect_denied('10E: authenticated cannot call spend_credits directly',
+  format($$select private.spend_credits(%L, 1, 'x', null)$$, soko_test.id('supplier')));
+select soko_test.expect_denied('10E: authenticated cannot call add_credits directly',
+  format($$select private.add_credits(%L, 1000, 'x', null)$$, soko_test.id('supplier')));
+select soko_test.expect_denied('10E: authenticated cannot call apply_function_grants',
+  $$select private.apply_function_grants()$$);
+select soko_test.expect_ok('10E: authenticated member can still call an approved RPC',
+  format($$select public.get_credit_balance(%L)$$, soko_test.id('supplier')));
+reset role;
+
+-- -----------------------------------------------------------------------------
 -- Report
 -- -----------------------------------------------------------------------------
 reset role;

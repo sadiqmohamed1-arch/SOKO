@@ -57,7 +57,7 @@ language sql stable security definer set search_path = '' as $$
       and ((c.requester_id = auth.uid() and c.addressee_id = p_user)
         or (c.addressee_id = auth.uid() and c.requester_id = p_user)));
 $$;
-grant execute on function private.is_connected(uuid) to authenticated;
+select private.allow_execute(array['authenticated'], array['private.is_connected(uuid)']);
 
 create policy profiles_select_connections on public.profiles
   for select to authenticated using (private.is_connected(id));
@@ -176,9 +176,9 @@ create or replace function private.vendor_record_company(p_vendor_record uuid) r
 language sql stable security definer set search_path = '' as $$
   select v.contractor_company_id from public.vendor_records v where v.id = p_vendor_record;
 $$;
-grant execute on function private.is_vendor_supplier(uuid) to authenticated;
-grant execute on function private.is_supplier_of(uuid) to authenticated;
-grant execute on function private.vendor_record_company(uuid) to authenticated;
+select private.allow_execute(array['authenticated'], array['private.is_vendor_supplier(uuid)']);
+select private.allow_execute(array['authenticated'], array['private.is_supplier_of(uuid)']);
+select private.allow_execute(array['authenticated'], array['private.vendor_record_company(uuid)']);
 
 -- -----------------------------------------------------------------------------
 -- RLS
@@ -435,4 +435,12 @@ begin
     'compliance.' || replace(p_status::text, '-', '_'), jsonb_build_object('submission_id', v_s.id));
 end $$;
 
-select private.lock_down_public_functions();
+-- Approved RPCs: callable by signed-in users only; each checks its own authorization.
+select private.allow_execute(array['authenticated'], array[
+  'public.respond_connection(uuid, text)',
+  'public.set_vendor_approval(uuid, public.vendor_approval_status, text)',
+  'public.submit_compliance_document(uuid, uuid, uuid)',
+  'public.review_compliance_submission(uuid, public.vendor_doc_status, text)'
+]);
+
+select private.apply_function_grants();

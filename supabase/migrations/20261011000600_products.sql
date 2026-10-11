@@ -136,7 +136,7 @@ language sql stable security definer set search_path = '' as $$
   select exists (select 1 from public.products p
                  where p.id = p_product and private.has_permission(p.company_id, 'products.manage'));
 $$;
-grant execute on function private.can_manage_product(uuid) to authenticated;
+select private.allow_execute(array['authenticated'], array['private.can_manage_product(uuid)']);
 
 do $$
 declare t text;
@@ -190,4 +190,9 @@ begin
   on conflict (product_id, viewer_user_id, viewed_on) do nothing;
 end $$;
 
-select private.lock_down_public_functions();
+-- Approved RPCs: callable by signed-in users only; each checks its own authorization.
+select private.allow_execute(array['authenticated'], array[
+  'public.record_product_view(uuid, uuid)'
+]);
+
+select private.apply_function_grants();

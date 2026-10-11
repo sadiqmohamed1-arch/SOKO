@@ -25,6 +25,8 @@ drop type if exists public.verification_status;
 drop type if exists public.membership_status;
 drop type if exists public.company_kind;
 
-alter default privileges in schema public  grant execute on functions to public;
-alter default privileges in schema private grant execute on functions to public;
+-- Restores the Postgres global default and Supabase's per-schema defaults that
+-- migration 01 revoked. private.function_grants and its helpers go with the schema.
+alter default privileges grant execute on functions to public;
+alter default privileges in schema public grant execute on functions to anon, authenticated, service_role;
 drop schema if exists private cascade;

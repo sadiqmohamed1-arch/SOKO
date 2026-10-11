@@ -32,7 +32,7 @@ create or replace function private.is_platform_admin() returns boolean
 language sql stable security definer set search_path = '' as $$
   select exists (select 1 from public.platform_admins pa where pa.user_id = auth.uid());
 $$;
-grant execute on function private.is_platform_admin() to authenticated;
+select private.allow_execute(array['authenticated'], array['private.is_platform_admin()']);
 
 -- Profile row is created by the database, never by the client, so a failed
 -- client write can never leave a user without a profile.
@@ -73,4 +73,4 @@ grant select on public.platform_admins to authenticated;
 create policy platform_admins_select_self on public.platform_admins
   for select to authenticated using (user_id = auth.uid());
 
-select private.lock_down_public_functions();
+select private.apply_function_grants();

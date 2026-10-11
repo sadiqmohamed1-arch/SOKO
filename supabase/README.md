@@ -44,9 +44,27 @@ Recommended apply procedure (when approved):
 - Preferred recovery for production is point-in-time restore, not rollback scripts. Rollbacks are for
   staging and for failed first-time applies.
 
+## Function execution privileges
+
+Function access is least-privilege and allowlist-driven (migration 01):
+
+- The migration owner's default privileges grant EXECUTE on new functions to nobody: PUBLIC is
+  revoked globally, and anon/authenticated/service_role are revoked per schema for `public` and `private`.
+- `private.function_grants` is the allowlist. Migrations register entries with
+  `private.allow_execute(array[<roles>], array['<schema>.<fn>(<arg types>)'])` and end with
+  `select private.apply_function_grants();`. That call revokes everything on every
+  `public`/`private` function, then re-grants only the listed entries.
+- Argument types must be schema-qualified (`public.company_kind`), and unknown signatures or
+  grantees are rejected.
+- A new RPC is **not callable** until it is added to the allowlist. Owner-only is the default for
+  trigger functions, ledger mutators (`spend_credits`, `add_credits`) and notification writers.
+
+Current allowlist: 41 public RPCs for `authenticated`, 25 private RLS helpers for `authenticated`,
+4 helpers for `anon` (public-read policies only), and 4 scheduled jobs for `service_role`.
+
 ## Security tests
 
-`tests/security_tests.sql` runs 61 checks (unauthorised attempts plus positive controls) inside one
+`tests/security_tests.sql` runs 112 checks (unauthorised attempts plus positive controls) inside one
 transaction that always ends in `ROLLBACK`, so its fixture users and records never persist. It
 switches to the `authenticated` / `anon` roles and sets `request.jwt.claims` to impersonate users.
 

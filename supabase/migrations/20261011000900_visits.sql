@@ -114,9 +114,9 @@ language sql stable security definer set search_path = '' as $$
          or (vr.contractor_company_id = p_company and private.is_member(vr.supplier_company_id)));
 $$;
 
-grant execute on function private.is_visit_party(uuid, uuid) to authenticated;
-grant execute on function private.can_read_visit(uuid) to authenticated;
-grant execute on function private.is_counterparty(uuid) to authenticated;
+select private.allow_execute(array['authenticated'], array['private.is_visit_party(uuid, uuid)']);
+select private.allow_execute(array['authenticated'], array['private.can_read_visit(uuid)']);
+select private.allow_execute(array['authenticated'], array['private.is_counterparty(uuid)']);
 
 create policy companies_counterparty_read on public.companies
   for select to authenticated using (private.is_counterparty(id));
@@ -152,7 +152,7 @@ language sql stable security definer set search_path = '' as $$
                  where v.id = p_visit and p.id = p_product
                    and private.has_permission(v.supplier_company_id, 'visits.manage'));
 $$;
-grant execute on function private.can_manage_visit_products(uuid, uuid) to authenticated;
+select private.allow_execute(array['authenticated'], array['private.can_manage_visit_products(uuid, uuid)']);
 
 select private.reset_table_grants('public.visit_products');
 grant select, insert, delete on public.visit_products to authenticated;
@@ -331,4 +331,11 @@ begin
     'visits.manage', 'visit.rescheduled', jsonb_build_object('visit_id', v.id, 'scheduled_at', p_scheduled_at));
 end $$;
 
-select private.lock_down_public_functions();
+-- Approved RPCs: callable by signed-in users only; each checks its own authorization.
+select private.allow_execute(array['authenticated'], array[
+  'public.request_visit(uuid, uuid, timestamptz, smallint, text, text, text)',
+  'public.set_visit_status(uuid, uuid, public.visit_status, text)',
+  'public.update_visit_details(uuid, uuid, timestamptz, smallint, text, text)'
+]);
+
+select private.apply_function_grants();

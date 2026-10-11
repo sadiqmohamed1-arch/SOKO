@@ -118,4 +118,12 @@ begin
     'published_products',    (select count(*) from public.products where status = 'published'));
 end $$;
 
-select private.lock_down_public_functions();
+-- Approved RPCs: callable by signed-in users only; each checks its own authorization.
+select private.allow_execute(array['authenticated'], array[
+  'public.admin_set_company_suspension(uuid, boolean, text)',
+  'public.admin_suspend_campaign(uuid, text)',
+  'public.admin_resolve_report(uuid, text, text)',
+  'public.admin_platform_stats()'
+]);
+
+select private.apply_function_grants();

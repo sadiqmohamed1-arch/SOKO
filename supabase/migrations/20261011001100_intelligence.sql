@@ -97,6 +97,11 @@ begin
   get diagnostics v_count = row_count;
   return v_count;
 end $$;
-grant execute on function private.refresh_supplier_metrics(date) to service_role;
+select private.allow_execute(array['service_role'], array['private.refresh_supplier_metrics(date)']);
 
-select private.lock_down_public_functions();
+-- Approved RPCs: callable by signed-in users only; each checks its own authorization.
+select private.allow_execute(array['authenticated'], array[
+  'public.record_profile_view(uuid, uuid)'
+]);
+
+select private.apply_function_grants();

@@ -112,7 +112,7 @@ language sql stable security definer set search_path = '' as $$
     )
   );
 $$;
-grant execute on function private.can_read_document(uuid) to anon, authenticated;
+select private.allow_execute(array['anon', 'authenticated'], array['private.can_read_document(uuid)']);
 
 create or replace function private.storage_quota_ok(p_company uuid) returns boolean
 language sql stable security definer set search_path = '' as $$
@@ -195,13 +195,13 @@ language sql stable security definer set search_path = '' as $$
         and private.has_permission(private.storage_company(p_name), 'products.manage')));
 $$;
 
-grant execute on function private.has_doc_access(uuid, public.doc_access_level) to authenticated;
-grant execute on function private.storage_company(text) to anon, authenticated;
-grant execute on function private.can_upload_document_object(text) to authenticated;
-grant execute on function private.can_read_document_object(text) to authenticated;
-grant execute on function private.can_delete_document_object(text) to authenticated;
-grant execute on function private.can_read_company_media(text) to anon, authenticated;
-grant execute on function private.can_write_company_media(text) to authenticated;
+select private.allow_execute(array['authenticated'], array['private.has_doc_access(uuid, public.doc_access_level)']);
+select private.allow_execute(array['anon', 'authenticated'], array['private.storage_company(text)']);
+select private.allow_execute(array['authenticated'], array['private.can_upload_document_object(text)']);
+select private.allow_execute(array['authenticated'], array['private.can_read_document_object(text)']);
+select private.allow_execute(array['authenticated'], array['private.can_delete_document_object(text)']);
+select private.allow_execute(array['anon', 'authenticated'], array['private.can_read_company_media(text)']);
+select private.allow_execute(array['authenticated'], array['private.can_write_company_media(text)']);
 
 -- -----------------------------------------------------------------------------
 -- RLS
@@ -442,6 +442,14 @@ begin
   end loop;
   return v_count;
 end $$;
-grant execute on function private.queue_document_expiry_reminders() to service_role;
+select private.allow_execute(array['service_role'], array['private.queue_document_expiry_reminders()']);
 
-select private.lock_down_public_functions();
+-- Approved RPCs: callable by signed-in users only; each checks its own authorization.
+select private.allow_execute(array['authenticated'], array[
+  'public.finalize_document_version(uuid, text, text)',
+  'public.share_document(uuid, uuid, timestamptz)',
+  'public.revoke_document_share(uuid)',
+  'public.record_document_download(uuid)'
+]);
+
+select private.apply_function_grants();

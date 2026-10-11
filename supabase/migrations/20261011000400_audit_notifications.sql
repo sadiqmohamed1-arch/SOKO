@@ -166,4 +166,4 @@ begin
   end if;
 end $$;
 
-select private.lock_down_public_functions();
+select private.apply_function_grants();

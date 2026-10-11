@@ -13,9 +13,14 @@ create schema if not exists private;
 revoke all on schema private from public;
 grant usage on schema private to anon, authenticated, service_role;
 
--- Functions are not executable by PUBLIC unless a migration grants them.
-alter default privileges in schema private revoke execute on functions from public;
-alter default privileges in schema public  revoke execute on functions from public;
+-- Functions created by the migration owner are executable by nobody else
+-- until private.function_grants approves them (see apply_function_grants).
+-- The PUBLIC default is global in Postgres: a per-schema REVOKE cannot remove
+-- it, so it must be revoked without IN SCHEMA. Supabase's per-schema defaults
+-- for anon/authenticated/service_role are revoked per schema.
+alter default privileges revoke execute on functions from public;
+alter default privileges in schema public  revoke execute on functions from anon, authenticated, service_role;
+alter default privileges in schema private revoke execute on functions from anon, authenticated, service_role;
 
 -- -----------------------------------------------------------------------------
 -- Enums (values mirror src/data/supplierTypes.ts and marketHubTypes.ts)
@@ -51,6 +56,72 @@ create type public.response_availability as enum ('available', 'on_order', 'part
 create type public.subscription_status as enum ('trialing', 'active', 'past_due', 'cancelled');
 
 -- -----------------------------------------------------------------------------
+-- Function execution allowlist
+-- Every function in `public` and `private` is revoked from PUBLIC, anon,
+-- authenticated and service_role, then granted only where listed here.
+-- Migrations register grants with allow_execute() and finish with
+-- apply_function_grants(). Owner-only access is the default for anything
+-- not listed (trigger functions, ledger mutators, notification writers).
+-- -----------------------------------------------------------------------------
+create table private.function_grants (
+  signature  text not null,
+  grantee    text not null check (grantee in ('anon', 'authenticated', 'service_role')),
+  primary key (signature, grantee)
+);
+revoke all on table private.function_grants from public, anon, authenticated, service_role;
+
+create or replace function private.allow_execute(p_grantees text[], p_signatures text[]) returns void
+language plpgsql set search_path = '' as $$
+declare s text; g text; v_sig regprocedure; v_schema name;
+begin
+  foreach s in array p_signatures loop
+    v_sig := pg_catalog.to_regprocedure(s);
+    if v_sig is null then
+      raise exception 'allow_execute: unknown function %', s;
+    end if;
+    select n.nspname into v_schema
+    from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+    where p.oid = v_sig;
+    if v_schema not in ('public', 'private') then
+      raise exception 'allow_execute: % is outside public/private', s;
+    end if;
+    foreach g in array p_grantees loop
+      insert into private.function_grants (signature, grantee)
+      values (v_sig::text, g)
+      on conflict do nothing;
+    end loop;
+  end loop;
+end $$;
+
+create or replace function private.apply_function_grants() returns void
+language plpgsql set search_path = '' as $$
+declare f record;
+begin
+  -- Entries for functions removed by a rollback are dropped, not re-granted.
+  delete from private.function_grants where pg_catalog.to_regprocedure(signature) is null;
+
+  for f in
+    select p.oid::regprocedure as sig
+    from pg_catalog.pg_proc p
+    join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+    where n.nspname in ('public', 'private')
+      and p.prokind in ('f', 'p')
+      and not exists (
+        select 1 from pg_catalog.pg_depend d
+        where d.classid = 'pg_catalog.pg_proc'::regclass and d.objid = p.oid and d.deptype = 'e'
+      )
+  loop
+    execute format('revoke all on function %s from public, anon, authenticated, service_role', f.sig);
+  end loop;
+
+  for f in
+    select pg_catalog.to_regprocedure(signature) as sig, grantee from private.function_grants
+  loop
+    execute format('grant execute on function %s to %I', f.sig, f.grantee);
+  end loop;
+end $$;
+
+-- -----------------------------------------------------------------------------
 -- Shared helpers
 -- -----------------------------------------------------------------------------
 create or replace function private.set_updated_at() returns trigger
@@ -79,7 +150,7 @@ begin
 exception when others then
   return null;
 end $$;
-grant execute on function private.try_uuid(text) to anon, authenticated;
+select private.allow_execute(array['anon', 'authenticated'], array['private.try_uuid(text)']);
 
 -- Supabase grants ALL on new public tables to anon and authenticated by
 -- default. Every table is reset with this and then granted explicitly.
@@ -90,22 +161,6 @@ begin
   execute format('grant all on table %s to service_role', p_table);
 end $$;
 
--- Public-schema functions are RPCs. None are callable by anon; every one is
--- callable by authenticated users and performs its own authorization checks.
-create or replace function private.lock_down_public_functions() returns void
-language plpgsql set search_path = '' as $$
-declare f record;
-begin
-  for f in
-    select p.oid::regprocedure as sig
-    from pg_catalog.pg_proc p
-    join pg_catalog.pg_namespace n on n.oid = p.pronamespace
-    where n.nspname = 'public' and p.prokind = 'f'
-  loop
-    execute format('revoke execute on function %s from public, anon', f.sig);
-    execute format('grant execute on function %s to authenticated, service_role', f.sig);
-  end loop;
-end $$;
 
 -- Append-only guard for ledgers and logs.
 create or replace function private.forbid_mutation() returns trigger
@@ -238,4 +293,4 @@ begin
   end loop;
 end $$;
 
-select private.lock_down_public_functions();
+select private.apply_function_grants();

@@ -151,7 +151,7 @@ begin
   get diagnostics v_count = row_count;
   return v_count;
 end $$;
-grant execute on function private.grant_monthly_credits(date) to service_role;
+select private.allow_execute(array['service_role'], array['private.grant_monthly_credits(date)']);
 
 -- -----------------------------------------------------------------------------
 -- Client-facing RPCs
@@ -222,4 +222,11 @@ create policy credit_ledger_read on public.credit_ledger
          or private.has_permission(company_id, 'plan.manage')
          or private.is_platform_admin());
 
-select private.lock_down_public_functions();
+-- Approved RPCs: callable by signed-in users only; each checks its own authorization.
+select private.allow_execute(array['authenticated'], array[
+  'public.get_credit_balance(uuid)',
+  'public.admin_set_subscription(uuid, text, public.subscription_status, timestamptz, text)',
+  'public.admin_adjust_credits(uuid, integer, text)'
+]);
+
+select private.apply_function_grants();
