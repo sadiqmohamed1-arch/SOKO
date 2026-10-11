@@ -203,6 +203,12 @@ revoke all on private.storage_quota_guard from public, anon, authenticated;
 -- a fitting late upload is settled and released, a missing one is released,
 -- and an object that is larger, of another type or replaced after settlement
 -- is marked rejected and reported for deletion by list_orphaned_storage_objects.
+--
+-- One reservation per path, ever, until reconciliation removes it: it is never
+-- renewed, extended or handed to another user, so a path has exactly one owner
+-- and one admission window and no two admitted uploads can compete for it. A
+-- retry after an interrupted or expired upload uses a new file name (every
+-- bucket's path scheme leaves the file name free).
 create table private.storage_upload_reservations (
   id             uuid primary key default gen_random_uuid(),
   company_id     uuid not null references public.companies (id) on delete cascade,
@@ -291,6 +297,10 @@ select private.allow_execute(array['anon', 'authenticated'], array['private.can_
 -- the 24-hour lifetime of a Supabase TUS upload URL.
 create or replace function private.upload_grace() returns interval
 language sql immutable set search_path = '' as $$ select interval '24 hours' $$;
+
+-- How long a reservation admits uploads (RLS passes only inside it).
+create or replace function private.upload_window() returns interval
+language sql immutable set search_path = '' as $$ select interval '15 minutes' $$;
 
 -- Bytes a company holds (real sizes written by Storage) plus, for every
 -- reservation still counting, the reserved bytes not yet covered by the object
@@ -684,8 +694,9 @@ end $$;
 -- row lock (READ COMMITTED: concurrent callers queue; REPEATABLE READ /
 -- SERIALIZABLE: they fail with a retryable 40001). Returns when the 15-minute
 -- upload window closes. Errors: 42501 not allowed, 22023 invalid size/type/
--- bucket, 55006 another user's upload to this path is open, 53400 quota or
--- open-upload limit reached.
+-- bucket, 55006 the path already has a reservation (open, in its grace period,
+-- awaiting reconciliation or rejected) or, for buckets without overwrite, an
+-- object; 53400 quota or open-upload limit reached.
 create or replace function public.reserve_storage_upload(p_bucket text, p_name text, p_size bigint, p_mime_type text)
 returns timestamptz
 language plpgsql security definer set search_path = '' as $$
@@ -694,9 +705,7 @@ declare
   v_bucket storage.buckets%rowtype;
   v_company uuid;
   v_allowed boolean;
-  v_old private.storage_upload_reservations%rowtype;
-  v_bytes bigint := p_size;
-  v_expires timestamptz := now() + interval '15 minutes';
+  v_expires timestamptz := now() + private.upload_window();
 begin
   select * into v_bucket from storage.buckets b
   where b.id = p_bucket and b.id in ('company-documents', 'company-media', 'verification');
@@ -722,39 +731,33 @@ begin
   insert into private.storage_quota_guard (company_id) values (v_company)
   on conflict (company_id) do update set checked_at = now();
 
-  select * into v_old from private.storage_upload_reservations r
-  where r.bucket_id = p_bucket and r.object_name = p_name;
-  if v_old.rejected_at is not null then
-    raise exception 'a file at this path failed verification and must be removed first' using errcode = '55006';
+  -- The path's company is fixed by its first folder, so the guard row lock
+  -- above also serialises every reserve and reconcile on this exact path.
+  -- Any existing row means an upload was admitted here whose outcome is not
+  -- yet settled by reconciliation: never renew, extend or reassign it.
+  if exists (select 1 from private.storage_upload_reservations r
+             where r.bucket_id = p_bucket and r.object_name = p_name) then
+    raise exception 'this path already has an upload; use a new file name' using errcode = '55006';
   end if;
-  if v_old.id is not null and now() < v_old.expires_at + private.upload_grace() then
-    if v_old.user_id <> v_uid and v_old.settled_at is null and now() < v_old.expires_at then
-      raise exception 'another upload to this path is in progress' using errcode = '55006';
-    end if;
-    -- An upload admitted under the old reservation may still be in flight, so
-    -- the path keeps the larger charge. Re-reserving also extends the window
-    -- (how an interrupted resumable upload resumes: TUS re-checks RLS per PATCH).
-    v_bytes := greatest(v_old.reserved_bytes, p_size);
+  -- company-documents and verification have no UPDATE policy: an existing
+  -- object can never be overwritten, so a reservation for it is refused.
+  if p_bucket <> 'company-media'
+     and exists (select 1 from storage.objects o where o.bucket_id = p_bucket and o.name = p_name) then
+    raise exception 'a file already exists at this path; use a new file name' using errcode = '55006';
   end if;
 
   if (select count(*) from private.storage_upload_reservations r
-      where r.company_id = v_company and r.id is distinct from v_old.id
-        and r.settled_at is null and now() < r.expires_at) >= 20 then
+      where r.company_id = v_company and r.settled_at is null and now() < r.expires_at) >= 20 then
     raise exception 'too many uploads in progress' using errcode = '53400';
   end if;
-  if private.storage_usage(v_company, v_old.id, p_bucket, p_name) + v_bytes
+  if private.storage_usage(v_company, null, p_bucket, p_name) + p_size
      > private.entitlement_int(v_company, 'storageMb')::bigint * 1024 * 1024 then
     raise exception 'storage quota exceeded' using errcode = '53400';
   end if;
 
   insert into private.storage_upload_reservations
     (company_id, bucket_id, object_name, user_id, reserved_bytes, mime_type, expires_at)
-  values (v_company, p_bucket, p_name, v_uid, v_bytes, p_mime_type, v_expires)
-  on conflict (bucket_id, object_name) do update
-    set company_id = excluded.company_id, user_id = excluded.user_id,
-        reserved_bytes = excluded.reserved_bytes, mime_type = excluded.mime_type,
-        created_at = now(), expires_at = excluded.expires_at, settled_at = null,
-        object_version = null, rejected_at = null;
+  values (v_company, p_bucket, p_name, v_uid, p_size, p_mime_type, v_expires);
   return v_expires;
 end $$;
 
@@ -847,7 +850,10 @@ begin
     end if;
 
     if v_outcome = 'rejected' then
-      update private.storage_upload_reservations set rejected_at = now() where id = r.id;
+      -- Record exactly which object version was judged, so cleanup can only
+      -- ever delete those bytes.
+      update private.storage_upload_reservations set rejected_at = now(), object_version = v_objver
+      where id = r.id;
     elsif v_outcome in ('released', 'settled_late') then
       delete from private.storage_upload_reservations where id = r.id;
     end if;
@@ -970,13 +976,30 @@ select private.allow_execute(array['service_role'], array['private.queue_documen
 
 -- Service-role cleanup report: Storage files no SQL row accounts for. Delete
 -- them through the Storage API (SQL deletes leave the bytes behind).
+--
+-- Safety rules, so a report can never race an upload that is still allowed to
+-- land:
+--   * Nothing is reported while its path has a reservation that is unsettled
+--     or settled and not yet past window + grace (an admitted upload may still
+--     be streaming). Company deletion cascades its reservations, and its
+--     objects are reported as 'company deleted'.
+--   * A rejected object is reported only while the object at the path is the
+--     exact version reconciliation judged; anything newer is left alone.
+--   * Age-based reasons use the later of created_at/updated_at and never less
+--     than window + grace, whatever p_min_age the caller passes.
 create or replace function private.list_orphaned_storage_objects(p_min_age interval default interval '1 day')
 returns table (bucket_id text, name text, reason text)
 language sql stable security definer set search_path = '' as $$
   select o.bucket_id, o.name, x.reason
   from storage.objects o
+  left join lateral (select r.rejected_at, r.object_version,
+                            (r.rejected_at is null
+                             and now() < r.expires_at + private.upload_grace()) as in_grace
+                     from private.storage_upload_reservations r
+                     where r.bucket_id = o.bucket_id and r.object_name = o.name) res on true
   cross join lateral (select
     case
+      when coalesce(res.in_grace, false) then null
       when o.bucket_id = 'avatars' then
         case when (select a.user_id from private.parse_avatar_path(o.name) a) is null then 'malformed path'
              when not exists (select 1 from auth.users u
@@ -985,9 +1008,8 @@ language sql stable security definer set search_path = '' as $$
       when private.storage_company(o.name) is null
         or not exists (select 1 from public.companies c where c.id = private.storage_company(o.name))
         then 'company deleted or malformed path'
-      when exists (select 1 from private.storage_upload_reservations r
-                   where r.bucket_id = o.bucket_id and r.object_name = o.name and r.rejected_at is not null)
-        then 'does not match its reservation'
+      when res.rejected_at is not null then
+        case when res.object_version is not distinct from o.version then 'does not match its reservation' end
       when o.bucket_id = 'company-documents'
         and exists (select 1 from public.document_versions v
                     where v.storage_path = o.name and v.object_version is distinct from o.version)
@@ -995,7 +1017,10 @@ language sql stable security definer set search_path = '' as $$
       when o.bucket_id = 'company-documents' then
         case when (select p.company_id from private.parse_document_path(o.name) p) is null then 'malformed path'
              when not exists (select 1 from public.document_versions v where v.storage_path = o.name)
-                  and o.created_at < now() - p_min_age then 'never finalised' end
+                  and greatest(o.created_at, coalesce(o.updated_at, o.created_at))
+                      < now() - greatest(coalesce(p_min_age, interval '0'),
+                                         private.upload_window() + private.upload_grace())
+               then 'never finalised' end
       when o.bucket_id = 'company-media'
         and (select m.company_id from private.parse_media_path(o.name) m) is null then 'malformed path'
       when o.bucket_id = 'verification'

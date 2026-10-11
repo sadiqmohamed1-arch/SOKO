@@ -3007,7 +3007,15 @@ select soko_test.expect_sqlstate('07R: a settled reservation cannot be completed
 select soko_test.expect_denied('07R: a settled reservation admits no further upsert',
   format($$update storage.objects set metadata = '{"contentLength": 10, "mimetype": "image/png"}'
            where bucket_id = 'company-media' and name = %L$$, soko_test.dp('m_res')));
-select soko_test.expect_ok('07R: a replacement upload is reserved again',
+select soko_test.expect_sqlstate('07R: a settled path in its grace period cannot be re-reserved by its owner',
+  format($$select public.reserve_storage_upload('company-media', %L, 60, 'image/png')$$, soko_test.dp('m_res')), '55006');
+reset role;
+-- Reconciliation (after window + grace) releases the settled reservation.
+delete from private.storage_upload_reservations
+where bucket_id = 'company-media' and object_name = soko_test.dp('m_res');
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_ok('07R: after reconciliation a replacement upload is reserved',
   format($$select public.reserve_storage_upload('company-media', %L, 60, 'image/png')$$, soko_test.dp('m_res')));
 select soko_test.expect_count('07R: a reserved upsert (Storage UPDATE) is accepted',
   format($$with u as (update storage.objects set metadata = '{"contentLength": 60, "mimetype": "image/png"}'
@@ -3414,6 +3422,98 @@ set local role authenticated;
 select soko_test.expect_ok('07W: internal members can still download the archived document',
   format($$select public.record_document_download(v.id) from public.document_versions v where v.document_id = %L$$, soko_test.id('sh_pub')));
 reset role;
+
+-- =============================================================================
+-- 19. Migration 07 — no reservation renewal, reservation-aware cleanup
+-- =============================================================================
+-- 19A. A held path is never reassigned or renewed while an upload may be in flight.
+insert into soko_test.secrets values
+  ('n19_hold', soko_test.id('d_sup')::text || '/gallery/held19.png'),
+  ('n19_rej',  soko_test.id('d_sup')::text || '/gallery/rejected19.png');
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_ok('07X: a path is reserved',
+  format($$select public.reserve_storage_upload('company-media', %L, 100, 'image/png')$$, soko_test.dp('n19_hold')));
+select soko_test.expect_sqlstate('07X: the owner cannot renew an open reservation',
+  format($$select public.reserve_storage_upload('company-media', %L, 100, 'image/png')$$, soko_test.dp('n19_hold')), '55006');
+reset role;
+select soko_test.as_user('d_mgr');
+set local role authenticated;
+select soko_test.expect_sqlstate('07X: another user cannot take over an open reservation',
+  format($$select public.reserve_storage_upload('company-media', %L, 100, 'image/png')$$, soko_test.dp('n19_hold')), '55006');
+select soko_test.expect_denied('07X: another user cannot upload under the reservation',
+  format($$insert into storage.objects (bucket_id, name, metadata) values ('company-media', %L, '{"contentLength": 50, "mimetype": "image/png"}')$$, soko_test.dp('n19_hold')));
+reset role;
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_ok('07X: the reservation owner uploads',
+  format($$insert into storage.objects (bucket_id, name, metadata) values ('company-media', %L, '{"contentLength": 50, "mimetype": "image/png"}')$$, soko_test.dp('n19_hold')));
+reset role;
+update storage.objects set metadata = metadata || '{"size": 50}', version = 'v19-hold' where bucket_id = 'company-media' and name = soko_test.dp('n19_hold');
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_count('07X: the upload settles',
+  format($$select count(*) from (select public.complete_storage_upload('company-media', %L) s) x where s = 50$$, soko_test.dp('n19_hold')), 1);
+select soko_test.expect_sqlstate('07X: a settled path cannot be re-reserved during its grace period',
+  format($$select public.reserve_storage_upload('company-media', %L, 10, 'image/png')$$, soko_test.dp('n19_hold')), '55006');
+select soko_test.expect_denied('07X: a settled object cannot be overwritten without a new reservation',
+  format($$update storage.objects set metadata = '{"contentLength": 10, "mimetype": "image/png"}' where bucket_id = 'company-media' and name = %L$$, soko_test.dp('n19_hold')));
+reset role;
+
+-- 19B. Cleanup never reports a document upload that is still reserved or in grace.
+insert into soko_test.secrets
+select 'n19_doc', format('%s/%s/v%s/pending19.pdf', d.company_id, d.id, d.current_version + 1)
+from public.documents d where d.id = soko_test.id('dd_team');
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_ok('07Y: a document version upload is reserved',
+  format($$select public.reserve_storage_upload('company-documents', %L, 100, 'application/pdf')$$, soko_test.dp('n19_doc')));
+select soko_test.expect_ok('07Y: the document upload is admitted',
+  format($$insert into storage.objects (bucket_id, name, metadata) values ('company-documents', %L, '{"contentLength": 100, "mimetype": "application/pdf"}')$$, soko_test.dp('n19_doc')));
+reset role;
+update storage.objects set metadata = metadata || '{"size": 100}', version = 'v19-doc',
+       created_at = now() - interval '30 days', updated_at = now() - interval '30 days'
+where bucket_id = 'company-documents' and name = soko_test.dp('n19_doc');
+select soko_test.expect_count('07Y: an old object with an active reservation is not reported',
+  format($$select count(*) from private.list_orphaned_storage_objects(interval '0') where name = %L$$, soko_test.dp('n19_doc')), 0);
+update private.storage_upload_reservations set expires_at = now() - interval '1 hour'
+where bucket_id = 'company-documents' and object_name = soko_test.dp('n19_doc');
+select soko_test.expect_count('07Y: an expired reservation inside its grace period still protects the object',
+  format($$select count(*) from private.list_orphaned_storage_objects(interval '0') where name = %L$$, soko_test.dp('n19_doc')), 0);
+update private.storage_upload_reservations set expires_at = now() - interval '30 days'
+where bucket_id = 'company-documents' and object_name = soko_test.dp('n19_doc');
+select soko_test.expect_count('07Y: after the grace period an unfinalised document upload is reported',
+  format($$select count(*) from private.list_orphaned_storage_objects(interval '0') where name = %L and reason = 'never finalised'$$, soko_test.dp('n19_doc')), 1);
+update storage.objects set created_at = now(), updated_at = now()
+where bucket_id = 'company-documents' and name = soko_test.dp('n19_doc');
+delete from private.storage_upload_reservations where bucket_id = 'company-documents' and object_name = soko_test.dp('n19_doc');
+select soko_test.expect_count('07Y: a zero minimum age cannot shorten the upload window and grace period',
+  format($$select count(*) from private.list_orphaned_storage_objects(interval '0') where name = %L$$, soko_test.dp('n19_doc')), 0);
+delete from storage.objects where bucket_id = 'company-documents' and name = soko_test.dp('n19_doc');
+
+-- 19C. A rejected object is reported only while it is the exact object that was rejected.
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_ok('07Z: an upload is reserved and admitted',
+  format($$select public.reserve_storage_upload('company-media', %1$L, 100, 'image/png');
+           insert into storage.objects (bucket_id, name, metadata) values ('company-media', %1$L, '{"contentLength": 100, "mimetype": "image/png"}')$$,
+         soko_test.dp('n19_rej')));
+reset role;
+update storage.objects set metadata = metadata || '{"size": 900}', version = 'v19-rej-1'
+where bucket_id = 'company-media' and name = soko_test.dp('n19_rej');
+update private.storage_upload_reservations set expires_at = now() - interval '30 days'
+where bucket_id = 'company-media' and object_name = soko_test.dp('n19_rej');
+select count(*) from private.reconcile_storage_reservations();
+select soko_test.expect_count('07Z: reconciliation rejects the oversize object and records its version',
+  format($$select count(*) from private.storage_upload_reservations where object_name = %L and rejected_at is not null and object_version = 'v19-rej-1'$$, soko_test.dp('n19_rej')), 1);
+select soko_test.expect_count('07Z: the rejected object is reported for cleanup',
+  format($$select count(*) from private.list_orphaned_storage_objects() where name = %L$$, soko_test.dp('n19_rej')), 1);
+update storage.objects set version = 'v19-rej-2' where bucket_id = 'company-media' and name = soko_test.dp('n19_rej');
+select soko_test.expect_count('07Z: a different object at the rejected path is not reported',
+  format($$select count(*) from private.list_orphaned_storage_objects() where name = %L$$, soko_test.dp('n19_rej')), 0);
+delete from storage.objects where bucket_id = 'company-media' and name in (soko_test.dp('n19_rej'), soko_test.dp('n19_hold'));
+delete from private.storage_upload_reservations where company_id = soko_test.id('d_sup')
+  and object_name in (soko_test.dp('n19_rej'), soko_test.dp('n19_hold'));
 
 
 -- -----------------------------------------------------------------------------
