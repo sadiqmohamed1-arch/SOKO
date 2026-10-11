@@ -11,7 +11,11 @@ drop function if exists private.entitlement_int(uuid, text);
 drop function if exists private.entitled(uuid, text);
 drop function if exists private.plan_entitlements(uuid);
 
+drop table if exists public.credit_adjustment_notes cascade;
 drop table if exists public.credit_ledger cascade;
+drop function if exists private.ledger_no_overdraft();
+drop function if exists private.lock_credit_account(uuid);
+drop table if exists private.credit_guard;
 drop function if exists private.forbid_delete_unless_company_gone();
 
 drop trigger if exists companies_default_plan on public.companies;

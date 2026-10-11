@@ -22,8 +22,15 @@ create or replace function private.check_subscription_plan() returns trigger
 language plpgsql security definer set search_path = '' as $$
 declare v_plan_kind public.company_kind; v_company_kind public.company_kind;
 begin
-  select p.company_kind into v_plan_kind from public.plans p where p.id = new.plan_id;
   select c.kind into v_company_kind from public.companies c where c.id = new.company_id;
+  if not found then
+    raise exception 'company not found' using errcode = 'P0002';
+  end if;
+  select p.company_kind into v_plan_kind from public.plans p where p.id = new.plan_id;
+  if not found then
+    raise exception 'plan % does not exist', new.plan_id using errcode = 'P0002';
+  end if;
+  -- A null plan kind means the plan is offered to both kinds.
   if v_plan_kind is not null and v_plan_kind <> v_company_kind then
     raise exception 'plan % is not available to % companies', new.plan_id, v_company_kind using errcode = '23514';
   end if;
@@ -85,6 +92,73 @@ begin
 end $$;
 create trigger credit_ledger_no_delete before delete on public.credit_ledger
   for each row execute function private.forbid_delete_unless_company_gone();
+-- TRUNCATE skips row triggers, so it needs its own statement-level guard.
+create trigger credit_ledger_no_truncate before truncate on public.credit_ledger
+  for each statement execute function private.forbid_mutation();
+
+-- -----------------------------------------------------------------------------
+-- Per-company credit serialisation.
+-- Every balance-reducing write locks the subscription row and then writes the
+-- company's guard row. The real write (not a lock-only FOR UPDATE) matters:
+-- under READ COMMITTED the second transaction waits and re-reads the balance
+-- with a fresh snapshot; under REPEATABLE READ / SERIALIZABLE it fails with
+-- 40001 instead of spending against a stale balance. The guard holds no
+-- balance, so the ledger stays the only source of truth.
+-- -----------------------------------------------------------------------------
+create table private.credit_guard (
+  company_id uuid primary key references public.companies (id) on delete cascade,
+  version    bigint not null default 0
+);
+revoke all on table private.credit_guard from public, anon, authenticated, service_role;
+
+create or replace function private.lock_credit_account(p_company uuid) returns void
+language plpgsql security definer set search_path = '' as $$
+begin
+  if p_company is null or not exists (select 1 from public.companies c where c.id = p_company) then
+    raise exception 'company not found' using errcode = 'P0002';
+  end if;
+  perform 1 from public.company_subscriptions s where s.company_id = p_company for update;
+  if not found then
+    raise exception 'company has no subscription' using errcode = 'P0002';
+  end if;
+  insert into private.credit_guard as g (company_id) values (p_company)
+  on conflict (company_id) do update set version = g.version + 1;
+end $$;
+
+-- Backstop for every path, including direct inserts by the database owner:
+-- no debit may take a company's balance below zero.
+create or replace function private.ledger_no_overdraft() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  if new.delta < 0 then
+    perform private.lock_credit_account(new.company_id);
+    if (select coalesce(sum(l.delta), 0) from public.credit_ledger l where l.company_id = new.company_id)
+       + new.delta < 0 then
+      raise exception 'insufficient credits' using errcode = '53400';
+    end if;
+  end if;
+  return new;
+end $$;
+create trigger credit_ledger_no_overdraft before insert on public.credit_ledger
+  for each row execute function private.ledger_no_overdraft();
+
+-- -----------------------------------------------------------------------------
+-- Manual-adjustment notes: platform-admin only, never in the company-readable
+-- audit log. Append-only; rows leave only with their company.
+-- -----------------------------------------------------------------------------
+create table public.credit_adjustment_notes (
+  ledger_id  bigint primary key references public.credit_ledger (id) on delete cascade,
+  company_id uuid not null references public.companies (id) on delete cascade,
+  note       text not null check (char_length(note) between 1 and 500),
+  created_by uuid,
+  created_at timestamptz not null default now()
+);
+create trigger credit_adjustment_notes_no_update before update on public.credit_adjustment_notes
+  for each row execute function private.forbid_mutation();
+create trigger credit_adjustment_notes_no_delete before delete on public.credit_adjustment_notes
+  for each row execute function private.forbid_delete_unless_company_gone();
+create trigger credit_adjustment_notes_no_truncate before truncate on public.credit_adjustment_notes
+  for each statement execute function private.forbid_mutation();
 
 -- -----------------------------------------------------------------------------
 -- Entitlement and credit helpers (internal: called from trusted RPCs)
@@ -116,7 +190,7 @@ language sql stable security definer set search_path = '' as $$
   select coalesce(sum(l.delta), 0)::integer from public.credit_ledger l where l.company_id = p_company;
 $$;
 
--- Serialised per company by locking the subscription row.
+-- Serialised per company by private.lock_credit_account().
 create or replace function private.spend_credits(p_company uuid, p_amount integer, p_reason text, p_ref uuid)
 returns void
 language plpgsql security definer set search_path = '' as $$
@@ -124,7 +198,10 @@ begin
   if p_amount is null or p_amount <= 0 then
     raise exception 'amount must be positive' using errcode = '22023';
   end if;
-  perform 1 from public.company_subscriptions s where s.company_id = p_company for update;
+  if p_reason is distinct from 'campaign_launch' then
+    raise exception 'invalid debit reason' using errcode = '22023';
+  end if;
+  perform private.lock_credit_account(p_company);
   if private.credit_balance(p_company) < p_amount then
     raise exception 'insufficient credits' using errcode = '53400';
   end if;
@@ -132,6 +209,8 @@ begin
   values (p_company, -p_amount, p_reason, p_ref, auth.uid());
 end $$;
 
+-- Credits cannot overspend, but the same lock keeps ordering consistent and
+-- rejects missing companies or subscriptions explicitly.
 create or replace function private.add_credits(p_company uuid, p_amount integer, p_reason text, p_ref uuid)
 returns void
 language plpgsql security definer set search_path = '' as $$
@@ -139,22 +218,32 @@ begin
   if p_amount is null or p_amount <= 0 then
     raise exception 'amount must be positive' using errcode = '22023';
   end if;
+  if p_reason is null or p_reason not in ('campaign_refund', 'purchase') then
+    raise exception 'invalid credit reason' using errcode = '22023';
+  end if;
+  perform private.lock_credit_account(p_company);
   insert into public.credit_ledger (company_id, delta, reason, ref_id, created_by)
   values (p_company, p_amount, p_reason, p_ref, auth.uid());
 end $$;
 
--- Scheduled job (service role / pg_cron). Idempotent per calendar month.
+-- Scheduled job (service role / pg_cron). Idempotent per calendar month: any
+-- date is normalised to the first of its month, and the partial unique index
+-- makes concurrent runs grant at most once.
 create or replace function private.grant_monthly_credits(p_period date default (date_trunc('month', now()))::date)
 returns integer
 language plpgsql security definer set search_path = '' as $$
-declare v_count integer;
+declare v_count integer; v_period date;
 begin
+  if p_period is null then
+    raise exception 'period is required' using errcode = '22023';
+  end if;
+  v_period := date_trunc('month', p_period)::date;
   insert into public.credit_ledger (company_id, delta, reason, period)
-  select s.company_id, (p.entitlements ->> 'monthlyCredits')::integer, 'monthly_grant', p_period
+  select s.company_id, (p.entitlements ->> 'monthlyCredits')::integer, 'monthly_grant', v_period
   from public.company_subscriptions s
   join public.plans p on p.id = s.plan_id
   where s.status in ('trialing', 'active') and coalesce((p.entitlements ->> 'monthlyCredits')::integer, 0) > 0
-  on conflict do nothing;
+  on conflict (company_id, period) where reason = 'monthly_grant' do nothing;
   get diagnostics v_count = row_count;
   return v_count;
 end $$;
@@ -192,22 +281,41 @@ begin
         current_period_end = excluded.current_period_end, external_ref = excluded.external_ref;
 end $$;
 
+-- Business rule: adjustments may never leave a negative balance.
+-- The free-text note goes to the platform-admin-only notes table; the
+-- company-readable audit entry records only the amounts and that a note exists.
 create or replace function public.admin_adjust_credits(p_company uuid, p_delta integer, p_note text)
 returns void
 language plpgsql security definer set search_path = '' as $$
+declare
+  v_uid uuid := private.require_user();
+  v_balance integer;
+  v_ledger_id bigint;
+  v_note text := nullif(btrim(left(p_note, 500)), '');
 begin
-  perform private.require_user();
   if not private.is_platform_admin() then
     raise exception 'platform admin only' using errcode = '42501';
   end if;
   if p_delta is null or p_delta = 0 or abs(p_delta) > 100000 then
     raise exception 'invalid adjustment' using errcode = '22023';
   end if;
+  perform private.lock_credit_account(p_company);
+  v_balance := private.credit_balance(p_company);
+  if v_balance + p_delta < 0 then
+    raise exception 'adjustment would make the balance negative' using errcode = '53400';
+  end if;
   insert into public.credit_ledger (company_id, delta, reason, created_by)
-  values (p_company, p_delta, 'admin_adjustment', auth.uid());
-  insert into public.audit_log (company_id, actor_id, action, entity, diff)
-  values (p_company, auth.uid(), 'credit_adjustment', 'credit_ledger',
-          jsonb_build_object('delta', p_delta, 'note', left(p_note, 500)));
+  values (p_company, p_delta, 'admin_adjustment', v_uid)
+  returning id into v_ledger_id;
+  if v_note is not null then
+    insert into public.credit_adjustment_notes (ledger_id, company_id, note, created_by)
+    values (v_ledger_id, p_company, v_note, v_uid);
+  end if;
+  insert into public.audit_log (company_id, actor_id, action, entity, entity_id, entity_key, diff)
+  values (p_company, v_uid, 'credit_adjustment', 'credit_ledger',
+          v_ledger_id::text, jsonb_build_object('id', v_ledger_id),
+          jsonb_build_object('delta', p_delta, 'balance_before', v_balance,
+                             'balance_after', v_balance + p_delta, 'has_note', v_note is not null));
 end $$;
 
 -- -----------------------------------------------------------------------------
@@ -222,12 +330,22 @@ create policy subscriptions_read on public.company_subscriptions
   for select to authenticated using (private.is_member(company_id) or private.is_platform_admin());
 
 select private.reset_table_grants('public.credit_ledger');
+-- Only the database owner (trusted functions) writes the ledger; the service
+-- role may read it but never insert, rewrite, delete or truncate entries.
+revoke insert, update, delete, truncate on public.credit_ledger from service_role;
 grant select on public.credit_ledger to authenticated;
 create policy credit_ledger_read on public.credit_ledger
   for select to authenticated
   using (private.has_permission(company_id, 'campaigns.manage')
          or private.has_permission(company_id, 'plan.manage')
          or private.is_platform_admin());
+
+alter table public.credit_adjustment_notes enable row level security;
+select private.reset_table_grants('public.credit_adjustment_notes');
+revoke insert, update, delete, truncate on public.credit_adjustment_notes from service_role;
+grant select on public.credit_adjustment_notes to authenticated;
+create policy credit_adjustment_notes_read on public.credit_adjustment_notes
+  for select to authenticated using (private.is_platform_admin());
 
 -- Approved RPCs: callable by signed-in users only; each checks its own authorization.
 select private.allow_execute(array['authenticated'], array[

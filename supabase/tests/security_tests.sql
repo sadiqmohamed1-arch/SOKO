@@ -1451,6 +1451,304 @@ reset role;
 select soko_test.expect_count('AI: audit rows are intact after every mutation attempt',
   $$select count(*) from soko_test.ai_before b where not exists (select 1 from public.audit_log a where a.id = b.id)$$, 0);
 
+-- =============================================================================
+-- 13. Migration 05 — credit ledger hardening
+-- Append-only and TRUNCATE protection, write privileges, explicit locking,
+-- no-negative-balance rule, adjustment-note confidentiality, plan-kind rules,
+-- tenant isolation, monthly-grant idempotency and company deletion.
+-- Concurrent spending needs several sessions: see credit_concurrency_tests.mjs.
+-- =============================================================================
+reset role;
+create function soko_test.expect_sqlstate(p_label text, p_sql text, p_state text) returns void language plpgsql as $$
+begin
+  begin
+    execute p_sql;
+    insert into soko_test.results (label, passed, detail) values (p_label, false, 'statement succeeded');
+  exception when others then
+    insert into soko_test.results (label, passed, detail)
+    values (p_label, sqlstate = p_state, sqlstate || ': ' || sqlerrm);
+  end;
+end $$;
+grant execute on function soko_test.expect_sqlstate(text, text, text) to anon, authenticated, service_role;
+
+insert into soko_test.ids (key, id) values
+  ('cr_admin',  '00000000-0000-4000-8000-00000000001c'),
+  ('cr_viewer', '00000000-0000-4000-8000-00000000001d'),
+  ('cr_co',     '00000000-0000-4000-8000-0000000000c5'),
+  ('cr_nosub',  '00000000-0000-4000-8000-0000000000c6'),
+  ('cr_other',  '00000000-0000-4000-8000-0000000000c7');
+insert into auth.users (id, email, aud, role, email_confirmed_at)
+select id, key || '@soko-security.test', 'authenticated', 'authenticated', now()
+from soko_test.ids where key in ('cr_admin', 'cr_viewer');
+
+select soko_test.as_user('cr_admin');
+insert into public.companies (id, kind, legal_name) values
+  (soko_test.id('cr_co'),    'supplier', 'Credit Ledger Co'),
+  (soko_test.id('cr_nosub'), 'supplier', 'No Subscription Co'),
+  (soko_test.id('cr_other'), 'supplier', 'Other Credit Co');
+insert into public.company_memberships (company_id, company_kind, user_id, role_key) values
+  (soko_test.id('cr_co'), 'supplier', soko_test.id('cr_admin'),  'supplier_admin'),
+  (soko_test.id('cr_co'), 'supplier', soko_test.id('cr_viewer'), 'viewer');
+delete from public.company_subscriptions where company_id = soko_test.id('cr_nosub');
+insert into public.credit_ledger (company_id, delta, reason) values
+  (soko_test.id('cr_co'), 100, 'purchase'),
+  (soko_test.id('cr_other'), 50, 'purchase');
+
+-- Structural protections -----------------------------------------------------
+select soko_test.expect_count('CR: credit ledger and notes have TRUNCATE guards',
+  $$select count(*) from pg_trigger where not tgisinternal
+    and tgname in ('credit_ledger_no_truncate', 'credit_adjustment_notes_no_truncate')$$, 2);
+select soko_test.expect_count('CR: anon, authenticated and service_role hold no ledger or note write privilege',
+  $$select count(*) from unnest(array['anon','authenticated','service_role']) r,
+         unnest(array['public.credit_ledger','public.credit_adjustment_notes']) t,
+         unnest(array['INSERT','UPDATE','DELETE','TRUNCATE']) p
+    where has_table_privilege(r, t, p)$$, 0);
+select soko_test.expect_count('CR: no client role can touch the credit guard',
+  $$select count(*) from unnest(array['anon','authenticated','service_role']) r,
+         unnest(array['SELECT','INSERT','UPDATE','DELETE','TRUNCATE']) p
+    where has_table_privilege(r, 'private.credit_guard', p)$$, 0);
+
+-- Unauthorized ledger modifications -----------------------------------------
+select soko_test.expect_denied('CR: the table owner cannot truncate the credit ledger',
+  $$truncate public.credit_ledger$$);
+-- CASCADE passes the foreign-key check, so this proves the TRUNCATE guard itself.
+select soko_test.expect_sqlstate('CR: the table owner cannot truncate the ledger even with CASCADE',
+  $$truncate public.credit_ledger cascade$$, '42501');
+select soko_test.expect_sqlstate('CR: the table owner cannot truncate adjustment notes',
+  $$truncate public.credit_adjustment_notes$$, '42501');
+select soko_test.expect_sqlstate('CR: the table owner cannot rewrite ledger entries',
+  format($$update public.credit_ledger set delta = 999 where company_id = %L$$, soko_test.id('cr_co')), '42501');
+select soko_test.expect_sqlstate('CR: the table owner cannot delete ledger entries of a live company',
+  format($$delete from public.credit_ledger where company_id = %L$$, soko_test.id('cr_co')), '42501');
+
+set local role service_role;
+select soko_test.expect_ok('CR: the service role can read the ledger',
+  $$select count(*) from public.credit_ledger$$);
+select soko_test.expect_sqlstate('CR: the service role cannot insert ledger entries',
+  format($$insert into public.credit_ledger (company_id, delta, reason) values (%L, 1000, 'purchase')$$,
+         soko_test.id('cr_co')), '42501');
+select soko_test.expect_sqlstate('CR: the service role cannot update ledger entries',
+  $$update public.credit_ledger set delta = 999$$, '42501');
+select soko_test.expect_sqlstate('CR: the service role cannot delete ledger entries',
+  $$delete from public.credit_ledger$$, '42501');
+select soko_test.expect_sqlstate('CR: the service role cannot truncate the ledger',
+  $$truncate public.credit_ledger$$, '42501');
+select soko_test.expect_sqlstate('CR: the service role cannot write adjustment notes',
+  $$insert into public.credit_adjustment_notes (ledger_id, company_id, note) values (1, gen_random_uuid(), 'x')$$, '42501');
+reset role;
+
+select soko_test.as_user('cr_admin');
+set local role authenticated;
+select soko_test.expect_sqlstate('CR: a company admin cannot insert ledger entries',
+  format($$insert into public.credit_ledger (company_id, delta, reason) values (%L, 1000, 'purchase')$$,
+         soko_test.id('cr_co')), '42501');
+select soko_test.expect_sqlstate('CR: a company admin cannot update ledger entries',
+  $$update public.credit_ledger set delta = 999$$, '42501');
+select soko_test.expect_sqlstate('CR: a company admin cannot delete ledger entries',
+  $$delete from public.credit_ledger$$, '42501');
+select soko_test.expect_sqlstate('CR: a company admin cannot truncate the ledger',
+  $$truncate public.credit_ledger$$, '42501');
+select soko_test.expect_sqlstate('CR: a company admin cannot call spend_credits',
+  format($$select private.spend_credits(%L, 1, 'campaign_launch', null)$$, soko_test.id('cr_co')), '42501');
+reset role;
+
+select soko_test.as_anon();
+set local role anon;
+select soko_test.expect_sqlstate('CR: anon cannot insert ledger entries',
+  format($$insert into public.credit_ledger (company_id, delta, reason) values (%L, 1000, 'purchase')$$,
+         soko_test.id('cr_co')), '42501');
+select soko_test.expect_sqlstate('CR: anon cannot read the ledger',
+  $$select count(*) from public.credit_ledger$$, '42501');
+reset role;
+select soko_test.expect_count('CR: the ledger is intact after every modification attempt',
+  format($$select count(*) from public.credit_ledger where company_id = %L and delta = 100$$, soko_test.id('cr_co')), 1);
+
+-- spend_credits / add_credits ----------------------------------------------
+select soko_test.as_user('cr_admin');
+select soko_test.expect_sqlstate('CR: spending for a missing company is rejected',
+  $$select private.spend_credits(gen_random_uuid(), 1, 'campaign_launch', null)$$, 'P0002');
+select soko_test.expect_sqlstate('CR: spending for a null company is rejected',
+  $$select private.spend_credits(null, 1, 'campaign_launch', null)$$, 'P0002');
+select soko_test.expect_sqlstate('CR: spending for a company without a subscription is rejected',
+  format($$select private.spend_credits(%L, 1, 'campaign_launch', null)$$, soko_test.id('cr_nosub')), 'P0002');
+select soko_test.expect_sqlstate('CR: spending a non-positive amount is rejected',
+  format($$select private.spend_credits(%L, 0, 'campaign_launch', null)$$, soko_test.id('cr_co')), '22023');
+select soko_test.expect_sqlstate('CR: spending with a credit reason is rejected',
+  format($$select private.spend_credits(%L, 1, 'purchase', null)$$, soko_test.id('cr_co')), '22023');
+select soko_test.expect_sqlstate('CR: spending more than the balance is rejected',
+  format($$select private.spend_credits(%L, 101, 'campaign_launch', null)$$, soko_test.id('cr_co')), '53400');
+select soko_test.expect_ok('CR: spending within the balance succeeds',
+  format($$select private.spend_credits(%L, 60, 'campaign_launch', null)$$, soko_test.id('cr_co')));
+select soko_test.expect_sqlstate('CR: spending one credit past the remaining balance is rejected',
+  format($$select private.spend_credits(%L, 41, 'campaign_launch', null)$$, soko_test.id('cr_co')), '53400');
+select soko_test.expect_ok('CR: spending the exact remaining balance succeeds',
+  format($$select private.spend_credits(%L, 40, 'campaign_launch', null)$$, soko_test.id('cr_co')));
+select soko_test.expect_sqlstate('CR: spending from a zero balance is rejected',
+  format($$select private.spend_credits(%L, 1, 'campaign_launch', null)$$, soko_test.id('cr_co')), '53400');
+select soko_test.expect_count('CR: the balance is exactly zero after spending',
+  format($$select private.credit_balance(%L)$$, soko_test.id('cr_co')), 0);
+select soko_test.expect_count('CR: spending writes the company''s guard row',
+  format($$select count(*) from private.credit_guard where company_id = %L and version >= 1$$, soko_test.id('cr_co')), 1);
+select soko_test.expect_sqlstate('CR: even the table owner cannot insert a debit that overdraws',
+  format($$insert into public.credit_ledger (company_id, delta, reason) values (%L, -1, 'campaign_launch')$$,
+         soko_test.id('cr_co')), '53400');
+select soko_test.expect_sqlstate('CR: add_credits rejects a reason outside refunds and purchases',
+  format($$select private.add_credits(%L, 10, 'monthly_grant', null)$$, soko_test.id('cr_co')), '22023');
+select soko_test.expect_sqlstate('CR: add_credits rejects a missing company',
+  $$select private.add_credits(gen_random_uuid(), 10, 'purchase', null)$$, 'P0002');
+select soko_test.expect_ok('CR: a refund restores credits',
+  format($$select private.add_credits(%L, 30, 'campaign_refund', null)$$, soko_test.id('cr_co')));
+select soko_test.expect_count('CR: another company''s balance is untouched',
+  format($$select private.credit_balance(%L)$$, soko_test.id('cr_other')), 50);
+
+-- Platform-admin adjustments --------------------------------------------------
+select soko_test.as_user('padmin');
+set local role authenticated;
+select soko_test.expect_sqlstate('CR: an adjustment that would go negative is rejected',
+  format($$select public.admin_adjust_credits(%L, -31, 'too much')$$, soko_test.id('cr_co')), '53400');
+select soko_test.expect_sqlstate('CR: a zero adjustment is rejected',
+  format($$select public.admin_adjust_credits(%L, 0, null)$$, soko_test.id('cr_co')), '22023');
+select soko_test.expect_sqlstate('CR: an oversized adjustment is rejected',
+  format($$select public.admin_adjust_credits(%L, 100001, null)$$, soko_test.id('cr_co')), '22023');
+select soko_test.expect_sqlstate('CR: an adjustment for a missing company is rejected',
+  $$select public.admin_adjust_credits(gen_random_uuid(), 5, null)$$, 'P0002');
+select soko_test.expect_ok('CR: an adjustment down to exactly zero succeeds',
+  format($$select public.admin_adjust_credits(%L, -30, 'SECRET-NOTE chargeback for licence LIC-CR-777')$$,
+         soko_test.id('cr_co')));
+select soko_test.expect_ok('CR: a positive adjustment without a note succeeds',
+  format($$select public.admin_adjust_credits(%L, 25, '   ')$$, soko_test.id('cr_co')));
+select soko_test.expect_count('CR: a platform admin can read the adjustment note',
+  format($$select count(*) from public.credit_adjustment_notes where company_id = %L$$, soko_test.id('cr_co')), 1);
+reset role;
+
+select soko_test.as_user('cr_admin');
+set local role authenticated;
+select soko_test.expect_sqlstate('CR: a company admin cannot adjust credits',
+  format($$select public.admin_adjust_credits(%L, 1000, null)$$, soko_test.id('cr_co')), '42501');
+select soko_test.expect_count('CR: the company admin sees both adjustment audit entries',
+  format($$select count(*) from public.audit_log where company_id = %L and action = 'credit_adjustment'$$,
+         soko_test.id('cr_co')), 2);
+select soko_test.expect_count('CR: the company admin cannot read adjustment notes',
+  $$select count(*) from public.credit_adjustment_notes$$, 0);
+select soko_test.expect_count('CR: no audit entry the company can read contains the note text',
+  $$select count(*) from public.audit_log where diff::text like '%SECRET-NOTE%' or diff::text like '%LIC-CR-777%'$$, 0);
+reset role;
+
+select soko_test.expect_count('CR: the debit adjustment audit identifies the ledger row and records only amounts',
+  format($$select count(*) from public.audit_log a join public.credit_ledger l on l.id::text = a.entity_id
+    where a.company_id = %1$L and a.action = 'credit_adjustment' and a.entity = 'credit_ledger'
+      and a.actor_id = %2$L and l.delta = -30 and l.reason = 'admin_adjustment'
+      and a.entity_key = jsonb_build_object('id', l.id)
+      and a.diff = '{"delta": -30, "balance_before": 30, "balance_after": 0, "has_note": true}'::jsonb$$,
+    soko_test.id('cr_co'), soko_test.id('padmin')), 1);
+select soko_test.expect_count('CR: a blank note is stored as no note',
+  format($$select count(*) from public.audit_log where company_id = %L and action = 'credit_adjustment'
+    and diff = '{"delta": 25, "balance_before": 0, "balance_after": 25, "has_note": false}'::jsonb$$,
+    soko_test.id('cr_co')), 1);
+select soko_test.expect_count('CR: the note is stored against the matching ledger row',
+  format($$select count(*) from public.credit_adjustment_notes n join public.credit_ledger l on l.id = n.ledger_id
+    where n.company_id = %L and l.delta = -30 and n.note like 'SECRET-NOTE%%'$$, soko_test.id('cr_co')), 1);
+select soko_test.expect_count('CR: rejected adjustments left no ledger rows',
+  format($$select count(*) from public.credit_ledger where company_id = %L and reason = 'admin_adjustment'$$,
+         soko_test.id('cr_co')), 2);
+select soko_test.expect_count('CR: the balance after adjustments is 25',
+  format($$select private.credit_balance(%L)$$, soko_test.id('cr_co')), 25);
+
+-- Subscriptions and plan-kind compatibility ---------------------------------
+select soko_test.as_user('padmin');
+set local role authenticated;
+select soko_test.expect_sqlstate('CR: a contractor plan cannot be assigned to a supplier',
+  format($$select public.admin_set_subscription(%L, 'free_contractor')$$, soko_test.id('cr_co')), '23514');
+select soko_test.expect_sqlstate('CR: an unknown plan is rejected',
+  format($$select public.admin_set_subscription(%L, 'no_such_plan')$$, soko_test.id('cr_co')), 'P0002');
+select soko_test.expect_sqlstate('CR: a subscription for a missing company is rejected',
+  $$select public.admin_set_subscription(gen_random_uuid(), 'supplier_pro')$$, 'P0002');
+select soko_test.expect_ok('CR: a plan open to both kinds can be assigned',
+  format($$select public.admin_set_subscription(%L, 'enterprise')$$, soko_test.id('cr_co')));
+select soko_test.expect_ok('CR: a supplier plan can be assigned to a supplier',
+  format($$select public.admin_set_subscription(%L, 'supplier_pro')$$, soko_test.id('cr_co')));
+reset role;
+select soko_test.expect_sqlstate('CR: even the table owner cannot attach a mismatched plan',
+  format($$update public.company_subscriptions set plan_id = 'contractor_premium' where company_id = %L$$,
+         soko_test.id('cr_co')), '23514');
+
+select soko_test.as_user('cr_admin');
+set local role authenticated;
+select soko_test.expect_sqlstate('CR: a company admin cannot change its own plan',
+  format($$select public.admin_set_subscription(%L, 'enterprise')$$, soko_test.id('cr_co')), '42501');
+select soko_test.expect_denied('CR: a company admin cannot update its subscription row',
+  format($$update public.company_subscriptions set plan_id = 'enterprise' where company_id = %L$$, soko_test.id('cr_co')));
+select soko_test.expect_sqlstate('CR: a company admin cannot read another company''s balance',
+  format($$select public.get_credit_balance(%L)$$, soko_test.id('cr_other')), '42501');
+select soko_test.expect_count('CR: a company admin sees only its own ledger',
+  $$select count(distinct company_id) from public.credit_ledger$$, 1);
+reset role;
+
+-- Tenant isolation ------------------------------------------------------------
+select soko_test.as_user('cr_viewer');
+set local role authenticated;
+select soko_test.expect_count('CR: a member can read its company''s balance',
+  format($$select public.get_credit_balance(%L)$$, soko_test.id('cr_co')), 25);
+reset role;
+select soko_test.as_user('outsider');
+set local role authenticated;
+select soko_test.expect_sqlstate('CR: an outsider cannot read the company''s balance',
+  format($$select public.get_credit_balance(%L)$$, soko_test.id('cr_co')), '42501');
+select soko_test.expect_count('CR: an outsider sees none of the company''s ledger rows',
+  format($$select count(*) from public.credit_ledger where company_id = %L$$, soko_test.id('cr_co')), 0);
+select soko_test.expect_count('CR: an outsider sees none of the company''s subscription',
+  format($$select count(*) from public.company_subscriptions where company_id = %L$$, soko_test.id('cr_co')), 0);
+reset role;
+select soko_test.as_user('con_admin');
+set local role authenticated;
+select soko_test.expect_count('CR: another company''s admin sees none of the ledger rows',
+  format($$select count(*) from public.credit_ledger where company_id = %L$$, soko_test.id('cr_co')), 0);
+select soko_test.expect_sqlstate('CR: another company''s admin cannot read the balance',
+  format($$select public.get_credit_balance(%L)$$, soko_test.id('cr_co')), '42501');
+reset role;
+
+-- Monthly-grant idempotency ---------------------------------------------------
+select soko_test.expect_ok('CR: a monthly grant runs for a mid-month date',
+  $$select private.grant_monthly_credits('2031-03-15')$$);
+select soko_test.expect_ok('CR: a second run later in the same month is a no-op',
+  $$select private.grant_monthly_credits('2031-03-28')$$);
+select soko_test.expect_count('CR: one grant per company per month, stored against the first of the month',
+  format($$select count(*) from public.credit_ledger where company_id = %L and reason = 'monthly_grant'
+    and period = '2031-03-01' and delta = 100$$, soko_test.id('cr_co')), 1);
+select soko_test.expect_count('CR: no grant was stored against a mid-month date',
+  $$select count(*) from public.credit_ledger where reason = 'monthly_grant' and period <> date_trunc('month', period)::date$$, 0);
+select soko_test.expect_count('CR: a zero-credit plan receives no grant',
+  format($$select count(*) from public.credit_ledger where company_id = %L and reason = 'monthly_grant'$$,
+         soko_test.id('cr_other')), 0);
+select soko_test.expect_sqlstate('CR: a null grant period is rejected',
+  $$select private.grant_monthly_credits(null)$$, '22023');
+set local role service_role;
+select soko_test.expect_ok('CR: the service role can run the monthly grant',
+  $$select private.grant_monthly_credits('2031-04-01')$$);
+reset role;
+select soko_test.as_user('cr_admin');
+set local role authenticated;
+select soko_test.expect_sqlstate('CR: a company admin cannot run the monthly grant',
+  $$select private.grant_monthly_credits('2031-05-01')$$, '42501');
+reset role;
+select soko_test.expect_count('CR: balance reflects exactly two monthly grants',
+  format($$select private.credit_balance(%L)$$, soko_test.id('cr_co')), 225);
+
+-- Company deletion ------------------------------------------------------------
+select soko_test.expect_ok('CR: deleting the company succeeds despite the append-only ledger',
+  format($$delete from public.companies where id = %L$$, soko_test.id('cr_co')));
+select soko_test.expect_count('CR: the company''s ledger rows, notes, guard and subscription are gone',
+  format($$select (select count(*) from public.credit_ledger where company_id = %1$L)
+              + (select count(*) from public.credit_adjustment_notes where company_id = %1$L)
+              + (select count(*) from private.credit_guard where company_id = %1$L)
+              + (select count(*) from public.company_subscriptions where company_id = %1$L)$$,
+         soko_test.id('cr_co')), 0);
+select soko_test.expect_count('CR: credit-adjustment audit entries survive with the original company id',
+  format($$select count(*) from public.audit_log where company_id = %L and action = 'credit_adjustment'$$,
+         soko_test.id('cr_co')), 2);
+select soko_test.expect_count('CR: other companies'' ledgers are untouched by the deletion',
+  format($$select private.credit_balance(%L)$$, soko_test.id('cr_other')), 50);
+
 -- -----------------------------------------------------------------------------
 -- Report
 -- -----------------------------------------------------------------------------
