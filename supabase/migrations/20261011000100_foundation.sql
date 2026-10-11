@@ -9,18 +9,22 @@
 
 -- `private` holds helper functions. It is NOT exposed through the Data API,
 -- so nothing in it can be called as an RPC. Policies still need USAGE on it.
-create schema if not exists private;
+-- SOKO must create and own this schema: every function in it is managed by
+-- SOKO, and the rollback drops it. Refuse to adopt a pre-existing one.
+do $$
+begin
+  if exists (select 1 from pg_catalog.pg_namespace where nspname = 'private') then
+    raise exception 'schema "private" already exists; SOKO must create and own it. Rename or remove the existing schema first.';
+  end if;
+end $$;
+create schema private;
 revoke all on schema private from public;
 grant usage on schema private to anon, authenticated, service_role;
 
--- Functions created by the migration owner are executable by nobody else
--- until private.function_grants approves them (see apply_function_grants).
--- The PUBLIC default is global in Postgres: a per-schema REVOKE cannot remove
--- it, so it must be revoked without IN SCHEMA. Supabase's per-schema defaults
--- for anon/authenticated/service_role are revoked per schema.
-alter default privileges revoke execute on functions from public;
-alter default privileges in schema public  revoke execute on functions from anon, authenticated, service_role;
-alter default privileges in schema private revoke execute on functions from anon, authenticated, service_role;
+-- Default privileges are deliberately NOT altered. They belong to the
+-- `postgres` role project-wide and would affect other integrations' functions.
+-- SOKO functions are locked down explicitly by apply_function_grants() inside
+-- the same migration transaction, so the defaults are never observable.
 
 -- -----------------------------------------------------------------------------
 -- Enums (values mirror src/data/supplierTypes.ts and marketHubTypes.ts)
@@ -57,18 +61,61 @@ create type public.subscription_status as enum ('trialing', 'active', 'past_due'
 
 -- -----------------------------------------------------------------------------
 -- Function execution allowlist
--- Every function in `public` and `private` is revoked from PUBLIC, anon,
--- authenticated and service_role, then granted only where listed here.
--- Migrations register grants with allow_execute() and finish with
--- apply_function_grants(). Owner-only access is the default for anything
+-- Only SOKO-managed functions are touched. A function is SOKO-managed when it
+-- lives in `private` (a schema SOKO owns), or when a SOKO migration created it
+-- in `public` (it did not exist when that migration's scope opened).
+-- Supabase-managed, extension and other integrations' functions are never
+-- revoked or granted.
+--
+-- Each migration starts with begin_function_scope(), registers grants with
+-- allow_execute(), and ends with apply_function_grants(). Every managed
+-- function is revoked from PUBLIC, anon, authenticated and service_role, then
+-- granted only where listed. Owner-only access is the default for anything
 -- not listed (trigger functions, ledger mutators, notification writers).
+--
+-- Registry rows are keyed by function OID, not by signature text, so they do
+-- not depend on the session search_path.
 -- -----------------------------------------------------------------------------
+create table private.managed_functions (
+  fn_oid     oid primary key,
+  signature  text not null,
+  managed_at timestamptz not null default now()
+);
+
 create table private.function_grants (
+  fn_oid     oid not null,
   signature  text not null,
   grantee    text not null check (grantee in ('anon', 'authenticated', 'service_role')),
-  primary key (signature, grantee)
+  primary key (fn_oid, grantee)
 );
-revoke all on table private.function_grants from public, anon, authenticated, service_role;
+
+-- Snapshot of `public` functions that existed when the current migration
+-- started. Anything not in it was created by that migration.
+create table private.function_scope (
+  fn_oid oid primary key
+);
+create table private.function_scope_state (
+  singleton boolean primary key default true check (singleton),
+  opened_at timestamptz not null default now()
+);
+
+revoke all on table private.managed_functions, private.function_grants,
+  private.function_scope, private.function_scope_state
+  from public, anon, authenticated, service_role;
+
+create or replace function private.begin_function_scope() returns void
+language plpgsql set search_path = '' as $$
+begin
+  if exists (select 1 from private.function_scope_state) then
+    raise exception 'begin_function_scope: a previous SOKO migration did not reach apply_function_grants(). Roll it back before continuing.';
+  end if;
+  insert into private.function_scope_state default values;
+  insert into private.function_scope (fn_oid)
+  select p.oid
+  from pg_catalog.pg_proc p
+  join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public';
+end $$;
 
 create or replace function private.allow_execute(p_grantees text[], p_signatures text[]) returns void
 language plpgsql set search_path = '' as $$
@@ -86,8 +133,8 @@ begin
       raise exception 'allow_execute: % is outside public/private', s;
     end if;
     foreach g in array p_grantees loop
-      insert into private.function_grants (signature, grantee)
-      values (v_sig::text, g)
+      insert into private.function_grants (fn_oid, signature, grantee)
+      values (v_sig::oid, s, g)
       on conflict do nothing;
     end loop;
   end loop;
@@ -95,31 +142,56 @@ end $$;
 
 create or replace function private.apply_function_grants() returns void
 language plpgsql set search_path = '' as $$
-declare f record;
+declare f record; v_bad text;
 begin
-  -- Entries for functions removed by a rollback are dropped, not re-granted.
-  delete from private.function_grants where pg_catalog.to_regprocedure(signature) is null;
+  if not exists (select 1 from private.function_scope_state) then
+    raise exception 'apply_function_grants: call private.begin_function_scope() at the start of the migration';
+  end if;
 
-  for f in
-    select p.oid::regprocedure as sig
-    from pg_catalog.pg_proc p
-    join pg_catalog.pg_namespace n on n.oid = p.pronamespace
-    where n.nspname in ('public', 'private')
-      and p.prokind in ('f', 'p')
-      and not exists (
-        select 1 from pg_catalog.pg_depend d
-        where d.classid = 'pg_catalog.pg_proc'::regclass and d.objid = p.oid and d.deptype = 'e'
-      )
-  loop
+  -- Functions dropped by a rollback leave the registry and are never re-granted.
+  delete from private.managed_functions m
+  where not exists (select 1 from pg_catalog.pg_proc p where p.oid = m.fn_oid);
+  delete from private.function_grants g
+  where not exists (select 1 from pg_catalog.pg_proc p where p.oid = g.fn_oid);
+
+  -- Register functions this migration created, plus everything in `private`.
+  insert into private.managed_functions (fn_oid, signature)
+  select p.oid, p.oid::regprocedure::text
+  from pg_catalog.pg_proc p
+  join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+  where p.prokind in ('f', 'p')
+    and not exists (
+      select 1 from pg_catalog.pg_depend d
+      where d.classid = 'pg_catalog.pg_proc'::regclass and d.objid = p.oid and d.deptype = 'e'
+    )
+    and (
+      n.nspname = 'private'
+      or (n.nspname = 'public'
+          and not exists (select 1 from private.function_scope s where s.fn_oid = p.oid))
+    )
+  on conflict (fn_oid) do nothing;
+
+  -- The allowlist may only name SOKO-managed functions.
+  select string_agg(g.signature, ', ') into v_bad
+  from private.function_grants g
+  where not exists (select 1 from private.managed_functions m where m.fn_oid = g.fn_oid);
+  if v_bad is not null then
+    raise exception 'apply_function_grants: not SOKO-managed, refusing to grant: %', v_bad;
+  end if;
+
+  for f in select fn_oid::regprocedure as sig from private.managed_functions loop
     execute format('revoke all on function %s from public, anon, authenticated, service_role', f.sig);
   end loop;
 
-  for f in
-    select pg_catalog.to_regprocedure(signature) as sig, grantee from private.function_grants
-  loop
+  for f in select fn_oid::regprocedure as sig, grantee from private.function_grants loop
     execute format('grant execute on function %s to %I', f.sig, f.grantee);
   end loop;
+
+  delete from private.function_scope;
+  delete from private.function_scope_state;
 end $$;
+
+select private.begin_function_scope();
 
 -- -----------------------------------------------------------------------------
 -- Shared helpers

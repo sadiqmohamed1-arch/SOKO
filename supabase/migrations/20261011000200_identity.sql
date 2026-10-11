@@ -5,6 +5,9 @@
 -- company role, and can only be granted by the database owner.
 -- =============================================================================
 
+-- Opens the function-ownership scope closed by apply_function_grants() below.
+select private.begin_function_scope();
+
 create table public.profiles (
   id          uuid primary key references auth.users (id) on delete cascade,
   full_name   text not null default '' check (char_length(full_name) <= 120),

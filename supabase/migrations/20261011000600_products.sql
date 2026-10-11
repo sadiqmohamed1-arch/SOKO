@@ -5,6 +5,9 @@
 -- Raw product views are never readable by clients; only aggregates are (07/11).
 -- =============================================================================
 
+-- Opens the function-ownership scope closed by apply_function_grants() below.
+select private.begin_function_scope();
+
 -- Stamps created_by from the session so it can never be forged by a client.
 create or replace function private.stamp_created_by() returns trigger
 language plpgsql set search_path = '' as $$

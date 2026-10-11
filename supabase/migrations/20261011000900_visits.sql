@@ -5,6 +5,9 @@
 -- who may make each transition. Notes and tasks are private to each side.
 -- =============================================================================
 
+-- Opens the function-ownership scope closed by apply_function_grants() below.
+select private.begin_function_scope();
+
 create table public.visits (
   id                    uuid primary key default gen_random_uuid(),
   supplier_company_id   uuid not null references public.companies (id) on delete cascade,

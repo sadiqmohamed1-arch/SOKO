@@ -6,6 +6,9 @@
 --   insert into public.platform_admins (user_id, note) values ('<uuid>', '...');
 -- =============================================================================
 
+-- Opens the function-ownership scope closed by apply_function_grants() below.
+select private.begin_function_scope();
+
 create table public.content_reports (
   id          uuid primary key default gen_random_uuid(),
   reporter_id uuid not null default auth.uid() references auth.users (id) on delete cascade,

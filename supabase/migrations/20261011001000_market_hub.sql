@@ -9,6 +9,9 @@
 -- and "contact on connection" rules.
 -- =============================================================================
 
+-- Opens the function-ownership scope closed by apply_function_grants() below.
+select private.begin_function_scope();
+
 create or replace function private.notify_platform_admins(p_type text, p_payload jsonb) returns void
 language sql security definer set search_path = '' as $$
   insert into public.notifications (user_id, type, payload)

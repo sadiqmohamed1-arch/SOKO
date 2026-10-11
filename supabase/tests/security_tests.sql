@@ -570,10 +570,23 @@ reset role;
 -- -----------------------------------------------------------------------------
 -- Step 10E: least-privilege function execution
 -- -----------------------------------------------------------------------------
+-- SOKO-managed functions only. Functions owned by Supabase, extensions or other
+-- integrations are excluded and checked separately below.
 create temporary view soko_fn as
   select p.oid, n.nspname as schema, p.proname as name
-  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-  where n.nspname in ('public', 'private');
+  from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  join private.managed_functions m on m.fn_oid = p.oid;
+
+select soko_test.expect_count('10F: every private-schema function is SOKO-managed',
+  $$select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'private'
+      and not exists (select 1 from private.managed_functions m where m.fn_oid = p.oid)$$, 0);
+select soko_test.expect_count('10F: function scope is closed after the last migration',
+  $$select (select count(*) from private.function_scope_state) + (select count(*) from private.function_scope)$$, 0);
+select soko_test.expect_count('10F: every allowlist entry targets a SOKO-managed function',
+  $$select count(*) from private.function_grants g
+    where not exists (select 1 from private.managed_functions m where m.fn_oid = g.fn_oid)$$, 0);
 
 select soko_test.expect_count('10E: no public/private function is executable by PUBLIC',
   $$select count(*) from soko_fn where has_function_privilege('public', oid, 'execute')$$, 0);
@@ -587,7 +600,7 @@ select soko_test.expect_count('10E: every authenticated grant is on the allowlis
   $$select count(*) from soko_fn f
     where has_function_privilege('authenticated', f.oid, 'execute')
       and not exists (select 1 from private.function_grants g
-                      where g.grantee = 'authenticated' and to_regprocedure(g.signature) = f.oid)$$, 0);
+                      where g.grantee = 'authenticated' and g.fn_oid = f.oid)$$, 0);
 select soko_test.expect_count('10E: anon executes only the 4 public-read policy helpers',
   $$select count(*) from soko_fn where has_function_privilege('anon', oid, 'execute')
       and name in ('try_uuid', 'storage_company', 'can_read_document', 'can_read_company_media')$$, 4);
@@ -597,7 +610,8 @@ select soko_test.expect_count('10E: ledger, notification and admin helpers are o
   $$select count(*) from soko_fn
     where name in ('spend_credits', 'add_credits', 'notify', 'notify_permission_holders',
                    'notify_platform_admins', 'attach_audit', 'reset_table_grants',
-                   'allow_execute', 'apply_function_grants', 'require_platform_admin', 'handle_new_user')
+                   'allow_execute', 'apply_function_grants', 'begin_function_scope',
+                   'require_platform_admin', 'handle_new_user')
       and (has_function_privilege('anon', oid, 'execute')
            or has_function_privilege('authenticated', oid, 'execute')
            or has_function_privilege('service_role', oid, 'execute'))$$, 0);
@@ -609,14 +623,51 @@ select soko_test.expect_count('10E: scheduled jobs are executable by service_rol
       and not has_function_privilege('authenticated', oid, 'execute')
       and not has_function_privilege('anon', oid, 'execute')$$, 4);
 
-create function public.soko_test_default_probe() returns int language sql as $$ select 1 $$;
-create function private.soko_test_default_probe() returns int language sql as $$ select 1 $$;
-select soko_test.expect_count('10E: new functions get no default EXECUTE for PUBLIC/anon/authenticated/service_role',
-  $$select count(*) from soko_fn where name = 'soko_test_default_probe'
-      and (has_function_privilege('public', oid, 'execute')
-           or has_function_privilege('anon', oid, 'execute')
-           or has_function_privilege('authenticated', oid, 'execute')
-           or has_function_privilege('service_role', oid, 'execute'))$$, 0);
+-- Foreign functions: the harness creates public.other_integration_ping() before
+-- migration 01 and public.midway_integration_ping() between migrations 06 and 07,
+-- both with Supabase's default grants. SOKO must leave them exactly as they were.
+select soko_test.expect_count('10F: functions of other integrations are not SOKO-managed',
+  $$select count(*) from private.managed_functions
+    where fn_oid in (to_regprocedure('public.other_integration_ping()'),
+                     to_regprocedure('public.midway_integration_ping()'))$$, 0);
+select soko_test.expect_count('10F: other integrations keep PUBLIC/anon/authenticated/service_role EXECUTE',
+  $$select count(*) from unnest(array['public.other_integration_ping()', 'public.midway_integration_ping()']) s
+    where has_function_privilege('public', to_regprocedure(s), 'execute')
+      and has_function_privilege('anon', to_regprocedure(s), 'execute')
+      and has_function_privilege('authenticated', to_regprocedure(s), 'execute')
+      and has_function_privilege('service_role', to_regprocedure(s), 'execute')$$, 2);
+select soko_test.expect_count('10F: SOKO does not alter the owner''s default function privileges',
+  $$select count(*) from pg_default_acl d
+    join pg_namespace n on n.oid = d.defaclnamespace
+    where d.defaclobjtype = 'f' and n.nspname = 'public'
+      and array_to_string(d.defaclacl, ',') like '%anon=X%'
+      and array_to_string(d.defaclacl, ',') like '%authenticated=X%'
+      and array_to_string(d.defaclacl, ',') like '%service_role=X%'$$, 1);
+
+-- A function created outside any SOKO scope is left alone, even by a later apply.
+create function public.soko_test_foreign_probe() returns int language sql as $$ select 1 $$;
+select private.begin_function_scope();
+create function public.soko_test_managed_probe() returns int language sql as $$ select 1 $$;
+create function private.soko_test_managed_probe() returns int language sql as $$ select 1 $$;
+select private.apply_function_grants();
+select soko_test.expect_count('10F: functions created inside a SOKO scope are locked down',
+  $$select count(*) from soko_fn where name = 'soko_test_managed_probe'
+      and not (has_function_privilege('public', oid, 'execute')
+               or has_function_privilege('anon', oid, 'execute')
+               or has_function_privilege('authenticated', oid, 'execute')
+               or has_function_privilege('service_role', oid, 'execute'))$$, 2);
+select soko_test.expect_count('10F: a later apply leaves a foreign function untouched',
+  $$select count(*) from pg_proc where oid = to_regprocedure('public.soko_test_foreign_probe()')
+      and has_function_privilege('anon', oid, 'execute')
+      and not exists (select 1 from private.managed_functions m where m.fn_oid = oid)$$, 1);
+select soko_test.expect_denied('10F: apply_function_grants without an open scope fails',
+  $$select private.apply_function_grants()$$);
+select soko_test.expect_denied('10F: a second begin_function_scope while one is open fails',
+  $$select private.begin_function_scope(); select private.begin_function_scope()$$);
+select soko_test.expect_denied('10F: allowlisting a foreign function is refused',
+  $$select private.begin_function_scope();
+    select private.allow_execute(array['authenticated'], array['public.other_integration_ping()']);
+    select private.apply_function_grants()$$);
 select soko_test.expect_denied('10E: allow_execute rejects an unknown signature',
   $$select private.allow_execute(array['authenticated'], array['public.does_not_exist(uuid)'])$$);
 select soko_test.expect_denied('10E: allow_execute rejects an unsupported grantee',

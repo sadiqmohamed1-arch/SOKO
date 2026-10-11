@@ -5,6 +5,9 @@
 -- creation, invitation, approval, re-roling and removal are trusted RPCs.
 -- =============================================================================
 
+-- Opens the function-ownership scope closed by apply_function_grants() below.
+select private.begin_function_scope();
+
 create table public.companies (
   id                uuid primary key default gen_random_uuid(),
   soko_id           text not null unique

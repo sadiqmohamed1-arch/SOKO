@@ -5,6 +5,9 @@
 -- is deleted, so there is deliberately no foreign key on it.
 -- =============================================================================
 
+-- Opens the function-ownership scope closed by apply_function_grants() below.
+select private.begin_function_scope();
+
 create table public.audit_log (
   id         bigint generated always as identity primary key,
   company_id uuid,

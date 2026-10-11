@@ -48,14 +48,23 @@ Recommended apply procedure (when approved):
 
 Function access is least-privilege and allowlist-driven (migration 01):
 
-- The migration owner's default privileges grant EXECUTE on new functions to nobody: PUBLIC is
-  revoked globally, and anon/authenticated/service_role are revoked per schema for `public` and `private`.
-- `private.function_grants` is the allowlist. Migrations register entries with
-  `private.allow_execute(array[<roles>], array['<schema>.<fn>(<arg types>)'])` and end with
-  `select private.apply_function_grants();`. That call revokes everything on every
-  `public`/`private` function, then re-grants only the listed entries.
-- Argument types must be schema-qualified (`public.company_kind`), and unknown signatures or
-  grantees are rejected.
+- Only **SOKO-managed** functions are touched. These are every function in `private`, which SOKO
+  creates and owns (migration 01 refuses to run if `private` already exists), plus `public`
+  functions created by a SOKO migration. Supabase-managed functions, extension functions and other
+  integrations' functions are never revoked or granted.
+- Default privileges are **not** altered. They belong to the `postgres` role project-wide, so
+  changing them would affect other integrations. SOKO functions are locked down explicitly
+  inside the same migration transaction.
+- Every migration starts with `select private.begin_function_scope();`. This snapshots the
+  existing `public` functions. It registers grants with
+  `private.allow_execute(array[<roles>], array['<schema>.<fn>(<arg types>)'])`, and ends with
+  `select private.apply_function_grants();`. That call registers new functions in
+  `private.managed_functions`, revokes everything on managed functions only, and re-grants just
+  the `private.function_grants` entries.
+- The registry is keyed by function OID, so it doesn't depend on the session `search_path`.
+- These are all rejected: unknown signatures or grantees, allowlisting a non-SOKO function,
+  `apply` without `begin`, and a second `begin` while a scope is still open.
+- Argument types must be schema-qualified (`public.company_kind`).
 - A new RPC is **not callable** until it is added to the allowlist. Owner-only is the default for
   trigger functions, ledger mutators (`spend_credits`, `add_credits`) and notification writers.
 
@@ -64,7 +73,7 @@ Current allowlist: 41 public RPCs for `authenticated`, 25 private RLS helpers fo
 
 ## Security tests
 
-`tests/security_tests.sql` runs 112 checks (unauthorised attempts plus positive controls) inside one
+`tests/security_tests.sql` runs 122 checks (unauthorised attempts plus positive controls) inside one
 transaction that always ends in `ROLLBACK`, so its fixture users and records never persist. It
 switches to the `authenticated` / `anon` roles and sets `request.jwt.claims` to impersonate users.
 

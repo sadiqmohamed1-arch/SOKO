@@ -6,6 +6,9 @@
 -- connections are personal (user-owned), not company data.
 -- =============================================================================
 
+-- Opens the function-ownership scope closed by apply_function_grants() below.
+select private.begin_function_scope();
+
 -- -----------------------------------------------------------------------------
 -- Personal network
 -- -----------------------------------------------------------------------------

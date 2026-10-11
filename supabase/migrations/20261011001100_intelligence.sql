@@ -4,6 +4,9 @@
 -- private to SOKO. Companies only ever read daily aggregates of their own data.
 -- =============================================================================
 
+-- Opens the function-ownership scope closed by apply_function_grants() below.
+select private.begin_function_scope();
+
 create table public.company_profile_views (
   id                bigint generated always as identity primary key,
   company_id        uuid not null references public.companies (id) on delete cascade,
