@@ -82,12 +82,22 @@ import {
 } from './types';
 
 const PUBLIC_LANDING_PATH = '/welcome';
+// Tab-scoped so a fresh browser or tab never starts inside the demo.
+const DEMO_SESSION_KEY = 'soko_demo_session';
 
 function MainApp() {
   const { user: authUser, isAuthenticated, logout } = useAuth();
   const [viewMode, setViewMode] = useState<'app' | 'landing'>(() =>
     window.location.pathname === PUBLIC_LANDING_PATH ? 'landing' : 'app',
   );
+  const [demoActive, setDemoActive] = useState<boolean>(() => sessionStorage.getItem(DEMO_SESSION_KEY) === '1');
+  const setDemoSession = (active: boolean) => {
+    if (active) sessionStorage.setItem(DEMO_SESSION_KEY, '1');
+    else sessionStorage.removeItem(DEMO_SESSION_KEY);
+    setDemoActive(active);
+  };
+  // The dashboard requires a verified session or an explicit demo entry.
+  const canAccessApp = isAuthenticated || demoActive;
   const openLanding = () => {
     window.history.pushState(window.history.state, '', PUBLIC_LANDING_PATH);
     setViewMode('landing');
@@ -95,6 +105,22 @@ function MainApp() {
   const enterApp = () => {
     if (window.location.pathname === PUBLIC_LANDING_PATH) window.history.pushState(window.history.state, '', '/');
     setViewMode('app');
+  };
+  const enterDemo = () => {
+    if (!isAuthenticated) setDemoSession(true);
+    enterApp();
+  };
+  useEffect(() => {
+    if (isAuthenticated && sessionStorage.getItem(DEMO_SESSION_KEY)) setDemoSession(false);
+  }, [isAuthenticated]);
+  // Signing out returns to the landing page and drops the previous profile, so it never carries into a demo.
+  const handleLogout = () => {
+    logout();
+    setDemoSession(false);
+    localStorage.removeItem('procurelink_user');
+    setCurrentUser(INITIAL_CURRENT_USER);
+    setActiveWorkspaceId('personal');
+    setActiveTab('feed');
   };
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'signup'>('login');
@@ -917,7 +943,7 @@ function MainApp() {
       }),
   ];
 
-  if (viewMode === 'landing') {
+  if (viewMode === 'landing' || !canAccessApp) {
     return (
       <>
         <LandingPage
@@ -925,7 +951,7 @@ function MainApp() {
             setAuthModalMode(mode);
             setAuthModalOpen(true);
           }}
-          onEnterApp={enterApp}
+          onEnterApp={enterDemo}
         />
         <AuthModal
           isOpen={authModalOpen}
@@ -957,7 +983,7 @@ function MainApp() {
           }}
           onOpenBusinessCard={() => openNetwork('cards')}
           isAuthenticated={isAuthenticated}
-          onLogout={logout}
+          onLogout={handleLogout}
           onOpenAuthModal={(mode) => {
             setAuthModalMode(mode);
             setAuthModalOpen(true);
@@ -982,7 +1008,7 @@ function MainApp() {
           setAuthModalOpen(true);
         }}
         isAuthenticated={isAuthenticated}
-        onLogout={logout}
+        onLogout={handleLogout}
         onOpenCreateModal={() => {
           setCreatePostType('rfq');
           setCreatePostOpen(true);
