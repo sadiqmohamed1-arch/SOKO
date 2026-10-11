@@ -105,6 +105,28 @@ async function download(uid, versionId) {
   return { status: res.status, bytes: (await res.arrayBuffer()).byteLength };
 }
 
+// Direct Storage API reads as the user: authenticated GET, and a signed URL
+// minted with the user's own JWT. Both go through storage.objects RLS.
+async function directRead(token, name) {
+  const res = await fetch(`${storage}/object/authenticated/company-documents/${name}`,
+    { headers: { authorization: `Bearer ${token}` } });
+  return { status: res.status, bytes: (await res.arrayBuffer()).byteLength };
+}
+async function userSign(token, name) {
+  const res = await fetch(`${storage}/object/sign/company-documents/${name}`, {
+    method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ expiresIn: 60 }),
+  });
+  const body = await res.json().catch(() => ({}));
+  return { status: res.status, signed: typeof body.signedURL === 'string' };
+}
+async function serviceDelete(name) {
+  const res = await fetch(`${storage}/object/company-documents/${name}`,
+    { method: 'DELETE', headers: { authorization: `Bearer ${jwt({ role: 'service_role' })}` } });
+  await res.text();
+  return res.status;
+}
+
 const created = { companies: [], users: [] };
 async function user() {
   const id = (await owner.query(
@@ -242,6 +264,10 @@ try {
 
   const dl = await download(admin, verA);
   check(dl.status === 200 && dl.bytes === 120, 'K: download via record_document_download + signed URL returns the bytes', JSON.stringify(dl.error?.message ?? dl));
+  let dr = await directRead(userJwt(other), stdName);
+  check(dr.status === 200 && dr.bytes === 120, 'K: a member reads the intact finalised file through the Storage API', `HTTP ${dr.status}`);
+  let us = await userSign(userJwt(other), stdName);
+  check(us.status === 200 && us.signed, 'K: a member can sign the intact finalised file with their own JWT', `HTTP ${us.status}`);
 
   await owner.query(`update private.storage_upload_reservations set expires_at = now() - interval '2 days'
                      where bucket_id = 'company-documents' and object_name = $1`, [stdName]);
@@ -260,6 +286,12 @@ try {
     `${std.version} -> ${swapped?.version}`);
   const dlBad = await download(admin, verA);
   check(dlBad.error?.code === '55000', 'K: download of replaced bytes is refused', dlBad.error?.code ?? JSON.stringify(dlBad));
+  for (const [who, uid] of [['the uploader', admin], ['another member', other]]) {
+    dr = await directRead(userJwt(uid), stdName);
+    check(dr.status >= 400, `K: ${who} cannot read replaced bytes through the Storage API`, `HTTP ${dr.status}`);
+    us = await userSign(userJwt(uid), stdName);
+    check(us.status >= 400 && !us.signed, `K: ${who} cannot sign replaced bytes with their own JWT`, `HTTP ${us.status}`);
+  }
   await owner.query(`select * from private.reconcile_storage_reservations()`);
   lists = await listedFor(stdName);
   check(lists.orphan.length === 0, 'K: a replaced finalised file is not listed for routine deletion', JSON.stringify(lists.orphan));
@@ -307,6 +339,34 @@ try {
   lists = await listedFor(tusName);
   check(!(await reservation(tusName))?.rejected_at && lists.orphan.length === 0 && lists.incident.length === 0,
     'L: after reconciliation the resumable file is settled, not an orphan, not an incident', JSON.stringify(lists));
+
+  // M. Public document: an outsider reads it only while the finalised version is intact.
+  const outsider = await user();
+  await owner.query('update public.companies set is_public = true where id = $1', [co]);
+  await owner.query('update public.documents set is_public = true where id = $1', [docB]);
+  dr = await directRead(userJwt(outsider), tusName);
+  check(dr.status === 200 && dr.bytes === 200, 'M: an outsider reads an intact public finalised file through the Storage API', `HTTP ${dr.status}`);
+  r = await upload(serviceJwt(), 'company-documents', tusName, 50, 'application/pdf', { upsert: true });
+  check(r.status === 200, 'M: service-role overwrite of the public file', `HTTP ${r.status}`);
+  dr = await directRead(userJwt(outsider), tusName);
+  check(dr.status >= 400, 'M: an outsider cannot read a replaced public file through the Storage API', `HTTP ${dr.status}`);
+  us = await userSign(userJwt(outsider), tusName);
+  check(us.status >= 400 && !us.signed, 'M: an outsider cannot sign a replaced public file', `HTTP ${us.status}`);
+  dr = await directRead(userJwt(admin), tusName);
+  check(dr.status >= 400, 'M: the owner cannot read a replaced public file through the Storage API', `HTTP ${dr.status}`);
+  const dlPub = await download(admin, finB.rows?.[0]?.id);
+  check(dlPub.error?.code === '55000', 'M: the download flow refuses a replaced public file', dlPub.error?.code ?? JSON.stringify(dlPub));
+
+  // N. Missing finalised file: neither path can serve it.
+  const delStatus = await serviceDelete(stdName);
+  check(delStatus === 200 && !(await object('company-documents', stdName)), 'N: service role deletes the finalised file', `HTTP ${delStatus}`);
+  const dlGone = await download(admin, verA);
+  check(dlGone.error?.code === '55000', 'N: the download flow refuses a missing finalised file', dlGone.error?.code ?? JSON.stringify(dlGone));
+  dr = await directRead(userJwt(admin), stdName);
+  check(dr.status >= 400, 'N: a missing finalised file cannot be read through the Storage API', `HTTP ${dr.status}`);
+  lists = await listedFor(stdName);
+  check(lists.incident.length === 1 && lists.incident[0].incident === 'missing',
+    'N: a missing finalised file is reported as an integrity incident', JSON.stringify(lists.incident));
 } finally {
   for (const co of created.companies) {
     await owner.query(`delete from storage.objects where name like $1`, [`${co}/%`]).catch(() => {});

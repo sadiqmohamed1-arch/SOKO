@@ -368,12 +368,16 @@ $$;
 -- share branch (recipients use the document-download Edge Function, which
 -- issues 60-second links). Managers may also read a pending upload for the
 -- next version so the Storage API can confirm it before finalising.
+-- A finalised path is readable only while it holds the exact bytes verified at
+-- finalisation (same storage.objects.version), matching record_document_download.
 create or replace function private.can_read_document_object(p_name text) returns boolean
 language sql stable security definer set search_path = '' as $$
   select exists (
       select 1 from public.document_versions v
       join public.documents d on d.id = v.document_id
       join public.companies c on c.id = d.company_id
+      join storage.objects o on o.bucket_id = 'company-documents' and o.name = v.storage_path
+                            and o.version = v.object_version
       where v.storage_path = p_name and (
         private.has_doc_access(d.company_id, d.access_level)
         or (d.for_verification and (private.holds_admin_role(d.company_id) or private.is_platform_admin()))
@@ -955,7 +959,7 @@ begin
   -- Never sign a URL for bytes other than the ones verified at finalisation.
   if not exists (select 1 from storage.objects o
                  where o.bucket_id = 'company-documents' and o.name = v_v.storage_path
-                   and o.version is not distinct from v_v.object_version) then
+                   and o.version = v_v.object_version) then
     raise exception 'file is unavailable or failed its integrity check' using errcode = '55000';
   end if;
   insert into public.audit_log (company_id, actor_id, action, entity, entity_id, diff)

@@ -280,6 +280,17 @@ try {
   await expectUrl('an admin of a suspended company can still download verification evidence', tok.owner, 'verif');
   await admin.query('update public.companies set is_suspended = false where id = $1', [companies.sup]);
 
+  // Integrity: a replaced or missing finalised file never gets a signed URL.
+  await admin.query(`update storage.objects set version = 'replaced-edge'
+    where bucket_id = 'company-documents' and name = $1`, [pathOf('live')]);
+  await expectRefused('the owner gets no URL for a replaced finalised file', tok.owner, versions.live, 403);
+  await expectRefused('a team member gets no URL for a replaced finalised file', tok.tech, versions.live, 403);
+  await expectRefused('a share recipient gets no URL for a replaced finalised file', tok.rec, versions.live, 403);
+  await admin.query(`delete from storage.objects where bucket_id = 'company-documents' and name = $1`, [pathOf('rev')]);
+  await expectRefused('the owner gets no URL for a missing finalised file', tok.owner, versions.rev, 403);
+  await expectRefused('a team member gets no URL for a missing finalised file', tok.tech, versions.rev, 403);
+  await expectUrl('an intact file is still downloadable after others were tampered with', tok.owner, 'exp');
+
   // Audit: one entry per signed URL, none for refusals.
   const { rows } = await admin.query(`select count(*)::int n from public.audit_log
     where action = 'download' and company_id = $1`, [companies.sup]);

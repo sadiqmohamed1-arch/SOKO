@@ -3646,6 +3646,101 @@ delete from storage.objects where bucket_id = 'company-documents'
 delete from private.storage_upload_reservations
 where object_name like soko_test.id('d_sup')::text || '/' || soko_test.id('fi_doc')::text || '/%';
 
+-- =============================================================================
+-- 21. Migration 07 — finalised files are readable only with their verified version
+-- =============================================================================
+reset role;
+insert into soko_test.ids values ('i21_team', gen_random_uuid()), ('i21_pub', gen_random_uuid());
+insert into public.documents (id, company_id, name, access_level, is_public, for_verification) values
+  (soko_test.id('i21_team'), soko_test.id('d_sup'), 'Integrity Team Doc', 'team', false, false),
+  (soko_test.id('i21_pub'),  soko_test.id('d_sup'), 'Integrity Public Doc', 'team', true, false);
+insert into soko_test.secrets values
+  ('p_i21_team', soko_test.id('d_sup')::text || '/' || soko_test.id('i21_team')::text || '/v1/a.pdf'),
+  ('p_i21_pub',  soko_test.id('d_sup')::text || '/' || soko_test.id('i21_pub')::text  || '/v1/a.pdf'),
+  ('p_i21_next', soko_test.id('d_sup')::text || '/' || soko_test.id('i21_team')::text || '/v2/b.pdf');
+insert into storage.objects (bucket_id, name, metadata)
+select 'company-documents', soko_test.dp(k), '{"size": 50, "contentLength": 50, "mimetype": "application/pdf"}'
+from unnest(array['p_i21_team', 'p_i21_pub']) k;
+select soko_test.stage_doc(soko_test.dp(k), 'd_admin') from unnest(array['p_i21_team', 'p_i21_pub']) k;
+
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_ok('21: finalise team document', format('select public.finalize_document_version(%L, %L, null)',
+  soko_test.id('i21_team'), soko_test.dp('p_i21_team')));
+select soko_test.expect_ok('21: finalise public document', format('select public.finalize_document_version(%L, %L, null)',
+  soko_test.id('i21_pub'), soko_test.dp('p_i21_pub')));
+reset role;
+insert into soko_test.ids
+select 'v21_' || k, v.id from unnest(array['team', 'pub']) k
+join public.document_versions v on v.storage_path = soko_test.dp('p_i21_' || k);
+
+-- Intact files: owner member and public-document reader both read; download link is issued.
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_count('21: owner member reads an intact finalised file directly',
+  format($$select count(*) from storage.objects where bucket_id = 'company-documents' and name = %L$$, soko_test.dp('p_i21_team')), 1);
+select soko_test.expect_ok('21: owner member gets a download for an intact file',
+  format('select public.record_document_download(%L)', soko_test.id('v21_team')));
+reset role;
+select soko_test.as_user('x_admin');
+set local role authenticated;
+select soko_test.expect_count('21: outsider reads an intact public finalised file directly',
+  format($$select count(*) from storage.objects where bucket_id = 'company-documents' and name = %L$$, soko_test.dp('p_i21_pub')), 1);
+select soko_test.expect_ok('21: outsider gets a download for an intact public file',
+  format('select public.record_document_download(%L)', soko_test.id('v21_pub')));
+reset role;
+
+-- Replaced files: refused on every path.
+update storage.objects set version = 'replaced-21'
+where bucket_id = 'company-documents' and name in (soko_test.dp('p_i21_team'), soko_test.dp('p_i21_pub'));
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_count('21: owner member cannot directly read a replaced finalised file',
+  format($$select count(*) from storage.objects where bucket_id = 'company-documents' and name in (%L, %L)$$,
+         soko_test.dp('p_i21_team'), soko_test.dp('p_i21_pub')), 0);
+select soko_test.expect_sqlstate('21: owner member gets no download for a replaced file',
+  format('select public.record_document_download(%L)', soko_test.id('v21_team')), '55000');
+reset role;
+select soko_test.as_user('x_admin');
+set local role authenticated;
+select soko_test.expect_count('21: outsider cannot directly read a replaced public file',
+  format($$select count(*) from storage.objects where bucket_id = 'company-documents' and name = %L$$, soko_test.dp('p_i21_pub')), 0);
+select soko_test.expect_sqlstate('21: outsider gets no download for a replaced public file',
+  format('select public.record_document_download(%L)', soko_test.id('v21_pub')), '55000');
+reset role;
+
+-- Missing files: no download link.
+delete from storage.objects where bucket_id = 'company-documents'
+  and name in (soko_test.dp('p_i21_team'), soko_test.dp('p_i21_pub'));
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_sqlstate('21: owner member gets no download for a missing file',
+  format('select public.record_document_download(%L)', soko_test.id('v21_team')), '55000');
+select soko_test.expect_sqlstate('21: owner member gets no download for a missing public file',
+  format('select public.record_document_download(%L)', soko_test.id('v21_pub')), '55000');
+reset role;
+
+-- Pending (not yet finalised) uploads keep their existing rule: managers read them.
+insert into storage.objects (bucket_id, name, metadata)
+values ('company-documents', soko_test.dp('p_i21_next'), '{"size": 50, "contentLength": 50, "mimetype": "application/pdf"}');
+select soko_test.stage_doc(soko_test.dp('p_i21_next'), 'd_admin');
+select soko_test.as_user('d_admin');
+set local role authenticated;
+select soko_test.expect_count('21: a manager still reads a pending next-version upload',
+  format($$select count(*) from storage.objects where bucket_id = 'company-documents' and name = %L$$, soko_test.dp('p_i21_next')), 1);
+reset role;
+select soko_test.as_user('x_admin');
+set local role authenticated;
+select soko_test.expect_count('21: an outsider still cannot read a pending upload',
+  format($$select count(*) from storage.objects where bucket_id = 'company-documents' and name = %L$$, soko_test.dp('p_i21_next')), 0);
+reset role;
+
+update public.documents set archived = true where id in (soko_test.id('i21_team'), soko_test.id('i21_pub'));
+delete from storage.objects where bucket_id = 'company-documents' and name like soko_test.id('d_sup')::text || '/%'
+  and (name like '%' || soko_test.id('i21_team')::text || '%' or name like '%' || soko_test.id('i21_pub')::text || '%');
+delete from private.storage_upload_reservations
+where object_name like '%' || soko_test.id('i21_team')::text || '%' or object_name like '%' || soko_test.id('i21_pub')::text || '%';
+
 
 -- -----------------------------------------------------------------------------
 -- Report
