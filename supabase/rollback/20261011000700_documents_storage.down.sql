@@ -34,12 +34,28 @@ drop table if exists public.document_shares cascade;
 drop table if exists public.document_versions cascade;
 drop table if exists public.documents cascade;
 
+drop table if exists private.storage_quota_guard;
+
+drop function if exists private.list_orphaned_storage_objects(interval);
+drop function if exists private.retain_document_version();
+drop function if exists private.is_own_avatar_path(text);
+drop function if exists private.can_read_verification_object(text);
+drop function if exists private.can_upload_verification_object(text, bigint);
+drop function if exists private.can_store_company_media(text, bigint);
 drop function if exists private.can_write_company_media(text);
 drop function if exists private.can_read_company_media(text);
 drop function if exists private.can_delete_document_object(text);
 drop function if exists private.can_read_document_object(text);
+drop function if exists private.can_upload_document_object(text, bigint);
 drop function if exists private.can_upload_document_object(text);
 drop function if exists private.storage_company(text);
 drop function if exists private.has_doc_access(uuid, public.doc_access_level);
+drop function if exists private.storage_quota_ok(uuid, bigint);
 drop function if exists private.storage_quota_ok(uuid);
 drop function if exists private.can_read_document(uuid);
+drop function if exists private.object_size(jsonb);
+drop function if exists private.document_path_matches(text, uuid, uuid, integer);
+drop function if exists private.parse_avatar_path(text);
+drop function if exists private.parse_verification_path(text);
+drop function if exists private.parse_media_path(text);
+drop function if exists private.parse_document_path(text);
