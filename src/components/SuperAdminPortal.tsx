@@ -28,6 +28,16 @@ import {
   Activity,
   Briefcase,
   Layers,
+  LayoutDashboard,
+  Settings,
+  Bell,
+  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
+  BadgeCheck,
+  ScrollText,
+  Database,
+  type LucideIcon,
 } from 'lucide-react';
 import { UserProfile, UserRole, CompanyProfileAudit, ModerationReportItem, BackendActivityLog, PlatformStats } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -105,6 +115,60 @@ const LIVE_UNAVAILABLE_SUBJECT: Record<string, string> = {
   audit_logs: 'The system audit trail',
 };
 
+type AdminSection = 'overview' | 'companies' | 'verification' | 'moderation' | 'escrow' | 'audit_logs' | 'settings';
+
+const ADMIN_SECTIONS: { id: AdminSection; label: string; title: string; description: string; icon: LucideIcon }[] = [
+  {
+    id: 'overview',
+    label: 'Overview',
+    title: 'Platform Overview',
+    description: 'Governance health, verification status and moderation workload across the platform at a glance.',
+    icon: LayoutDashboard,
+  },
+  {
+    id: 'companies',
+    label: 'Companies',
+    title: 'Enterprise Profiles',
+    description: 'Every registered supplier, buyer and contractor company with its verification and account status.',
+    icon: Building2,
+  },
+  {
+    id: 'verification',
+    label: 'Verification',
+    title: 'Verification Queue',
+    description: 'Companies awaiting or holding verification. Filter by status and review each compliance dossier.',
+    icon: BadgeCheck,
+  },
+  {
+    id: 'moderation',
+    label: 'Moderation',
+    title: 'Moderation & Incident Logs',
+    description: 'Reported tenders, proposals, counterfeit claims and pricing anomalies submitted by participants.',
+    icon: AlertTriangle,
+  },
+  {
+    id: 'escrow',
+    label: 'Sourcing & Contracts',
+    title: 'Sourcing Contracts & Escrow',
+    description: 'Milestone gating across multi-tier deliveries between developers, contractors and suppliers.',
+    icon: Briefcase,
+  },
+  {
+    id: 'audit_logs',
+    label: 'Audit Trail',
+    title: 'System Audit Trail',
+    description: 'Administrative ledger of verification changes, sanctions and escrow authorizations.',
+    icon: ScrollText,
+  },
+  {
+    id: 'settings',
+    label: 'Settings',
+    title: 'Admin Settings',
+    description: 'Your administrator session and the data source this dashboard reads from.',
+    icon: Settings,
+  },
+];
+
 function mapLiveCompany(row: LiveCompanyRow): AdminCompany {
   const isVerified = row.verification_status === 'verified';
   return {
@@ -165,7 +229,9 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
   const isAdmin = currentUser.role === 'admin' || user?.role === 'admin';
   const isLive = isAuthenticated && isPlatformAdmin && !isDemo;
 
-  const [activeTab, setActiveTab] = useState<'companies' | 'moderation' | 'escrow' | 'audit_logs'>('companies');
+  const [section, setSection] = useState<AdminSection>('overview');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [roleFilter, setRoleFilter] = useState<'all' | 'buyer' | 'supplier' | 'contractor'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'verified' | 'pending' | 'suspended'>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -281,6 +347,15 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
     setStats(DEMO_STATS);
     fetchAdminData();
   }, [isLive]);
+
+  useEffect(() => {
+    if (!mobileNavOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMobileNavOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [mobileNavOpen]);
 
   const openSuspendDialog = (company: AdminCompany) => {
     setSuspendTarget(company);
@@ -472,8 +547,162 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
     return true;
   });
 
+  const activeSection = ADMIN_SECTIONS.find((s) => s.id === section) ?? ADMIN_SECTIONS[0];
+  const awaitingVerificationCount = companies.filter((c) => c.status === 'pending_verification').length;
+  const verifiedCount = companies.filter((c) => c.isVerified && c.status !== 'suspended').length;
+  const suspendedCount = companies.filter((c) => c.status === 'suspended').length;
+  const moderationCount = isLive
+    ? liveStats?.openReports ?? null
+    : reports.filter((r) => r.status === 'pending').length;
+  const sectionBadges: Partial<Record<AdminSection, number | null>> = {
+    companies: companies.length,
+    verification: isLive ? liveStats?.pendingVerifications ?? null : awaitingVerificationCount,
+    moderation: moderationCount,
+  };
+  const recentCompanies = [...companies]
+    .sort((a, b) => (Date.parse(b.registeredDate) || 0) - (Date.parse(a.registeredDate) || 0))
+    .slice(0, 5);
+  const adminInitials =
+    (currentUser.name || 'Admin')
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase())
+      .join('') || 'A';
+
+  const goToSection = (id: AdminSection, nextStatusFilter?: typeof statusFilter) => {
+    setSection(id);
+    setMobileNavOpen(false);
+    if (nextStatusFilter) setStatusFilter(nextStatusFilter);
+    else if (id === 'verification') setStatusFilter('pending');
+    else if (id === 'companies') setStatusFilter('all');
+  };
+
+  const renderStatusPill = (comp: AdminCompany) => (
+    <span
+      className={`px-2 py-0.5 rounded-full text-[10px] font-bold inline-flex items-center gap-1 border shrink-0 ${
+        comp.status === 'suspended'
+          ? 'bg-rose-50 text-rose-700 border-rose-200'
+          : comp.isVerified
+          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+          : 'bg-slate-100 text-slate-600 border-slate-200'
+      }`}
+    >
+      {comp.status === 'suspended'
+        ? 'Suspended'
+        : comp.isVerified
+        ? 'Verified'
+        : isLive
+        ? VERIFICATION_LABELS[comp.liveVerificationStatus ?? 'not_submitted']
+        : 'Pending'}
+    </span>
+  );
+
+  const renderSidebar = (collapsed: boolean, onClose?: () => void) => (
+    <div className="flex flex-col h-full">
+      <div
+        className={`flex items-center h-16 border-b border-white/10 shrink-0 ${
+          collapsed ? 'justify-center px-2' : 'justify-between px-5'
+        }`}
+      >
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="w-9 h-9 rounded-xl bg-amber-400 text-slate-950 flex items-center justify-center shrink-0">
+            <ShieldCheck className="w-5 h-5" />
+          </span>
+          {!collapsed && (
+            <span className="flex flex-col leading-tight min-w-0">
+              <span className="font-['Outfit'] text-base font-extrabold text-white tracking-tight">SOKO</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-amber-400">Super Admin</span>
+            </span>
+          )}
+        </div>
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close admin navigation"
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:bg-white/10 hover:text-white cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+
+      <nav aria-label="Super Admin sections" className="flex-1 overflow-y-auto py-4 px-3">
+        <ul className="flex flex-col gap-1">
+          {ADMIN_SECTIONS.map((item) => {
+            const Icon = item.icon;
+            const isActive = section === item.id;
+            const badge = sectionBadges[item.id];
+            return (
+              <li key={item.id}>
+                <button
+                  type="button"
+                  onClick={() => goToSection(item.id)}
+                  aria-current={isActive ? 'page' : undefined}
+                  title={collapsed ? item.label : undefined}
+                  className={`w-full flex items-center gap-3 rounded-lg text-sm font-semibold transition-colors cursor-pointer ${
+                    collapsed ? 'justify-center p-2.5' : 'px-3 py-2.5'
+                  } ${isActive ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
+                >
+                  <Icon className="w-5 h-5 shrink-0" aria-hidden="true" />
+                  {collapsed ? (
+                    <span className="sr-only">{item.label}</span>
+                  ) : (
+                    <>
+                      <span className="flex-1 text-left truncate">{item.label}</span>
+                      {badge != null && badge > 0 && (
+                        <span
+                          className={`min-w-5 px-1.5 py-0.5 rounded-full text-[10px] font-bold font-mono text-center ${
+                            isActive ? 'bg-white/20 text-white' : 'bg-white/10 text-slate-300'
+                          }`}
+                        >
+                          {badge}
+                        </span>
+                      )}
+                    </>
+                  )}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
+
+      <div className={`border-t border-white/10 shrink-0 flex flex-col gap-2 ${collapsed ? 'p-2 items-center' : 'p-4'}`}>
+        <div
+          className={`flex items-center gap-2 text-[11px] font-semibold ${collapsed ? 'justify-center' : ''}`}
+          title={isLive ? 'Live Supabase data' : 'Demo data'}
+        >
+          <span className={`w-2 h-2 rounded-full shrink-0 ${isLive ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+          {collapsed ? (
+            <span className="sr-only">{isLive ? 'Live Supabase data' : 'Demo data'}</span>
+          ) : (
+            <span className={isLive ? 'text-emerald-300' : 'text-amber-300'}>
+              {isLive ? 'Live Supabase data' : 'Demo data only'}
+            </span>
+          )}
+        </div>
+        {!onClose && (
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed((v) => !v)}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-expanded={!collapsed}
+            className={`flex items-center gap-2 rounded-lg text-xs font-semibold text-slate-400 hover:bg-white/5 hover:text-white cursor-pointer transition-colors ${
+              collapsed ? 'justify-center p-2.5' : 'px-3 py-2'
+            }`}
+          >
+            {collapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+            {!collapsed && <span>Collapse</span>}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+    <div className="flex min-h-[calc(100vh-4rem)] -mb-12 bg-slate-100">
       {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2 border border-slate-700 text-xs font-semibold animate-in slide-in-from-bottom-2">
@@ -482,72 +711,164 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
         </div>
       )}
 
-      {/* Super Admin Top Header */}
-      <div className="bg-gradient-to-r from-slate-950 via-blue-950 to-slate-900 rounded-2xl p-5 sm:p-6 text-white border border-blue-900/50 shadow-xl relative overflow-hidden">
-        {/* Background ambient pattern */}
-        <div className="absolute right-0 top-0 bottom-0 w-1/3 bg-[radial-gradient(#38bdf8_1px,transparent_1px)] [background-size:16px_16px] opacity-15 pointer-events-none" />
-
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 flex-wrap mb-2">
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-wider uppercase bg-amber-400 text-slate-950 shadow-xs">
-                <ShieldCheck className="w-3 h-3" />
-                SOKO Super Admin Central
-              </span>
-              <span className="text-[11px] text-cyan-300 font-mono font-medium flex items-center gap-1.5">
-                <span className={`w-2 h-2 rounded-full ${isLive ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
-                {isLive ? 'Live Supabase data • Platform admin session' : 'Demo data • Not live platform records'}
-              </span>
-            </div>
-
-            <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight leading-tight">
-              B2B Governance, Profile Verification & Compliance Operations
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-300 mt-1 max-w-2xl">
-              Centralized administrative oversight managing all verified suppliers, buyers, and general contractors,
-              milestone escrow releases, and platform moderation logs.
-            </p>
-          </div>
-
-          {/* Action Toolbar */}
-          <div className="flex flex-col items-start md:items-end gap-1.5 shrink-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                onClick={fetchAdminData}
-                disabled={isRefreshing}
-                className="p-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer text-xs font-semibold flex items-center gap-1.5 disabled:cursor-wait disabled:opacity-70"
-                title={isLive ? 'Re-query Supabase' : 'Refresh demo data'}
-              >
-                <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-                <span className="hidden sm:inline">{isLive ? 'Sync Live' : 'Refresh Demo'}</span>
-              </button>
-
-              <button
-                onClick={handleExportReportCSV}
-                className="px-3.5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
-              >
-                <Download className="w-4 h-4" />
-                <span>Export Governance Dossier</span>
-              </button>
-            </div>
-            <p
-              role="status"
-              aria-live="polite"
-              className={`text-[11px] font-mono min-h-4 ${syncState === 'error' ? 'text-rose-300' : 'text-slate-300'}`}
-            >
-              {syncState === 'loading' && (isLive ? 'Syncing with Supabase…' : 'Loading demo data…')}
-              {syncState === 'success' && lastSyncedAt &&
-                `${isLive ? 'Synced' : 'Demo data loaded'} ${lastSyncedAt.toLocaleTimeString()}${isLive ? ` • ${companies.length} companies` : ''}`}
-              {syncState === 'error' && `Sync failed: ${syncError}`}
-            </p>
+      {mobileNavOpen && (
+        <div className="lg:hidden fixed inset-0 z-50 flex" role="dialog" aria-modal="true" aria-label="Admin navigation">
+          <button
+            type="button"
+            aria-label="Close admin navigation"
+            className="absolute inset-0 bg-slate-950/60 cursor-pointer"
+            onClick={() => setMobileNavOpen(false)}
+          />
+          <div className="relative w-72 max-w-[85vw] h-full bg-slate-950 text-slate-300 shadow-2xl">
+            {renderSidebar(false, () => setMobileNavOpen(false))}
           </div>
         </div>
-      </div>
+      )}
+
+      <aside
+        className={`hidden lg:flex flex-col sticky top-16 h-[calc(100vh-4rem)] bg-slate-950 text-slate-300 shrink-0 transition-[width] duration-200 ${
+          sidebarCollapsed ? 'w-20' : 'w-64'
+        }`}
+      >
+        {renderSidebar(sidebarCollapsed)}
+      </aside>
+
+      <div className="flex-1 min-w-0 flex flex-col">
+        {/* Top bar */}
+        <div className="sticky top-16 z-30 bg-white/95 backdrop-blur border-b border-slate-200">
+          <div className="h-14 px-4 sm:px-6 lg:px-8 flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setMobileNavOpen(true)}
+              aria-label="Open admin navigation"
+              className="lg:hidden w-9 h-9 rounded-lg flex items-center justify-center text-slate-600 hover:bg-slate-100 cursor-pointer"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+
+            <nav aria-label="Breadcrumb" className="min-w-0">
+              <ol className="flex items-center gap-1.5 text-sm">
+                <li className="hidden sm:block">
+                  <button
+                    type="button"
+                    onClick={() => goToSection('overview')}
+                    className="text-slate-500 hover:text-slate-900 font-medium cursor-pointer"
+                  >
+                    SOKO Admin
+                  </button>
+                </li>
+                <li className="hidden sm:block text-slate-300" aria-hidden="true">
+                  <ChevronRight className="w-4 h-4" />
+                </li>
+                <li aria-current="page" className="font-bold text-slate-900 truncate">
+                  {activeSection.label}
+                </li>
+              </ol>
+            </nav>
+
+            <div className="flex-1" />
+
+            <div className="hidden md:block relative w-64">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
+              <input
+                type="search"
+                disabled
+                placeholder="Global search coming soon"
+                aria-label="Global search (not available yet)"
+                className="w-full pl-9 pr-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-xs text-slate-500 placeholder:text-slate-400 cursor-not-allowed"
+              />
+            </div>
+
+            <button
+              type="button"
+              disabled
+              aria-label="Notifications (not available yet)"
+              title="Notifications are not available yet"
+              className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-400 bg-slate-50 border border-slate-200 cursor-not-allowed"
+            >
+              <Bell className="w-4 h-4" />
+            </button>
+
+            <div className="flex items-center gap-2.5 pl-3 border-l border-slate-200">
+              {currentUser.avatarUrl ? (
+                <img
+                  src={currentUser.avatarUrl}
+                  alt=""
+                  className="w-8 h-8 rounded-full object-cover border border-slate-200 shrink-0"
+                />
+              ) : (
+                <span
+                  className="w-8 h-8 rounded-full bg-slate-900 text-amber-400 text-xs font-bold flex items-center justify-center shrink-0"
+                  aria-hidden="true"
+                >
+                  {adminInitials}
+                </span>
+              )}
+              <div className="hidden sm:flex flex-col leading-tight min-w-0">
+                <span className="text-xs font-bold text-slate-900 truncate max-w-36">{currentUser.name || 'Administrator'}</span>
+                <span className="text-[11px] text-slate-500">{isLive ? 'Platform admin' : 'Demo admin persona'}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-12 flex flex-col gap-6">
+          {/* Page header */}
+          <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+            <div className="min-w-0">
+              <span
+                className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border mb-2 ${
+                  isLive
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                    : 'bg-amber-50 text-amber-900 border-amber-200'
+                }`}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${isLive ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                {isLive ? 'Live Supabase data • Platform admin session' : 'Demo data • Not live platform records'}
+              </span>
+              <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight text-balance">{activeSection.title}</h1>
+              <p className="text-sm text-slate-500 mt-1 max-w-2xl leading-relaxed text-pretty">{activeSection.description}</p>
+            </div>
+
+            <div className="flex flex-col items-start lg:items-end gap-1.5 shrink-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={fetchAdminData}
+                  disabled={isRefreshing}
+                  className="px-3.5 py-2 rounded-lg bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 transition-colors cursor-pointer text-xs font-semibold flex items-center gap-1.5 disabled:cursor-wait disabled:opacity-70 shadow-xs"
+                  title={isLive ? 'Re-query Supabase' : 'Refresh demo data'}
+                >
+                  <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                  <span>{isLive ? 'Sync Live' : 'Refresh Demo'}</span>
+                </button>
+
+                <button
+                  onClick={handleExportReportCSV}
+                  className="px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Export Governance Dossier</span>
+                </button>
+              </div>
+              <p
+                role="status"
+                aria-live="polite"
+                className={`text-[11px] font-mono min-h-4 ${syncState === 'error' ? 'text-rose-600' : 'text-slate-500'}`}
+              >
+                {syncState === 'loading' && (isLive ? 'Syncing with Supabase…' : 'Loading demo data…')}
+                {syncState === 'success' && lastSyncedAt &&
+                  `${isLive ? 'Synced' : 'Demo data loaded'} ${lastSyncedAt.toLocaleTimeString()}${isLive ? ` • ${companies.length} companies` : ''}`}
+                {syncState === 'error' && `Sync failed: ${syncError}`}
+              </p>
+            </div>
+          </div>
 
       {/* 4 Platform-Wide Statistics Cards */}
+      {section === 'overview' && (
+      <div className="flex flex-col gap-6">
       {isLive ? (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
           <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
             <span className="font-bold uppercase tracking-wider text-[10px]">Gross Sourcing Volume</span>
             <span className="text-slate-600 bg-slate-100 px-2 py-0.5 rounded font-mono text-[10px] font-bold">
@@ -558,7 +879,7 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
           <div className="text-[11px] text-slate-500 mt-1">Sourcing volume is not tracked in live data yet</div>
         </div>
 
-        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
           <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
             <span className="font-bold uppercase tracking-wider text-[10px]">Enterprise Profiles</span>
             <span className="text-blue-700 bg-blue-50 px-2 py-0.5 rounded font-mono text-[10px] font-bold">
@@ -575,7 +896,7 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
           <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
             <span className="font-bold uppercase tracking-wider text-[10px]">Milestone Escrow Hold</span>
             <span className="text-slate-600 bg-slate-100 px-2 py-0.5 rounded font-mono text-[10px] font-bold">
@@ -586,7 +907,7 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
           <div className="text-[11px] text-slate-500 mt-1">Escrow is not connected to live data yet</div>
         </div>
 
-        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
           <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
             <span className="font-bold uppercase tracking-wider text-[10px]">Moderation Queue</span>
             <span className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold ${
@@ -610,7 +931,7 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
       ) : (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Card 1: Gross Sourcing Volume */}
-        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
           <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
             <span className="font-bold uppercase tracking-wider text-[10px]">Gross Sourcing Volume</span>
             <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-mono text-[10px] font-bold">
@@ -627,7 +948,7 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
         </div>
 
         {/* Card 2: Company Profiles Managed */}
-        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
           <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
             <span className="font-bold uppercase tracking-wider text-[10px]">Enterprise Profiles</span>
             <span className="text-blue-700 bg-blue-50 px-2 py-0.5 rounded font-mono text-[10px] font-bold">
@@ -647,7 +968,7 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
         </div>
 
         {/* Card 3: Active Tenders & Escrow */}
-        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
           <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
             <span className="font-bold uppercase tracking-wider text-[10px]">Milestone Escrow Hold</span>
             <span className="text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded font-mono text-[10px] font-bold">
@@ -664,7 +985,7 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
         </div>
 
         {/* Card 4: Moderation & Trust Index */}
-        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
           <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
             <span className="font-bold uppercase tracking-wider text-[10px]">Moderation Queue</span>
             <span className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold ${
@@ -687,49 +1008,174 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
       </div>
       )}
 
-      {/* Main Administrative Control Hub */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        {/* Navigation Tabs */}
-        <div className="border-b border-slate-200 px-4 sm:px-6 pt-3 flex items-center gap-2 overflow-x-auto scrollbar-thin">
-          {[
-            { id: 'companies', label: '🏢 Enterprise Profiles & Verification', count: companies.length },
-            { id: 'moderation', label: '🛡️ Moderation & Incident Logs', count: isLive ? undefined : reports.filter(r => r.status === 'pending').length },
-            { id: 'escrow', label: '🏗️ Sourcing Contracts & Escrow' },
-            { id: 'audit_logs', label: '📜 System Audit Trail', count: isLive ? undefined : logs.length },
-          ].map((tab) => (
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <section
+          aria-labelledby="recent-companies-heading"
+          className="bg-white rounded-2xl border border-slate-200 shadow-sm lg:col-span-2 flex flex-col"
+        >
+          <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-100">
+            <div>
+              <h2 id="recent-companies-heading" className="text-sm font-bold text-slate-900">
+                Recent company registrations
+              </h2>
+              <p className="text-xs text-slate-500">Newest enterprise profiles on the platform</p>
+            </div>
             <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`pb-3 px-3 text-xs font-bold border-b-2 transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-                activeTab === tab.id
-                  ? 'border-blue-600 text-blue-700'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
+              type="button"
+              onClick={() => goToSection('companies')}
+              className="text-xs font-bold text-blue-700 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
             >
-              <span>{tab.label}</span>
-              {tab.count !== undefined && (
-                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
-                  activeTab === tab.id ? 'bg-blue-100 text-blue-800 font-black' : 'bg-slate-100 text-slate-600'
-                }`}>
-                  {tab.count}
-                </span>
-              )}
+              View all
+              <ArrowRight className="w-3.5 h-3.5" />
             </button>
-          ))}
-        </div>
+          </div>
+          {recentCompanies.length > 0 ? (
+            <ul className="divide-y divide-slate-100">
+              {recentCompanies.map((comp) => (
+                <li key={comp.id}>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCompany(comp)}
+                    className="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-slate-50 transition-colors cursor-pointer"
+                  >
+                    <span className="w-9 h-9 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
+                      <Building2 className="w-4 h-4" />
+                    </span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-sm font-semibold text-slate-900 truncate">{comp.companyName}</span>
+                      <span className="block text-[11px] text-slate-500 truncate">
+                        <span className="capitalize">{comp.role}</span>
+                        {' • '}
+                        {comp.location || 'Location not set'}
+                      </span>
+                    </span>
+                    {renderStatusPill(comp)}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="px-5 py-10 text-center text-xs text-slate-500">
+              {syncState === 'loading'
+                ? 'Loading company profiles…'
+                : syncState === 'error'
+                ? 'Company profiles could not be loaded. Use Sync to try again.'
+                : 'No company profiles yet.'}
+            </p>
+          )}
+        </section>
 
+        <section
+          aria-labelledby="attention-heading"
+          className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col"
+        >
+          <div className="px-5 py-4 border-b border-slate-100">
+            <h2 id="attention-heading" className="text-sm font-bold text-slate-900">
+              Needs attention
+            </h2>
+            <p className="text-xs text-slate-500">Queues that may require admin action</p>
+          </div>
+          <ul className="divide-y divide-slate-100">
+            {[
+              {
+                label: 'Awaiting verification',
+                value: isLive ? liveStats?.pendingVerifications ?? null : awaitingVerificationCount,
+                icon: Clock,
+                tone: 'text-amber-700 bg-amber-50',
+                onClick: () => goToSection('verification'),
+              },
+              {
+                label: 'Suspended companies',
+                value: suspendedCount,
+                icon: Ban,
+                tone: 'text-rose-700 bg-rose-50',
+                onClick: () => goToSection('companies', 'suspended'),
+              },
+              {
+                label: isLive ? 'Open moderation reports' : 'Pending moderation cases',
+                value: moderationCount,
+                icon: AlertTriangle,
+                tone: 'text-blue-700 bg-blue-50',
+                onClick: () => goToSection('moderation'),
+              },
+              {
+                label: 'Verified companies',
+                value: isLive ? liveStats?.verified ?? null : verifiedCount,
+                icon: CheckCircle2,
+                tone: 'text-emerald-700 bg-emerald-50',
+                onClick: () => goToSection('companies', 'verified'),
+              },
+            ].map((row) => {
+              const Icon = row.icon;
+              return (
+                <li key={row.label}>
+                  <button
+                    type="button"
+                    onClick={row.onClick}
+                    className="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-slate-50 transition-colors cursor-pointer"
+                  >
+                    <span className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${row.tone}`}>
+                      <Icon className="w-4 h-4" />
+                    </span>
+                    <span className="flex-1 text-xs font-semibold text-slate-700">{row.label}</span>
+                    <span className="text-sm font-bold font-mono text-slate-900">{formatCount(row.value)}</span>
+                    <ChevronRight className="w-4 h-4 text-slate-300" aria-hidden="true" />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      </div>
+      </div>
+      )}
+
+      {/* Main Administrative Control Hub */}
+      {section !== 'overview' && section !== 'settings' && (
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         {/* TAB 1: COMPANY PROFILES & VERIFICATION */}
-        {activeTab === 'companies' && (
+        {(section === 'companies' || section === 'verification') && (
           <div className="p-4 sm:p-6 space-y-4">
+            {section === 'verification' && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {[
+                  { id: 'pending' as const, label: 'Awaiting verification', value: awaitingVerificationCount, icon: Clock, tone: 'text-amber-700 bg-amber-50' },
+                  { id: 'verified' as const, label: 'Verified', value: verifiedCount, icon: CheckCircle2, tone: 'text-emerald-700 bg-emerald-50' },
+                  { id: 'suspended' as const, label: 'Suspended', value: suspendedCount, icon: Ban, tone: 'text-rose-700 bg-rose-50' },
+                ].map((item) => {
+                  const Icon = item.icon;
+                  const isActive = statusFilter === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setStatusFilter(isActive ? 'all' : item.id)}
+                      aria-pressed={isActive}
+                      className={`flex items-center gap-3 p-3 rounded-xl border text-left transition-colors cursor-pointer ${
+                        isActive ? 'border-blue-600 ring-1 ring-blue-600 bg-blue-50/40' : 'border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${item.tone}`}>
+                        <Icon className="w-4 h-4" />
+                      </span>
+                      <span className="flex flex-col">
+                        <span className="text-lg font-bold text-slate-900 font-mono leading-tight">{item.value}</span>
+                        <span className="text-[11px] font-semibold text-slate-500">{item.label}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             {/* Filter & Search Bar */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
               {/* Role filter buttons */}
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
                 {[
                   { id: 'all', label: 'All Profiles' },
-                  { id: 'supplier', label: '🏭 Suppliers' },
-                  { id: 'buyer', label: '🏢 Buyers' },
-                  { id: 'contractor', label: '🏗️ Contractors' },
+                  { id: 'supplier', label: 'Suppliers' },
+                  { id: 'buyer', label: 'Buyers' },
+                  { id: 'contractor', label: 'Contractors' },
                 ].map((rf) => (
                   <button
                     key={rf.id}
@@ -956,21 +1402,21 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
           </div>
         )}
 
-        {isLive && activeTab !== 'companies' && (
+        {isLive && (section === 'moderation' || section === 'escrow' || section === 'audit_logs') && (
           <div className="p-8 sm:p-12 text-center flex flex-col items-center gap-2">
             <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center">
               <Clock className="w-5 h-5" />
             </div>
             <h3 className="text-sm font-bold text-slate-900">Not yet available in live mode</h3>
             <p className="text-xs text-slate-500 max-w-md leading-relaxed text-pretty">
-              {LIVE_UNAVAILABLE_SUBJECT[activeTab]} is not connected to Supabase yet. Demo records are hidden here so
+              {LIVE_UNAVAILABLE_SUBJECT[section]} is not connected to Supabase yet. Demo records are hidden here so
               they are never mistaken for live platform data.
             </p>
           </div>
         )}
 
         {/* TAB 2: MODERATION & INCIDENT LOG */}
-        {activeTab === 'moderation' && !isLive && (
+        {section === 'moderation' && !isLive && (
           <div className="p-4 sm:p-6 space-y-4">
             <div className="flex items-center justify-between">
               <div>
@@ -1070,7 +1516,7 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
         )}
 
         {/* TAB 3: CONTRACT ESCROW & SOURCING OVERSIGHT */}
-        {activeTab === 'escrow' && !isLive && (
+        {section === 'escrow' && !isLive && (
           <div className="p-4 sm:p-6 space-y-4">
             <div className="flex items-center justify-between">
               <div>
@@ -1171,7 +1617,7 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
         )}
 
         {/* TAB 4: SYSTEM AUDIT LOGS */}
-        {activeTab === 'audit_logs' && !isLive && (
+        {section === 'audit_logs' && !isLive && (
           <div className="p-4 sm:p-6 space-y-4">
             <div className="flex items-center justify-between">
               <div>
@@ -1213,6 +1659,62 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
             </div>
           </div>
         )}
+      </div>
+      )}
+
+      {section === 'settings' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <section aria-labelledby="settings-session-heading" className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 flex flex-col gap-4">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-blue-600" />
+              <h2 id="settings-session-heading" className="text-sm font-bold text-slate-900">Administrator session</h2>
+            </div>
+            <dl className="flex flex-col divide-y divide-slate-100 text-xs">
+              {[
+                { term: 'Name', detail: currentUser.name || '—' },
+                { term: 'Email', detail: currentUser.email || '—' },
+                { term: 'Access', detail: isLive ? 'Platform admin (granted by SOKO)' : 'Demo persona • no live access' },
+                { term: 'Mode', detail: isLive ? 'Live' : 'Demo' },
+              ].map((row) => (
+                <div key={row.term} className="flex items-center justify-between gap-4 py-2.5">
+                  <dt className="text-slate-500 font-medium">{row.term}</dt>
+                  <dd className="font-semibold text-slate-900 text-right truncate">{row.detail}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+
+          <section aria-labelledby="settings-source-heading" className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 flex flex-col gap-4">
+            <div className="flex items-center gap-2">
+              <Database className="w-4 h-4 text-blue-600" />
+              <h2 id="settings-source-heading" className="text-sm font-bold text-slate-900">Data source</h2>
+            </div>
+            <dl className="flex flex-col divide-y divide-slate-100 text-xs">
+              {[
+                { term: 'Source', detail: isLive ? 'Supabase via your signed-in session' : 'Local demo data service' },
+                { term: 'Row-level security', detail: isLive ? 'Enforced on every query' : 'Not applicable' },
+                { term: 'Last sync', detail: lastSyncedAt ? lastSyncedAt.toLocaleTimeString() : '—' },
+                {
+                  term: 'Status',
+                  detail:
+                    syncState === 'error' ? 'Sync failed' : syncState === 'loading' ? 'Syncing…' : syncState === 'success' ? 'Up to date' : 'Idle',
+                },
+              ].map((row) => (
+                <div key={row.term} className="flex items-center justify-between gap-4 py-2.5">
+                  <dt className="text-slate-500 font-medium">{row.term}</dt>
+                  <dd className="font-semibold text-slate-900 text-right truncate">{row.detail}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+
+          <p className="md:col-span-2 text-xs text-slate-500 bg-white rounded-2xl border border-slate-200 p-4 leading-relaxed">
+            Platform settings can&apos;t be configured from this dashboard yet. Administrator access is managed by SOKO
+            outside this interface.
+          </p>
+        </div>
+      )}
+        </div>
       </div>
 
       {/* MODAL: VIEW FULL COMPANY COMPLIANCE DOSSIER */}
