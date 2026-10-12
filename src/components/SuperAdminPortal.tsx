@@ -54,6 +54,7 @@ import { CompanyDirectory } from './admin/CompanyDirectory';
 import { CompanyProfileDrawer } from './admin/CompanyProfileDrawer';
 import { VerificationCenter } from './admin/VerificationCenter';
 import { VerificationReviewDrawer } from './admin/VerificationReviewDrawer';
+import { UsersAccess } from './admin/UsersAccess';
 
 interface SuperAdminPortalProps {
   currentUser: UserProfile;
@@ -173,12 +174,7 @@ const ADMIN_NAV_GROUPS: { label: string; modules: AdminModule[] }[] = [
         title: 'Users & Access',
         description: 'People on the network, their company memberships and administrative access.',
         icon: Users,
-        availability: 'placeholder',
-        planned: [
-          'Directory of user accounts and their company memberships',
-          'Company role assignments per workspace',
-          'Platform administrator roster',
-        ],
+        availability: 'live',
       },
       {
         id: 'verification',
@@ -1368,6 +1364,10 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
             onToggleSuspension={openSuspendDialog}
             onEditDemoMetrics={openDemoMetricsEditor}
           />
+        )}
+
+        {section === 'users' && (
+          <UsersAccess companies={companies} isLive={isLive} syncToken={lastSyncedAt?.getTime() ?? 0} />
         )}
 
         {/* TAB 1: COMPANY PROFILES & VERIFICATION */}
