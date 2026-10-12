@@ -164,10 +164,10 @@ export const VerificationReviewDrawer: React.FC<VerificationReviewDrawerProps> =
             <span className="hidden text-[11px] text-slate-500 sm:inline">Disabled until secure review workflows exist.</span>
           </div>
           <div className="flex flex-wrap gap-2">
-            <ActionButton icon={CheckCircle2} label="Approve verification" tone="primary" />
-            <ActionButton icon={XCircle} label="Reject verification" tone="danger" />
-            <ActionButton icon={FileQuestion} label="Request more information" />
-            <ActionButton icon={RotateCcw} label="Revoke verification" tone="danger" />
+            <ActionButton icon={CheckCircle2} label="Approve" tone="primary" />
+            <ActionButton icon={XCircle} label="Reject" tone="danger" />
+            <ActionButton icon={FileQuestion} label="Request More Information" />
+            <ActionButton icon={RotateCcw} label="Revoke Verification" tone="danger" />
             <ActionButton icon={FolderOpen} label="View supporting documents" />
           </div>
         </footer>

@@ -74,8 +74,8 @@ export function verificationStageOf(company: AdminCompany, isLive: boolean): Ver
 }
 
 export const VERIFICATION_STAGE_LABELS: Record<VerificationStage, string> = {
-  not_submitted: 'Not submitted',
-  pending: 'Pending review',
+  not_submitted: 'Not Submitted',
+  pending: 'Pending Review',
   verified: 'Verified',
   rejected: 'Rejected',
 };

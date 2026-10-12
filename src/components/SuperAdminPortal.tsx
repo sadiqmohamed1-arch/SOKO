@@ -1064,7 +1064,7 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
               >
                 {syncState === 'loading' && (isLive ? 'Syncing with Supabase…' : 'Loading demo data…')}
                 {syncState === 'success' && lastSyncedAt &&
-                  `${isLive ? 'Synced' : 'Demo data loaded'} ${lastSyncedAt.toLocaleTimeString()}${isLive ? ` �� ${companies.length} companies` : ''}`}
+                  `${isLive ? 'Synced' : 'Demo data loaded'} ${lastSyncedAt.toLocaleTimeString()}${isLive ? ` • ${companies.length} companies` : ''}`}
                 {syncState === 'error' && `Sync failed: ${syncError}`}
               </p>
             </div>
