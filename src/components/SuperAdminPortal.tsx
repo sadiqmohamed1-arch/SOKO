@@ -56,6 +56,7 @@ import { VerificationCenter } from './admin/VerificationCenter';
 import { VerificationReviewDrawer } from './admin/VerificationReviewDrawer';
 import { UsersAccess } from './admin/UsersAccess';
 import { DigitalCards } from './admin/DigitalCards';
+import { SupplierVisits } from './admin/SupplierVisits';
 
 interface SuperAdminPortalProps {
   currentUser: UserProfile;
@@ -197,14 +198,9 @@ const ADMIN_NAV_GROUPS: { label: string; modules: AdminModule[] }[] = [
         id: 'visits',
         label: 'Supplier Visits',
         title: 'Supplier Visits',
-        description: 'Supplier visits logged through company kiosks and visitor management.',
+        description: 'Supplier visit requests, schedules, participants and outcomes between suppliers and host companies.',
         icon: MapPin,
-        availability: 'placeholder',
-        planned: [
-          'Visit records across company kiosks',
-          'Visitor check-in history per company',
-          'Visit trends by supplier and location',
-        ],
+        availability: 'live',
       },
     ],
   },
@@ -1368,6 +1364,10 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
 
         {section === 'cards' && (
           <DigitalCards companies={companies} isLive={isLive} syncToken={lastSyncedAt?.getTime() ?? 0} />
+        )}
+
+        {section === 'visits' && (
+          <SupplierVisits companies={companies} isLive={isLive} syncToken={lastSyncedAt?.getTime() ?? 0} />
         )}
 
         {/* TAB 1: COMPANY PROFILES & VERIFICATION */}
