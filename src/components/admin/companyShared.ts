@@ -63,6 +63,30 @@ export const VERIFICATION_TONE_CLASSES: Record<VerificationTone, string> = {
   none: 'bg-slate-100 text-slate-600 border-slate-200',
 };
 
+export type VerificationStage = 'not_submitted' | 'pending' | 'verified' | 'rejected';
+
+// Demo records only carry isVerified + an account status, so they never resolve to "rejected".
+export function verificationStageOf(company: AdminCompany, isLive: boolean): VerificationStage {
+  if (isLive) return company.liveVerificationStatus ?? 'not_submitted';
+  if (company.isVerified) return 'verified';
+  if (company.status === 'pending_verification') return 'pending';
+  return 'not_submitted';
+}
+
+export const VERIFICATION_STAGE_LABELS: Record<VerificationStage, string> = {
+  not_submitted: 'Not submitted',
+  pending: 'Pending review',
+  verified: 'Verified',
+  rejected: 'Rejected',
+};
+
+export const VERIFICATION_STAGE_TONE: Record<VerificationStage, VerificationTone> = {
+  not_submitted: 'none',
+  pending: 'pending',
+  verified: 'verified',
+  rejected: 'rejected',
+};
+
 export const ROLE_LABELS: Record<string, string> = {
   supplier: 'Supplier',
   contractor: 'Contractor',
