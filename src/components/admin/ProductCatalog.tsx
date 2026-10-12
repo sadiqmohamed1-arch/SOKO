@@ -47,6 +47,17 @@ import { BarList, EmptyState, FilterSelect, SectionCard } from './catalogUi';
 import { BrandManagement, CategoryManagement } from './CatalogTaxonomy';
 import { CatalogGovernance } from './CatalogGovernance';
 import { ProductDetailsDrawer } from './ProductDetailsDrawer';
+import { ProductEditorDrawer } from './ProductEditorDrawer';
+import { BrandEditorDrawer, CategoryEditorDrawer } from './TaxonomyEditors';
+import { ManagementToolbar } from './ManagementToolbar';
+import { ImportWizard } from './ImportWizard';
+import { type ImportContext, type ImportModuleConfig, BRAND_IMPORT, CATEGORY_IMPORT, PRODUCT_IMPORT, downloadCsv, normaliseKey } from './importSystem';
+
+type Editor = { kind: 'product'; id: string | null } | { kind: 'category'; name: string | null } | { kind: 'brand'; key: string | null };
+
+const PAGE_SIZE = 10;
+
+const exportDate = () => new Date().toISOString().slice(0, 10);
 
 type Tab = 'dashboard' | 'directory' | 'categories' | 'brands' | 'governance';
 type LoadState = 'loading' | 'success' | 'error';
@@ -245,6 +256,18 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({ companies, isLiv
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const closeDrawer = useCallback(() => setSelectedId(null), []);
+  const [page, setPage] = useState(0);
+  const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
+  const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
+  const [selectedBrands, setSelectedBrands] = useState<Set<string>>(new Set());
+  const [wizard, setWizard] = useState<ImportModuleConfig | null>(null);
+  const [editor, setEditor] = useState<Editor | null>(null);
+  const closeWizard = useCallback(() => setWizard(null), []);
+  const closeEditor = useCallback(() => setEditor(null), []);
+
+  useEffect(() => {
+    setPage(0);
+  }, [supplierFilter, categoryFilter, brandFilter, statusFilter, searchQuery]);
 
   useEffect(() => {
     if (!isLive) {
@@ -388,6 +411,91 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({ companies, isLiv
   const recent = products.slice(0, 6);
   const emptyText = isInitialLoad ? 'Loading\u2026' : 'No listings to analyse.';
   const selectedProduct = selectedId ? products.find((p) => p.id === selectedId) ?? null : null;
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount - 1);
+  const pageRows = filtered.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
+  const pageAllSelected = pageRows.length > 0 && pageRows.every((p) => selectedProducts.has(p.id));
+  const pageSomeSelected = pageRows.some((p) => selectedProducts.has(p.id));
+  const allMatchingSelected = filtered.length > 0 && filtered.every((p) => selectedProducts.has(p.id));
+  const toggleIn = (set: Set<string>, id: string) => {
+    const next = new Set(set);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  };
+  const togglePage = () =>
+    setSelectedProducts((prev) => {
+      const next = new Set(prev);
+      for (const p of pageRows) {
+        if (pageAllSelected) next.delete(p.id);
+        else next.add(p.id);
+      }
+      return next;
+    });
+
+  const supplierRef = useCallback((companyId: string, fallback: string | null) => companyById.get(companyId)?.sokoId || companyById.get(companyId)?.companyName || fallback || '', [companyById]);
+
+  const importContexts = useMemo<Record<'products' | 'categories' | 'brands', ImportContext>>(() => {
+    const supplier = new Map<string, string>();
+    for (const c of companies) {
+      supplier.set(normaliseKey(c.companyName), c.companyName);
+      if (c.sokoId) supplier.set(normaliseKey(c.sokoId), c.companyName);
+    }
+    const category = new Map(categories.filter((c) => c.name !== UNCATEGORISED).map((c) => [normaliseKey(c.name), c.name]));
+    const brand = new Map(brands.map((b) => [b.key, b.name]));
+    const references = { supplier, category, brand };
+
+    const productKeys = new Map<string, string>();
+    for (const p of products) {
+      const label = `${productCode(p.id)} ${p.name}`;
+      productKeys.set(`code:${normaliseKey(productCode(p.id))}`, label);
+      const c = companyById.get(p.companyId);
+      for (const s of [c?.companyName, c?.sokoId, p.supplierName]) if (s) productKeys.set(`name:${normaliseKey(s)}|${normaliseKey(p.name)}`, label);
+    }
+    return {
+      products: { references, existing: productKeys },
+      categories: { references, existing: new Map(categories.filter((c) => c.name !== UNCATEGORISED).map((c) => [`name:|${normaliseKey(c.name)}`, c.name])) },
+      brands: { references, existing: new Map(brands.map((b) => [`brand:${b.key}`, b.name])) },
+    };
+  }, [companies, categories, brands, products, companyById]);
+
+  const referenceNote = isLive
+    ? 'Suppliers are checked against the companies loaded in this portal; categories and brands against the listings your session can read. A real import would re-check everything server-side.'
+    : 'Suppliers, categories and brands are checked against the demo dataset. A real import would re-check everything server-side.';
+
+  const exportProducts = (list: AdminProduct[], suffix: string) =>
+    downloadCsv(`soko-products-${suffix}-${exportDate()}.csv`, [
+      PRODUCT_IMPORT.fields.map((f) => f.label),
+      ...list.map((p) => {
+        const row: Record<string, string> = {
+          product_code: productCode(p.id),
+          name: p.name,
+          supplier: supplierRef(p.companyId, p.supplierName),
+          brand: p.brand ?? '',
+          category: p.category ?? '',
+          subcategory: p.subcategory ?? '',
+          type: p.type ?? '',
+          description: p.description ?? '',
+          regions: (p.regions ?? []).join('; '),
+          specs: (p.specs ?? []).map((s) => `${s.label}: ${s.value}`).join('; '),
+          status: p.status,
+        };
+        return PRODUCT_IMPORT.fields.map((f) => row[f.key] ?? '');
+      }),
+    ]);
+  const exportCategories = (list: typeof categories, suffix: string) =>
+    downloadCsv(`soko-categories-${suffix}-${exportDate()}.csv`, [
+      [...CATEGORY_IMPORT.fields.map((f) => f.label), 'Listings', 'Subcategories'],
+      ...list.filter((c) => c.name !== UNCATEGORISED).map((c) => [c.name, '', '', '', String(c.products.length), c.subcategories.map((s) => s.name).join('; ')]),
+    ]);
+  const exportBrands = (list: typeof brands, suffix: string) =>
+    downloadCsv(`soko-brands-${suffix}-${exportDate()}.csv`, [
+      [...BRAND_IMPORT.fields.map((f) => f.label), 'Listings'],
+      ...list.map((b) => [b.name, '', '', '', b.variants.filter((v) => v !== b.name).join('; '), String(b.products.length)]),
+    ]);
+
+  const editorProduct = editor?.kind === 'product' && editor.id ? products.find((p) => p.id === editor.id) ?? null : null;
 
   const alerts: { id: string; label: string; value: number | null; icon: LucideIcon; tone: string }[] = [
     { id: 'reports', label: 'Listings with open reports', value: openReportCount, icon: Flag, tone: 'text-rose-600' },
@@ -558,6 +666,16 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({ companies, isLiv
 
         {tab === 'directory' && (
           <div className="flex flex-col gap-4">
+            <ManagementToolbar
+              config={PRODUCT_IMPORT}
+              onAddNew={() => setEditor({ kind: 'product', id: null })}
+              onImport={() => setWizard(PRODUCT_IMPORT)}
+              onExport={() => exportProducts(filtered, hasActiveFilters ? 'filtered' : 'all')}
+              exportCount={filtered.length}
+              selectedCount={selectedProducts.size}
+              onExportSelected={() => exportProducts(products.filter((p) => selectedProducts.has(p.id)), 'selected')}
+              onClearSelection={() => setSelectedProducts(new Set())}
+            />
             <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
               <div className="relative lg:w-72 lg:shrink-0">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" aria-hidden="true" />
@@ -631,10 +749,45 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({ companies, isLiv
               <EmptyState icon={Package} title={emptyDirectoryMessage} />
             ) : (
               <>
+                {pageAllSelected && filtered.length > pageRows.length && (
+                  <div className="hidden items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900 md:flex">
+                    {allMatchingSelected ? (
+                      <>
+                        All <strong className="font-semibold">{filtered.length}</strong> matching listings are selected.
+                        <button type="button" onClick={() => setSelectedProducts(new Set())} className="font-semibold text-blue-700 underline-offset-2 hover:underline cursor-pointer">
+                          Clear selection
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        All {pageRows.length} listings on this page are selected.
+                        <button
+                          type="button"
+                          onClick={() => setSelectedProducts((prev) => new Set([...prev, ...filtered.map((p) => p.id)]))}
+                          className="font-semibold text-blue-700 underline-offset-2 hover:underline cursor-pointer"
+                        >
+                          Select all {filtered.length} matching listings
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
                 <div className="hidden overflow-x-auto rounded-xl border border-slate-200 bg-white md:block">
                   <table className="w-full text-left text-xs text-slate-700">
                     <thead className="border-b border-slate-200 bg-slate-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                       <tr>
+                        <th scope="col" className="w-10 py-3 pl-3">
+                          <input
+                            type="checkbox"
+                            checked={pageAllSelected}
+                            ref={(el) => {
+                              if (el) el.indeterminate = !pageAllSelected && pageSomeSelected;
+                            }}
+                            onChange={togglePage}
+                            aria-label="Select all listings on this page"
+                            className="h-4 w-4 accent-blue-700 cursor-pointer"
+                          />
+                        </th>
                         <th scope="col" className="px-3 py-3">Product</th>
                         <th scope="col" className="px-2.5 py-3">Supplier Company</th>
                         <th scope="col" className="hidden px-2.5 py-3 lg:table-cell">Brand</th>
@@ -648,12 +801,22 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({ companies, isLiv
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {filtered.map((p) => {
+                      {pageRows.map((p) => {
                         const supplier = companyById.get(p.companyId);
                         const v = supplier ? verificationOf(supplier, isLive) : null;
                         const reported = openReportedIds.has(p.id);
+                        const checked = selectedProducts.has(p.id);
                         return (
-                          <tr key={p.id} className="transition-colors hover:bg-slate-50">
+                          <tr key={p.id} className={`transition-colors ${checked ? 'bg-blue-50/50' : 'hover:bg-slate-50'}`}>
+                            <td className="py-2.5 pl-3">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => setSelectedProducts((prev) => toggleIn(prev, p.id))}
+                                aria-label={`Select ${p.name}`}
+                                className="h-4 w-4 accent-blue-700 cursor-pointer"
+                              />
+                            </td>
                             <td className="px-3 py-2.5">
                               <span className="flex items-center gap-3">
                                 <ProductThumb product={p} />
@@ -689,14 +852,24 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({ companies, isLiv
                             </td>
                             <td className="hidden whitespace-nowrap px-2.5 py-2.5 text-slate-600 xl:table-cell">{formatDate(p.updatedAt)}</td>
                             <td className="px-3 py-2.5 text-right">
-                              <button
-                                type="button"
-                                onClick={() => setSelectedId(p.id)}
-                                aria-label={`View details for ${p.name}`}
-                                className="inline-flex items-center whitespace-nowrap rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[11px] font-semibold text-slate-700 hover:border-blue-600 hover:text-blue-700 cursor-pointer"
-                              >
-                                View details
-                              </button>
+                              <span className="inline-flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedId(p.id)}
+                                  aria-label={`View details for ${p.name}`}
+                                  className="inline-flex items-center whitespace-nowrap rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[11px] font-semibold text-slate-700 hover:border-blue-600 hover:text-blue-700 cursor-pointer"
+                                >
+                                  View
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditor({ kind: 'product', id: p.id })}
+                                  aria-label={`Edit ${p.name}`}
+                                  className="inline-flex items-center whitespace-nowrap rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[11px] font-semibold text-slate-700 hover:border-blue-600 hover:text-blue-700 cursor-pointer"
+                                >
+                                  Edit
+                                </button>
+                              </span>
                             </td>
                           </tr>
                         );
@@ -705,8 +878,34 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({ companies, isLiv
                   </table>
                 </div>
 
+                {pageCount > 1 && (
+                  <nav aria-label="Product directory pages" className="flex items-center justify-between gap-2 text-xs text-slate-500">
+                    <span>
+                      Page {safePage + 1} of {pageCount}
+                    </span>
+                    <span className="flex gap-1">
+                      <button
+                        type="button"
+                        disabled={safePage === 0}
+                        onClick={() => setPage(safePage - 1)}
+                        className="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 font-semibold text-slate-700 enabled:hover:bg-slate-50 enabled:cursor-pointer disabled:opacity-40"
+                      >
+                        Previous
+                      </button>
+                      <button
+                        type="button"
+                        disabled={safePage >= pageCount - 1}
+                        onClick={() => setPage(safePage + 1)}
+                        className="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 font-semibold text-slate-700 enabled:hover:bg-slate-50 enabled:cursor-pointer disabled:opacity-40"
+                      >
+                        Next
+                      </button>
+                    </span>
+                  </nav>
+                )}
+
                 <ul className="flex flex-col gap-2 md:hidden">
-                  {filtered.map((p) => (
+                  {pageRows.map((p) => (
                     <li key={p.id}>
                       <button
                         type="button"
@@ -734,17 +933,55 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({ companies, isLiv
           </div>
         )}
 
-        {tab === 'categories' && <CategoryManagement categories={categories} source={source} isLive={isLive} loading={isInitialLoad} onOpenProduct={setSelectedId} />}
+        {tab === 'categories' && (
+          <div className="flex flex-col gap-4">
+            <ManagementToolbar
+              config={CATEGORY_IMPORT}
+              onAddNew={() => setEditor({ kind: 'category', name: null })}
+              onImport={() => setWizard(CATEGORY_IMPORT)}
+              onExport={() => exportCategories(categories, 'all')}
+              exportCount={categories.filter((c) => c.name !== UNCATEGORISED).length}
+              selectedCount={selectedCategories.size}
+              onExportSelected={() => exportCategories(categories.filter((c) => selectedCategories.has(c.name)), 'selected')}
+              onClearSelection={() => setSelectedCategories(new Set())}
+            />
+            <CategoryManagement
+              categories={categories}
+              source={source}
+              isLive={isLive}
+              loading={isInitialLoad}
+              onOpenProduct={setSelectedId}
+              selected={selectedCategories}
+              onToggle={(name) => setSelectedCategories((prev) => toggleIn(prev, name))}
+              onEdit={(name) => setEditor({ kind: 'category', name })}
+            />
+          </div>
+        )}
 
         {tab === 'brands' && (
-          <BrandManagement
-            brands={brands}
-            unbrandedCount={products.filter((p) => !p.brand?.trim()).length}
-            source={source}
-            isLive={isLive}
-            loading={isInitialLoad}
-            onOpenProduct={setSelectedId}
-          />
+          <div className="flex flex-col gap-4">
+            <ManagementToolbar
+              config={BRAND_IMPORT}
+              onAddNew={() => setEditor({ kind: 'brand', key: null })}
+              onImport={() => setWizard(BRAND_IMPORT)}
+              onExport={() => exportBrands(brands, 'all')}
+              exportCount={brands.length}
+              selectedCount={selectedBrands.size}
+              onExportSelected={() => exportBrands(brands.filter((b) => selectedBrands.has(b.key)), 'selected')}
+              onClearSelection={() => setSelectedBrands(new Set())}
+            />
+            <BrandManagement
+              brands={brands}
+              unbrandedCount={products.filter((p) => !p.brand?.trim()).length}
+              source={source}
+              isLive={isLive}
+              loading={isInitialLoad}
+              onOpenProduct={setSelectedId}
+              selected={selectedBrands}
+              onToggle={(key) => setSelectedBrands((prev) => toggleIn(prev, key))}
+              onEdit={(key) => setEditor({ kind: 'brand', key })}
+            />
+          </div>
         )}
 
         {tab === 'governance' && (
@@ -762,6 +999,25 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({ companies, isLiv
           reports={reports === null ? null : reportsByProduct.get(selectedProduct.id) ?? []}
           isLive={isLive}
           onClose={closeDrawer}
+        />
+      )}
+
+      {editor?.kind === 'product' && (
+        <ProductEditorDrawer key={editor.id ?? 'new'} product={editorProduct} companies={companies} categories={categories} brands={brands} onClose={closeEditor} />
+      )}
+      {editor?.kind === 'category' && (
+        <CategoryEditorDrawer key={editor.name ?? 'new'} category={editor.name ? categories.find((c) => c.name === editor.name) ?? null : null} categories={categories} onClose={closeEditor} />
+      )}
+      {editor?.kind === 'brand' && (
+        <BrandEditorDrawer key={editor.key ?? 'new'} brand={editor.key ? brands.find((b) => b.key === editor.key) ?? null : null} brands={brands} onClose={closeEditor} />
+      )}
+      {wizard && (
+        <ImportWizard
+          key={wizard.id}
+          config={wizard}
+          context={importContexts[wizard.id as 'products' | 'categories' | 'brands']}
+          referenceNote={referenceNote}
+          onClose={closeWizard}
         />
       )}
     </div>

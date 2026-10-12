@@ -171,6 +171,28 @@ export function normaliseBrand(brand: string): string {
     .replace(/[^a-z0-9]/g, '');
 }
 
+/** Loose key for spotting category spellings that likely mean the same thing (case, punctuation, plurals, "&"/"and"). */
+export function categoryKey(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => (w.length > 3 ? w.replace(/(ies)$/, 'y').replace(/s$/, '') : w))
+    .join(' ');
+}
+
+export function findSimilarCategories(categories: CategoryNode[]): CategoryNode[][] {
+  const groups = new Map<string, CategoryNode[]>();
+  for (const c of categories) {
+    if (c.name === UNCATEGORISED) continue;
+    const key = categoryKey(c.name);
+    groups.set(key, [...(groups.get(key) ?? []), c]);
+  }
+  return [...groups.values()].filter((g) => g.length > 1);
+}
+
 export interface BrandNode {
   key: string;
   name: string;
