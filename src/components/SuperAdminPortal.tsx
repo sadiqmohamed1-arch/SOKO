@@ -55,6 +55,7 @@ import { CompanyProfileDrawer } from './admin/CompanyProfileDrawer';
 import { VerificationCenter } from './admin/VerificationCenter';
 import { VerificationReviewDrawer } from './admin/VerificationReviewDrawer';
 import { UsersAccess } from './admin/UsersAccess';
+import { DigitalCards } from './admin/DigitalCards';
 
 interface SuperAdminPortalProps {
   currentUser: UserProfile;
@@ -188,14 +189,9 @@ const ADMIN_NAV_GROUPS: { label: string; modules: AdminModule[] }[] = [
         id: 'cards',
         label: 'Digital Business Cards',
         title: 'Digital Business Cards',
-        description: 'Digital business cards issued to members and how they are shared across the network.',
+        description: 'Digital business cards issued to members, how they are shared and how reported cards are governed.',
         icon: Contact,
-        availability: 'placeholder',
-        planned: [
-          'Inventory of issued digital business cards',
-          'Card visibility and sharing status',
-          'Reported or misrepresented cards',
-        ],
+        availability: 'live',
       },
       {
         id: 'visits',
@@ -1368,6 +1364,10 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
 
         {section === 'users' && (
           <UsersAccess companies={companies} isLive={isLive} syncToken={lastSyncedAt?.getTime() ?? 0} />
+        )}
+
+        {section === 'cards' && (
+          <DigitalCards companies={companies} isLive={isLive} syncToken={lastSyncedAt?.getTime() ?? 0} />
         )}
 
         {/* TAB 1: COMPANY PROFILES & VERIFICATION */}
