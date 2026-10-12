@@ -57,6 +57,7 @@ import { VerificationReviewDrawer } from './admin/VerificationReviewDrawer';
 import { UsersAccess } from './admin/UsersAccess';
 import { DigitalCards } from './admin/DigitalCards';
 import { SupplierVisits } from './admin/SupplierVisits';
+import { ProductCatalog } from './admin/ProductCatalog';
 
 interface SuperAdminPortalProps {
   currentUser: UserProfile;
@@ -109,6 +110,7 @@ interface LivePlatformStats {
   pendingVerifications: number | null;
   campaignsPending: number | null;
   openReports: number | null;
+  publishedProducts: number | null;
 }
 
 const LIVE_UNAVAILABLE_SUBJECT: Record<string, string> = {
@@ -211,14 +213,9 @@ const ADMIN_NAV_GROUPS: { label: string; modules: AdminModule[] }[] = [
         id: 'products',
         label: 'Products & Categories',
         title: 'Products & Categories',
-        description: 'Supplier product listings and the category taxonomy they are organised under.',
+        description: 'Supplier product listings, the categories and brands they use, and catalog governance.',
         icon: Package,
-        availability: 'placeholder',
-        planned: [
-          'Category taxonomy management',
-          'Product listings by supplier and category',
-          'Listings flagged for review',
-        ],
+        availability: 'live',
       },
       {
         id: 'network_intel',
@@ -345,6 +342,7 @@ function parseLiveStats(data: unknown): LivePlatformStats {
     pendingVerifications: toCount(raw.pending_verifications),
     campaignsPending: toCount(raw.campaigns_pending),
     openReports: toCount(raw.open_reports),
+    publishedProducts: toCount(raw.published_products),
   };
 }
 
@@ -1364,6 +1362,15 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
 
         {section === 'cards' && (
           <DigitalCards companies={companies} isLive={isLive} syncToken={lastSyncedAt?.getTime() ?? 0} />
+        )}
+
+        {section === 'products' && (
+          <ProductCatalog
+            companies={companies}
+            isLive={isLive}
+            publishedTotal={liveStats?.publishedProducts ?? null}
+            syncToken={lastSyncedAt?.getTime() ?? 0}
+          />
         )}
 
         {section === 'visits' && (
