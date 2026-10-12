@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   ShieldCheck,
   AlertTriangle,
@@ -49,6 +49,9 @@ import {
 import { UserProfile, UserRole, CompanyProfileAudit, ModerationReportItem, BackendActivityLog, PlatformStats } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { getSupabaseClient } from '../lib/supabaseClient';
+import { type AdminCompany, type LiveVerificationStatus, VERIFICATION_LABELS } from './admin/companyShared';
+import { CompanyDirectory } from './admin/CompanyDirectory';
+import { CompanyProfileDrawer } from './admin/CompanyProfileDrawer';
 
 interface SuperAdminPortalProps {
   currentUser: UserProfile;
@@ -76,8 +79,6 @@ const DEMO_STATS: PlatformStats = {
 const LIVE_COMPANY_COLUMNS =
   'id, soko_id, kind, legal_name, trading_name, country, emirate, general_email, phone, is_suspended, verification_status, verified_at, created_at, updated_at';
 
-type LiveVerificationStatus = 'not_submitted' | 'pending' | 'verified' | 'rejected';
-
 interface LiveCompanyRow {
   id: string;
   soko_id: string | null;
@@ -104,17 +105,6 @@ interface LivePlatformStats {
   campaignsPending: number | null;
   openReports: number | null;
 }
-
-type AdminCompany = CompanyProfileAudit & {
-  liveVerificationStatus?: LiveVerificationStatus;
-};
-
-const VERIFICATION_LABELS: Record<LiveVerificationStatus, string> = {
-  not_submitted: 'Not submitted',
-  pending: 'Pending',
-  verified: 'Verified',
-  rejected: 'Rejected',
-};
 
 const LIVE_UNAVAILABLE_SUBJECT: Record<string, string> = {
   moderation: 'Trust & moderation reports',
@@ -338,6 +328,13 @@ function mapLiveCompany(row: LiveCompanyRow): AdminCompany {
     lastActive: row.updated_at ?? row.created_at,
     complianceCertCount: 0,
     liveVerificationStatus: row.verification_status,
+    sokoId: row.soko_id,
+    legalName: row.legal_name,
+    tradingName: row.trading_name,
+    emirate: row.emirate,
+    country: row.country,
+    verifiedAt: row.verified_at,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -389,7 +386,7 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Selected company for detailed modal/drawer
-  const [selectedCompany, setSelectedCompany] = useState<CompanyProfileAudit | null>(null);
+  const [selectedCompany, setSelectedCompany] = useState<AdminCompany | null>(null);
   const [editModalCompany, setEditModalCompany] = useState<CompanyProfileAudit | null>(null);
   const [editIcvScore, setEditIcvScore] = useState<number>(0);
   const [editRiskRating, setEditRiskRating] = useState<'low' | 'medium' | 'high'>('low');
@@ -692,10 +689,22 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
       const matchPerson = (c.contactPerson ?? '').toLowerCase().includes(q);
       const matchDuns = c.dunsNumber?.toLowerCase().includes(q);
       const matchEmail = (c.email ?? '').toLowerCase().includes(q);
-      if (!matchName && !matchPerson && !matchDuns && !matchEmail) return false;
+      const matchSokoId = (c.sokoId ?? '').toLowerCase().includes(q);
+      const matchLegalName = (c.legalName ?? '').toLowerCase().includes(q);
+      if (!matchName && !matchPerson && !matchDuns && !matchEmail && !matchSokoId && !matchLegalName) return false;
     }
     return true;
   });
+
+  const closeCompanyProfile = useCallback(() => setSelectedCompany(null), []);
+
+  const openDemoMetricsEditor = (comp: AdminCompany) => {
+    setEditModalCompany(comp);
+    setEditIcvScore(comp.icvScore);
+    setEditRiskRating(comp.riskRating);
+    setEditStatus(comp.status);
+    setEditAuditNotes(comp.auditNotes || '');
+  };
 
   const activeSection = ADMIN_SECTIONS.find((s) => s.id === section) ?? ADMIN_SECTIONS[0];
   const awaitingVerificationCount = companies.filter((c) => c.status === 'pending_verification').length;
@@ -1051,7 +1060,7 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
               >
                 {syncState === 'loading' && (isLive ? 'Syncing with Supabase…' : 'Loading demo data…')}
                 {syncState === 'success' && lastSyncedAt &&
-                  `${isLive ? 'Synced' : 'Demo data loaded'} ${lastSyncedAt.toLocaleTimeString()}${isLive ? ` • ${companies.length} companies` : ''}`}
+                  `${isLive ? 'Synced' : 'Demo data loaded'} ${lastSyncedAt.toLocaleTimeString()}${isLive ? ` �� ${companies.length} companies` : ''}`}
                 {syncState === 'error' && `Sync failed: ${syncError}`}
               </p>
             </div>
@@ -1339,8 +1348,26 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
       {/* Main Administrative Control Hub */}
       {section !== 'overview' && section !== 'settings' && activeSection.availability !== 'placeholder' && (
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        {section === 'companies' && (
+          <CompanyDirectory
+            companies={companies}
+            filteredCompanies={filteredCompanies}
+            isLive={isLive}
+            syncState={syncState}
+            roleFilter={roleFilter}
+            onRoleFilterChange={setRoleFilter}
+            statusFilter={statusFilter}
+            onStatusFilterChange={setStatusFilter}
+            searchQuery={searchQuery}
+            onSearchQueryChange={setSearchQuery}
+            onViewCompany={setSelectedCompany}
+            onToggleSuspension={openSuspendDialog}
+            onEditDemoMetrics={openDemoMetricsEditor}
+          />
+        )}
+
         {/* TAB 1: COMPANY PROFILES & VERIFICATION */}
-        {(section === 'companies' || section === 'verification') && (
+        {section === 'verification' && (
           <div className="p-4 sm:p-6 space-y-4">
             {section === 'verification' && (
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -1822,95 +1849,20 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
         </div>
       </div>
 
-      {/* MODAL: VIEW FULL COMPANY COMPLIANCE DOSSIER */}
       {selectedCompany && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl space-y-4 relative">
-            <div className="flex items-start justify-between pb-3 border-b border-slate-200">
-              <div>
-                <span className="text-[10px] font-bold text-blue-700 uppercase tracking-widest bg-blue-50 px-2 py-0.5 rounded">
-                  Regulatory Compliance Dossier
-                </span>
-                <h3 className="text-lg font-black text-slate-900 mt-1 flex items-center gap-1.5">
-                  {selectedCompany.companyName}
-                  {selectedCompany.isVerified && <CheckCircle2 className="w-4 h-4 text-blue-600" />}
-                </h3>
-              </div>
-              <button
-                onClick={() => setSelectedCompany(null)}
-                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 text-xs">
-              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
-                <span className="text-[10px] uppercase font-bold text-slate-400 block">Lead Executive</span>
-                <span className="font-bold text-slate-900">{selectedCompany.contactPerson || 'Not on file'}</span>
-                <div className="text-slate-500 text-[11px]">{selectedCompany.email || 'No email on file'}</div>
-                <div className="text-slate-500 text-[11px]">{selectedCompany.phone || 'No phone on file'}</div>
-              </div>
-
-              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
-                <span className="text-[10px] uppercase font-bold text-slate-400 block">Identifiers</span>
-                <div>DUNS: <strong>{selectedCompany.dunsNumber || 'N/A'}</strong></div>
-                <div>Trade License: <strong>{selectedCompany.tradeLicenseNo || 'N/A'}</strong></div>
-                <div>VAT TRN: <strong>{selectedCompany.vatTrn || 'N/A'}</strong></div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-2 text-center text-xs">
-              <div className="bg-blue-50/70 p-2.5 rounded-lg border border-blue-200">
-                <span className="text-[10px] font-bold text-slate-500 block uppercase">ICV Certified</span>
-                <span className="text-base font-black text-blue-900">{isLive ? '—' : `${selectedCompany.icvScore}%`}</span>
-              </div>
-              <div className="bg-emerald-50/70 p-2.5 rounded-lg border border-emerald-200">
-                <span className="text-[10px] font-bold text-slate-500 block uppercase">Risk Rating</span>
-                <span className="text-base font-black text-emerald-900 uppercase">{isLive ? '—' : selectedCompany.riskRating}</span>
-              </div>
-              <div className="bg-purple-50/70 p-2.5 rounded-lg border border-purple-200">
-                <span className="text-[10px] font-bold text-slate-500 block uppercase">Procure Capacity</span>
-                <span className="text-base font-black text-purple-900">{isLive ? selectedCompany.annualProcureVolume || '—' : selectedCompany.annualProcureVolume || 'AED 50M+'}</span>
-              </div>
-            </div>
-
-            {selectedCompany.auditNotes && (
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs">
-                <span className="text-[10px] font-bold text-slate-500 block uppercase mb-0.5">Auditor Field Notes:</span>
-                <p className="text-slate-700 leading-relaxed">{selectedCompany.auditNotes}</p>
-              </div>
-            )}
-
-            <div className="pt-3 border-t border-slate-200 flex justify-end gap-2">
-              <button
-                onClick={() => setSelectedCompany(null)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-lg cursor-pointer"
-              >
-                Close
-              </button>
-              {isLive ? (
-                <button
-                  disabled
-                  title="Verification is not client-writable and has no admin RPC yet"
-                  className="px-4 py-2 bg-slate-200 text-slate-500 font-bold text-xs rounded-lg cursor-not-allowed"
-                >
-                  Verification changes unavailable in live mode
-                </button>
-              ) : (
-              <button
-                onClick={() => {
-                  handleToggleVerification(selectedCompany);
-                  setSelectedCompany(null);
-                }}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg cursor-pointer"
-              >
-                {selectedCompany.isVerified ? 'Revoke Verification' : 'Grant Verified Badge'}
-              </button>
-              )}
-            </div>
-          </div>
-        </div>
+        <CompanyProfileDrawer
+          company={selectedCompany}
+          isLive={isLive}
+          onClose={closeCompanyProfile}
+          onDemoToggleVerification={(company) => {
+            handleToggleVerification(company);
+            setSelectedCompany(null);
+          }}
+          onDemoEditMetrics={(company) => {
+            setSelectedCompany(null);
+            openDemoMetricsEditor(company);
+          }}
+        />
       )}
 
       {/* MODAL: EDIT AUDIT METRICS */}
