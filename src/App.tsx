@@ -1007,10 +1007,13 @@ function MainApp() {
     );
   }
 
+  // The Admin Panel has its own header; the regular SOKO navigation is hidden only while an admin is inside it.
+  const adminShellActive = activeTab === 'admin' && (currentUser.role === 'admin' || authUser?.role === 'admin');
+
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans selection:bg-blue-600 selection:text-white">
       {/* Top Navbar */}
-      {currentUser.role !== 'admin' ? (
+      {adminShellActive ? null : currentUser.role !== 'admin' ? (
         <BuyerNavbar
           activeTab={activeTab}
           setActiveTab={(tab) => (tab === 'contacts' ? openNetwork('contacts') : setActiveTab(tab))}
@@ -1063,7 +1066,7 @@ function MainApp() {
       )}
 
       {/* Main App View Router */}
-      <main className="flex-1 pb-12">
+      <main className={`flex-1 ${adminShellActive ? '' : 'pb-12'}`}>
         {activeTab === 'feed' && currentUser.role === 'buyer' && (
           <BuyerHomeView
             currentUser={currentUser}

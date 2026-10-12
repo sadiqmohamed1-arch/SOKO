@@ -37,6 +37,13 @@ import {
   BadgeCheck,
   ScrollText,
   Database,
+  Contact,
+  MapPin,
+  Package,
+  Network,
+  CreditCard,
+  ArrowLeft,
+  Construction,
   type LucideIcon,
 } from 'lucide-react';
 import { UserProfile, UserRole, CompanyProfileAudit, ModerationReportItem, BackendActivityLog, PlatformStats } from '../types';
@@ -110,64 +117,207 @@ const VERIFICATION_LABELS: Record<LiveVerificationStatus, string> = {
 };
 
 const LIVE_UNAVAILABLE_SUBJECT: Record<string, string> = {
-  moderation: 'Moderation reports',
-  escrow: 'Sourcing contracts and escrow',
-  audit_logs: 'The system audit trail',
+  moderation: 'Trust & moderation reports',
+  audit_logs: 'The audit & security trail',
 };
 
-type AdminSection = 'overview' | 'companies' | 'verification' | 'moderation' | 'escrow' | 'audit_logs' | 'settings';
+type AdminSection =
+  | 'overview'
+  | 'companies'
+  | 'users'
+  | 'verification'
+  | 'cards'
+  | 'visits'
+  | 'products'
+  | 'network_intel'
+  | 'ai'
+  | 'plans'
+  | 'moderation'
+  | 'audit_logs'
+  | 'settings';
 
-const ADMIN_SECTIONS: { id: AdminSection; label: string; title: string; description: string; icon: LucideIcon }[] = [
+// live: reads authorized Supabase data in live mode. demo_only: demo records in demo mode, not yet connected live.
+// placeholder: UI-only shell with no data and no actions until its data model and permissions exist.
+type ModuleAvailability = 'live' | 'demo_only' | 'placeholder';
+
+interface AdminModule {
+  id: AdminSection;
+  label: string;
+  title: string;
+  description: string;
+  icon: LucideIcon;
+  availability: ModuleAvailability;
+  planned?: string[];
+}
+
+const ADMIN_NAV_GROUPS: { label: string; modules: AdminModule[] }[] = [
   {
-    id: 'overview',
     label: 'Overview',
-    title: 'Platform Overview',
-    description: 'Governance health, verification status and moderation workload across the platform at a glance.',
-    icon: LayoutDashboard,
+    modules: [
+      {
+        id: 'overview',
+        label: 'Command Center',
+        title: 'Command Center',
+        description: 'Network health, verification workload and trust signals across SOKO at a glance.',
+        icon: LayoutDashboard,
+        availability: 'live',
+      },
+    ],
   },
   {
-    id: 'companies',
-    label: 'Companies',
-    title: 'Enterprise Profiles',
-    description: 'Every registered supplier, buyer and contractor company with its verification and account status.',
-    icon: Building2,
+    label: 'Network Management',
+    modules: [
+      {
+        id: 'companies',
+        label: 'Companies',
+        title: 'Companies',
+        description: 'Every registered supplier and contractor company with its verification and account status.',
+        icon: Building2,
+        availability: 'live',
+      },
+      {
+        id: 'users',
+        label: 'Users & Access',
+        title: 'Users & Access',
+        description: 'People on the network, their company memberships and administrative access.',
+        icon: Users,
+        availability: 'placeholder',
+        planned: [
+          'Directory of user accounts and their company memberships',
+          'Company role assignments per workspace',
+          'Platform administrator roster',
+        ],
+      },
+      {
+        id: 'verification',
+        label: 'Verification Center',
+        title: 'Verification Center',
+        description: 'Companies awaiting or holding verification. Filter by status and review each profile.',
+        icon: BadgeCheck,
+        availability: 'live',
+      },
+      {
+        id: 'cards',
+        label: 'Digital Business Cards',
+        title: 'Digital Business Cards',
+        description: 'Digital business cards issued to members and how they are shared across the network.',
+        icon: Contact,
+        availability: 'placeholder',
+        planned: [
+          'Inventory of issued digital business cards',
+          'Card visibility and sharing status',
+          'Reported or misrepresented cards',
+        ],
+      },
+      {
+        id: 'visits',
+        label: 'Supplier Visits',
+        title: 'Supplier Visits',
+        description: 'Supplier visits logged through company kiosks and visitor management.',
+        icon: MapPin,
+        availability: 'placeholder',
+        planned: [
+          'Visit records across company kiosks',
+          'Visitor check-in history per company',
+          'Visit trends by supplier and location',
+        ],
+      },
+    ],
   },
   {
-    id: 'verification',
-    label: 'Verification',
-    title: 'Verification Queue',
-    description: 'Companies awaiting or holding verification. Filter by status and review each compliance dossier.',
-    icon: BadgeCheck,
+    label: 'Content & Intelligence',
+    modules: [
+      {
+        id: 'products',
+        label: 'Products & Categories',
+        title: 'Products & Categories',
+        description: 'Supplier product listings and the category taxonomy they are organised under.',
+        icon: Package,
+        availability: 'placeholder',
+        planned: [
+          'Category taxonomy management',
+          'Product listings by supplier and category',
+          'Listings flagged for review',
+        ],
+      },
+      {
+        id: 'network_intel',
+        label: 'Network Intelligence',
+        title: 'Network Intelligence',
+        description: 'How suppliers and contractors connect, engage and grow across the network.',
+        icon: Network,
+        availability: 'placeholder',
+        planned: [
+          'Supplier and contractor connection graph',
+          'Engagement by emirate and category',
+          'Network growth over time',
+        ],
+      },
+      {
+        id: 'ai',
+        label: 'AI & Intelligence',
+        title: 'AI & Intelligence',
+        description: 'Oversight of SOKO AI features, their usage and their safeguards.',
+        icon: Sparkles,
+        availability: 'placeholder',
+        planned: ['SOKO AI usage overview', 'Model and safety configuration', 'AI output review queue'],
+      },
+    ],
   },
   {
-    id: 'moderation',
-    label: 'Moderation',
-    title: 'Moderation & Incident Logs',
-    description: 'Reported tenders, proposals, counterfeit claims and pricing anomalies submitted by participants.',
-    icon: AlertTriangle,
+    label: 'Commercial',
+    modules: [
+      {
+        id: 'plans',
+        label: 'Plans & Subscriptions',
+        title: 'Plans & Subscriptions',
+        description: 'Membership plans available to companies and their subscription status.',
+        icon: CreditCard,
+        availability: 'placeholder',
+        planned: ['Plan catalogue and feature tiers', 'Company subscription status', 'Plan change history'],
+      },
+    ],
   },
   {
-    id: 'escrow',
-    label: 'Sourcing & Contracts',
-    title: 'Sourcing Contracts & Escrow',
-    description: 'Milestone gating across multi-tier deliveries between developers, contractors and suppliers.',
-    icon: Briefcase,
+    label: 'Governance',
+    modules: [
+      {
+        id: 'moderation',
+        label: 'Trust & Moderation',
+        title: 'Trust & Moderation',
+        description: 'Reported profiles, listings, counterfeit claims and misleading content submitted by members.',
+        icon: AlertTriangle,
+        availability: 'demo_only',
+      },
+      {
+        id: 'audit_logs',
+        label: 'Audit & Security',
+        title: 'Audit & Security',
+        description: 'Administrative ledger of verification changes, suspensions and other admin actions.',
+        icon: ScrollText,
+        availability: 'demo_only',
+      },
+    ],
   },
   {
-    id: 'audit_logs',
-    label: 'Audit Trail',
-    title: 'System Audit Trail',
-    description: 'Administrative ledger of verification changes, sanctions and escrow authorizations.',
-    icon: ScrollText,
-  },
-  {
-    id: 'settings',
-    label: 'Settings',
-    title: 'Admin Settings',
-    description: 'Your administrator session and the data source this dashboard reads from.',
-    icon: Settings,
+    label: 'System',
+    modules: [
+      {
+        id: 'settings',
+        label: 'Platform Configuration',
+        title: 'Platform Configuration',
+        description: 'Your administrator session and the data source this panel reads from. Configuration controls are not available yet.',
+        icon: Settings,
+        availability: 'live',
+      },
+    ],
   },
 ];
+
+const ADMIN_SECTIONS: AdminModule[] = ADMIN_NAV_GROUPS.flatMap((group) => group.modules);
+const ADMIN_SECTION_GROUP: Record<AdminSection, string> = Object.fromEntries(
+  ADMIN_NAV_GROUPS.flatMap((group) => group.modules.map((m) => [m.id, group.label])),
+) as Record<AdminSection, string>;
 
 function mapLiveCompany(row: LiveCompanyRow): AdminCompany {
   const isVerified = row.verification_status === 'verified';
@@ -612,7 +762,7 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
           {!collapsed && (
             <span className="flex flex-col leading-tight min-w-0">
               <span className="font-['Outfit'] text-base font-extrabold text-white tracking-tight">SOKO</span>
-              <span className="text-[10px] font-bold uppercase tracking-widest text-amber-400">Super Admin</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-amber-400">Admin Panel</span>
             </span>
           )}
         </div>
@@ -628,45 +778,71 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
         )}
       </div>
 
-      <nav aria-label="Super Admin sections" className="flex-1 overflow-y-auto py-4 px-3">
-        <ul className="flex flex-col gap-1">
-          {ADMIN_SECTIONS.map((item) => {
-            const Icon = item.icon;
-            const isActive = section === item.id;
-            const badge = sectionBadges[item.id];
-            return (
-              <li key={item.id}>
-                <button
-                  type="button"
-                  onClick={() => goToSection(item.id)}
-                  aria-current={isActive ? 'page' : undefined}
-                  title={collapsed ? item.label : undefined}
-                  className={`w-full flex items-center gap-3 rounded-lg text-sm font-semibold transition-colors cursor-pointer ${
-                    collapsed ? 'justify-center p-2.5' : 'px-3 py-2.5'
-                  } ${isActive ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
-                >
-                  <Icon className="w-5 h-5 shrink-0" aria-hidden="true" />
-                  {collapsed ? (
-                    <span className="sr-only">{item.label}</span>
-                  ) : (
-                    <>
-                      <span className="flex-1 text-left truncate">{item.label}</span>
-                      {badge != null && badge > 0 && (
-                        <span
-                          className={`min-w-5 px-1.5 py-0.5 rounded-full text-[10px] font-bold font-mono text-center ${
-                            isActive ? 'bg-white/20 text-white' : 'bg-white/10 text-slate-300'
-                          }`}
-                        >
-                          {badge}
-                        </span>
-                      )}
-                    </>
-                  )}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+      <nav aria-label="Admin Panel sections" className="flex-1 overflow-y-auto py-3 px-3">
+        <div className="flex flex-col gap-4">
+          {ADMIN_NAV_GROUPS.map((group, groupIndex) => (
+            <div key={group.label} className="flex flex-col gap-1">
+              {collapsed ? (
+                groupIndex > 0 && <div className="mx-2 border-t border-white/10" aria-hidden="true" />
+              ) : (
+                <h2 className="px-3 pb-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                  {group.label}
+                </h2>
+              )}
+              <ul className="flex flex-col gap-0.5" aria-label={collapsed ? group.label : undefined}>
+                {group.modules.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = section === item.id;
+                  const badge = sectionBadges[item.id];
+                  const tooltip =
+                    item.availability === 'placeholder' ? `${item.label} (UI only, not connected)` : item.label;
+                  return (
+                    <li key={item.id}>
+                      <button
+                        type="button"
+                        onClick={() => goToSection(item.id)}
+                        aria-current={isActive ? 'page' : undefined}
+                        title={collapsed ? tooltip : undefined}
+                        className={`w-full flex items-center gap-3 rounded-lg text-sm font-semibold transition-colors cursor-pointer ${
+                          collapsed ? 'justify-center p-2.5' : 'px-3 py-2'
+                        } ${isActive ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
+                      >
+                        <Icon className="w-4.5 h-4.5 shrink-0" aria-hidden="true" />
+                        {collapsed ? (
+                          <span className="sr-only">{tooltip}</span>
+                        ) : (
+                          <>
+                            <span className="flex-1 text-left truncate">{item.label}</span>
+                            {item.availability === 'placeholder' ? (
+                              <span
+                                className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
+                                  isActive ? 'bg-white/20 text-white' : 'bg-white/5 text-slate-500'
+                                }`}
+                              >
+                                UI only
+                              </span>
+                            ) : (
+                              badge != null &&
+                              badge > 0 && (
+                                <span
+                                  className={`min-w-5 px-1.5 py-0.5 rounded-full text-[10px] font-bold font-mono text-center ${
+                                    isActive ? 'bg-white/20 text-white' : 'bg-white/10 text-slate-300'
+                                  }`}
+                                >
+                                  {badge}
+                                </span>
+                              )
+                            )}
+                          </>
+                        )}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
+        </div>
       </nav>
 
       <div className={`border-t border-white/10 shrink-0 flex flex-col gap-2 ${collapsed ? 'p-2 items-center' : 'p-4'}`}>
@@ -702,7 +878,7 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
   );
 
   return (
-    <div className="flex min-h-[calc(100vh-4rem)] -mb-12 bg-slate-100">
+    <div className="flex min-h-screen bg-slate-100">
       {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2 border border-slate-700 text-xs font-semibold animate-in slide-in-from-bottom-2">
@@ -726,7 +902,7 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
       )}
 
       <aside
-        className={`hidden lg:flex flex-col sticky top-16 h-[calc(100vh-4rem)] bg-slate-950 text-slate-300 shrink-0 transition-[width] duration-200 ${
+        className={`hidden lg:flex flex-col sticky top-0 h-screen bg-slate-950 text-slate-300 shrink-0 transition-[width] duration-200 ${
           sidebarCollapsed ? 'w-20' : 'w-64'
         }`}
       >
@@ -735,8 +911,8 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
 
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Top bar */}
-        <div className="sticky top-16 z-30 bg-white/95 backdrop-blur border-b border-slate-200">
-          <div className="h-14 px-4 sm:px-6 lg:px-8 flex items-center gap-3">
+        <header className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200">
+          <div className="h-16 px-4 sm:px-6 lg:px-8 flex items-center gap-3">
             <button
               type="button"
               onClick={() => setMobileNavOpen(true)}
@@ -760,6 +936,14 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
                 <li className="hidden sm:block text-slate-300" aria-hidden="true">
                   <ChevronRight className="w-4 h-4" />
                 </li>
+                {section !== 'overview' && (
+                  <>
+                    <li className="hidden md:block text-slate-500 font-medium">{ADMIN_SECTION_GROUP[section]}</li>
+                    <li className="hidden md:block text-slate-300" aria-hidden="true">
+                      <ChevronRight className="w-4 h-4" />
+                    </li>
+                  </>
+                )}
                 <li aria-current="page" className="font-bold text-slate-900 truncate">
                   {activeSection.label}
                 </li>
@@ -809,8 +993,18 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
                 <span className="text-[11px] text-slate-500">{isLive ? 'Platform admin' : 'Demo admin persona'}</span>
               </div>
             </div>
+
+            <button
+              type="button"
+              onClick={() => onNavigateToTab('feed')}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer transition-colors shrink-0"
+            >
+              <ArrowLeft className="w-4 h-4" aria-hidden="true" />
+              <span className="hidden sm:inline">Back to SOKO</span>
+              <span className="sm:hidden sr-only">Back to SOKO</span>
+            </button>
           </div>
-        </div>
+        </header>
 
         <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-12 flex flex-col gap-6">
           {/* Page header */}
@@ -867,18 +1061,7 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
       {section === 'overview' && (
       <div className="flex flex-col gap-6">
       {isLive ? (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-          <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
-            <span className="font-bold uppercase tracking-wider text-[10px]">Gross Sourcing Volume</span>
-            <span className="text-slate-600 bg-slate-100 px-2 py-0.5 rounded font-mono text-[10px] font-bold">
-              Not tracked
-            </span>
-          </div>
-          <div className="text-2xl font-black text-slate-400 tracking-tight">—</div>
-          <div className="text-[11px] text-slate-500 mt-1">Sourcing volume is not tracked in live data yet</div>
-        </div>
-
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
           <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
             <span className="font-bold uppercase tracking-wider text-[10px]">Enterprise Profiles</span>
@@ -898,29 +1081,31 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
 
         <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
           <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
-            <span className="font-bold uppercase tracking-wider text-[10px]">Milestone Escrow Hold</span>
-            <span className="text-slate-600 bg-slate-100 px-2 py-0.5 rounded font-mono text-[10px] font-bold">
-              Not tracked
+            <span className="font-bold uppercase tracking-wider text-[10px]">Verification Queue</span>
+            <span className="text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded font-mono text-[10px] font-bold">
+              {formatCount(liveStats?.verified)} Verified
             </span>
           </div>
-          <div className="text-2xl font-black text-slate-400 tracking-tight">—</div>
-          <div className="text-[11px] text-slate-500 mt-1">Escrow is not connected to live data yet</div>
+          <div className="text-2xl font-black text-slate-900 tracking-tight">
+            {formatCount(liveStats?.pendingVerifications)} Pending
+          </div>
+          <div className="text-[11px] text-slate-500 mt-1 flex items-center gap-1">
+            <Clock className="w-3.5 h-3.5 text-amber-500" />
+            <span>Companies awaiting verification review</span>
+          </div>
         </div>
 
         <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
           <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
-            <span className="font-bold uppercase tracking-wider text-[10px]">Moderation Queue</span>
+            <span className="font-bold uppercase tracking-wider text-[10px]">Trust & Moderation</span>
             <span className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold ${
               (liveStats?.openReports ?? 0) > 0 ? 'bg-amber-100 text-amber-900' : 'bg-emerald-50 text-emerald-800'
             }`}>
-              {formatCount(liveStats?.openReports)} Open reports
+              {(liveStats?.openReports ?? 0) > 0 ? 'Needs review' : 'Clear'}
             </span>
           </div>
-          <div className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-            <span>{formatCount(liveStats?.pendingVerifications)}</span>
-            <span className="text-xs font-semibold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">
-              Pending verifications
-            </span>
+          <div className="text-2xl font-black text-slate-900 tracking-tight">
+            {formatCount(liveStats?.openReports)} Open reports
           </div>
           <div className="text-[11px] text-slate-500 mt-1 flex items-center gap-1">
             <AlertCircle className="w-3.5 h-3.5 text-amber-500" />
@@ -929,25 +1114,8 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
         </div>
       </div>
       ) : (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Gross Sourcing Volume */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-          <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
-            <span className="font-bold uppercase tracking-wider text-[10px]">Gross Sourcing Volume</span>
-            <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-mono text-[10px] font-bold">
-              {stats.monthlyGrowthRate} MoM
-            </span>
-          </div>
-          <div className="text-2xl font-black text-slate-900 tracking-tight">
-            {stats.totalGrossSourcingValue}
-          </div>
-          <div className="text-[11px] text-slate-500 mt-1 flex items-center gap-1">
-            <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Across 34 active mega-contracts</span>
-          </div>
-        </div>
-
-        {/* Card 2: Company Profiles Managed */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {/* Card 1: Company Profiles Managed */}
         <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
           <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
             <span className="font-bold uppercase tracking-wider text-[10px]">Enterprise Profiles</span>
@@ -967,27 +1135,27 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
           </div>
         </div>
 
-        {/* Card 3: Active Tenders & Escrow */}
+        {/* Card 2: Verification Queue */}
         <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
           <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
-            <span className="font-bold uppercase tracking-wider text-[10px]">Milestone Escrow Hold</span>
-            <span className="text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded font-mono text-[10px] font-bold">
-              34 Live Tenders
+            <span className="font-bold uppercase tracking-wider text-[10px]">Verification Queue</span>
+            <span className="text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded font-mono text-[10px] font-bold">
+              {verifiedCount} Verified
             </span>
           </div>
-          <div className="text-2xl font-black text-indigo-900 tracking-tight">
-            {stats.activeTendersValue}
+          <div className="text-2xl font-black text-slate-900 tracking-tight">
+            {awaitingVerificationCount} Pending
           </div>
           <div className="text-[11px] text-slate-500 mt-1 flex items-center gap-1">
-            <Award className="w-3.5 h-3.5 text-indigo-600" />
-            <span>3-stage milestone gated releases</span>
+            <Clock className="w-3.5 h-3.5 text-amber-500" />
+            <span>Demo companies awaiting verification review</span>
           </div>
         </div>
 
-        {/* Card 4: Moderation & Trust Index */}
+        {/* Card 3: Trust & Moderation */}
         <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
           <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
-            <span className="font-bold uppercase tracking-wider text-[10px]">Moderation Queue</span>
+            <span className="font-bold uppercase tracking-wider text-[10px]">Trust & Moderation</span>
             <span className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold ${
               stats.reportedItemsCount > 0 ? 'bg-amber-100 text-amber-900' : 'bg-emerald-50 text-emerald-800'
             }`}>
@@ -1130,8 +1298,46 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
       </div>
       )}
 
+      {activeSection.availability === 'placeholder' && (
+        <section
+          aria-labelledby="placeholder-module-heading"
+          className="bg-white rounded-2xl border border-dashed border-slate-300 shadow-sm p-6 sm:p-10"
+        >
+          <div className="flex flex-col items-center text-center gap-3 max-w-xl mx-auto">
+            <div className="w-12 h-12 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center">
+              <Construction className="w-6 h-6" aria-hidden="true" />
+            </div>
+            <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold uppercase tracking-wider">
+              UI only · Not connected
+            </span>
+            <h3 id="placeholder-module-heading" className="text-lg font-bold text-slate-900 text-balance">
+              {activeSection.title} is not available yet
+            </h3>
+            <p className="text-sm text-slate-500 leading-relaxed text-pretty">
+              This module has no data source or admin permissions yet, so it shows no records and offers no
+              actions. Nothing here reads from or writes to the database.
+            </p>
+            {activeSection.planned && activeSection.planned.length > 0 && (
+              <div className="w-full mt-2 text-left rounded-xl bg-slate-50 border border-slate-200 p-4">
+                <h4 className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">
+                  Planned scope
+                </h4>
+                <ul className="flex flex-col gap-1.5">
+                  {activeSection.planned.map((item) => (
+                    <li key={item} className="flex items-start gap-2 text-sm text-slate-700">
+                      <ChevronRight className="w-4 h-4 mt-0.5 text-slate-400 shrink-0" aria-hidden="true" />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
       {/* Main Administrative Control Hub */}
-      {section !== 'overview' && section !== 'settings' && (
+      {section !== 'overview' && section !== 'settings' && activeSection.availability !== 'placeholder' && (
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         {/* TAB 1: COMPANY PROFILES & VERIFICATION */}
         {(section === 'companies' || section === 'verification') && (
@@ -1402,7 +1608,7 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
           </div>
         )}
 
-        {isLive && (section === 'moderation' || section === 'escrow' || section === 'audit_logs') && (
+        {isLive && activeSection.availability === 'demo_only' && (
           <div className="p-8 sm:p-12 text-center flex flex-col items-center gap-2">
             <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center">
               <Clock className="w-5 h-5" />
@@ -1511,107 +1717,6 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
                   </div>
                 </div>
               ))}
-            </div>
-          </div>
-        )}
-
-        {/* TAB 3: CONTRACT ESCROW & SOURCING OVERSIGHT */}
-        {section === 'escrow' && !isLive && (
-          <div className="p-4 sm:p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">Tripartite Sourcing Contracts & Milestone Escrow</h3>
-                <p className="text-xs text-slate-500">
-                  Real-time milestone gating overseeing multi-tier deliveries between Developers, General Contractors, and Mills.
-                </p>
-              </div>
-              <span className="text-xs font-mono font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200">
-                AED 68.2M Under Escrow
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Contract 1 */}
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-black text-slate-900">
-                    Package #TR-994: 850 MT Structural Steel
-                  </span>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
-                    Phase 2 Active
-                  </span>
-                </div>
-                <div className="text-xs text-slate-600 space-y-1">
-                  <div>Buyer: <strong>Vance Infrastructure Group UAE</strong></div>
-                  <div>Supplier: <strong>Apex Industrial Castings & Alloys</strong></div>
-                  <div>GC: <strong>Apex Industrial Mechanical GC</strong></div>
-                </div>
-                {/* Milestone progress bar */}
-                <div className="space-y-1 text-xs">
-                  <div className="flex justify-between text-[11px] font-medium text-slate-600">
-                    <span>Milestone 2/3: Bill of Lading Verified</span>
-                    <span className="font-bold text-blue-700">65% Capital Released</span>
-                  </div>
-                  <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
-                    <div className="h-full bg-blue-600 rounded-full" style={{ width: '65%' }} />
-                  </div>
-                </div>
-                <div className="pt-2 border-t border-slate-200 flex justify-end gap-2">
-                  <button
-                    onClick={() => showToast('Escrow inspection report downloaded.')}
-                    className="px-3 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded text-xs font-semibold cursor-pointer"
-                  >
-                    View FAT Certificate
-                  </button>
-                  <button
-                    onClick={() => showToast('Super Admin approved milestone 3 release.')}
-                    className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold cursor-pointer"
-                  >
-                    Release Next Gate ($420K)
-                  </button>
-                </div>
-              </div>
-
-              {/* Contract 2 */}
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-black text-slate-900">
-                    Package #MEP-12: Tunnel Chiller & Substation
-                  </span>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-800">
-                    Phase 1 Pre-Fab
-                  </span>
-                </div>
-                <div className="text-xs text-slate-600 space-y-1">
-                  <div>Buyer: <strong>Falcon Heavy Civil Contracting LLC</strong></div>
-                  <div>Supplier: <strong>Hyperion Modular Substations Ltd</strong></div>
-                  <div>GC: <strong>Emirates Turnkey EPC Contractors</strong></div>
-                </div>
-                {/* Milestone progress bar */}
-                <div className="space-y-1 text-xs">
-                  <div className="flex justify-between text-[11px] font-medium text-slate-600">
-                    <span>Milestone 1/3: Factory Acceptance Live Stream</span>
-                    <span className="font-bold text-blue-700">25% Capital Released</span>
-                  </div>
-                  <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
-                    <div className="h-full bg-blue-600 rounded-full" style={{ width: '25%' }} />
-                  </div>
-                </div>
-                <div className="pt-2 border-t border-slate-200 flex justify-end gap-2">
-                  <button
-                    onClick={() => showToast('Escrow inspection report downloaded.')}
-                    className="px-3 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded text-xs font-semibold cursor-pointer"
-                  >
-                    Audit Telemetry
-                  </button>
-                  <button
-                    onClick={() => showToast('Super Admin released pre-fab milestone.')}
-                    className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold cursor-pointer"
-                  >
-                    Authorize FAT Sign-Off
-                  </button>
-                </div>
-              </div>
             </div>
           </div>
         )}
