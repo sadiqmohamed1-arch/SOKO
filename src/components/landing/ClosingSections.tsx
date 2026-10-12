@@ -86,7 +86,7 @@ export const PublicFooter: React.FC<PublicFooterProps> = ({ onLogin, onRegister,
         <nav aria-label="Company">
           <h2 className="text-sm font-semibold text-soko-ink">Company</h2>
           <ul className="mt-3 flex flex-col gap-2 text-sm">
-            <li><Pending label="Contact" /></li>
+            <li><a href="#contact" className={linkClass}>Contact Us</a></li>
             <li><Pending label="Privacy Policy" /></li>
             <li><Pending label="Terms of Service" /></li>
           </ul>

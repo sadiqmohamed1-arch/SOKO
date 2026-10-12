@@ -16,6 +16,7 @@ const LINKS = [
   { label: 'Platform', href: '#platform' },
   { label: 'Pricing', href: '#pricing' },
   { label: 'About', href: '#about' },
+  { label: 'Contact Us', href: '#contact' },
 ];
 
 const linkClass = 'rounded-md px-3 py-2 text-sm font-medium text-soko-muted transition-colors hover:text-soko-ink';

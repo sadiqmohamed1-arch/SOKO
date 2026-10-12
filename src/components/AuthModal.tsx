@@ -30,6 +30,35 @@ const primaryBtn =
 const linkBtn = 'font-semibold text-soko-blue hover:underline cursor-pointer';
 
 const isEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
+const USERNAME_RE = /^[a-z0-9](?:[a-z0-9._]{1,28})[a-z0-9]$/;
+
+const LinkedInMark: React.FC = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4" fill="currentColor">
+    <path d="M20.45 20.45h-3.56v-5.57c0-1.33-.02-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.35V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13ZM7.12 20.45H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z" />
+  </svg>
+);
+
+const LinkedInOption: React.FC<{ mode: 'login' | 'signup' }> = ({ mode }) => (
+  <div className="flex flex-col gap-3">
+    <div
+      role="img"
+      aria-label={`${mode === 'login' ? 'Sign in' : 'Continue'} with LinkedIn — coming soon, not yet available`}
+      className="relative flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-lg border border-soko-line bg-soko-mist px-4 py-2.5 text-sm font-semibold text-soko-muted"
+    >
+      <LinkedInMark />
+      Continue with LinkedIn
+      <span className="rounded bg-white px-1.5 py-0.5 text-[10px] font-semibold text-soko-muted">Coming soon</span>
+    </div>
+    {mode === 'signup' && (
+      <p className="-mt-1 text-xs leading-relaxed text-soko-muted">
+        Once connected, you&apos;ll be able to import your name and photo from LinkedIn and review them before finishing sign-up.
+      </p>
+    )}
+    <div className="flex items-center gap-3 text-xs text-soko-muted">
+      <span className="h-px flex-1 bg-soko-line" />or use email<span className="h-px flex-1 bg-soko-line" />
+    </div>
+  </div>
+);
 
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMode = 'login', onSuccess }) => {
   const { login, register } = useAuth();
@@ -37,6 +66,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [username, setUsername] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -96,6 +126,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
     if (name.trim().length < 2) next.name = 'Enter your full name.';
     if (!isEmail(email)) next.email = 'Enter a valid email address.';
     if (password.length < 8) next.password = 'Use at least 8 characters.';
+    if (username && !USERNAME_RE.test(username)) next.username = 'Use 3–30 lowercase letters, numbers, dots or underscores.';
     if (!acceptedTerms) next.terms = 'Please accept the terms to continue.';
     setErrors(next);
     setFormError('');
@@ -149,7 +180,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
 
   const emailField = (
     <div>
-      <label htmlFor={`${titleId}-email`} className={labelCls}>Email</label>
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <label htmlFor={`${titleId}-email`} className="text-sm font-medium text-soko-ink">{view === 'signup' ? 'Professional or company email' : 'Email'}</label>
+        {view === 'signup' && <span className="rounded bg-soko-mist px-1.5 py-0.5 text-[10px] font-medium text-soko-muted">Not verified</span>}
+      </div>
       <input
         id={`${titleId}-email`}
         type="email"
@@ -161,7 +195,40 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         aria-describedby={errors.email ? `${titleId}-email-err` : undefined}
         className={inputCls}
       />
-      {fieldError('email')}
+      {errors.email ? fieldError('email') : view === 'signup' ? (
+        <p className="mt-1.5 text-xs text-soko-muted">Company email verification is coming soon. Companies will be able to invite you through a verified work email.</p>
+      ) : null}
+    </div>
+  );
+
+  const usernameField = (
+    <div>
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <label htmlFor={`${titleId}-username`} className="text-sm font-medium text-soko-ink">
+          SOKO username <span className="font-normal text-soko-muted">(optional)</span>
+        </label>
+        <span className="rounded bg-soko-mist px-1.5 py-0.5 text-[10px] font-medium text-soko-muted">Preview</span>
+      </div>
+      <div className="relative">
+        <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center text-sm text-soko-muted">@</span>
+        <input
+          id={`${titleId}-username`}
+          value={username}
+          onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/\s/g, ''))}
+          autoComplete="username"
+          placeholder="ahmed.khan"
+          maxLength={30}
+          aria-invalid={!!errors.username}
+          aria-describedby={`${titleId}-username-help`}
+          className={`${inputCls} pl-8`}
+        />
+      </div>
+      <p id={`${titleId}-username-help`} className={`mt-1.5 text-xs ${errors.username ? 'text-red-600' : 'text-soko-muted'}`}>
+        {errors.username ||
+          (username && USERNAME_RE.test(username)
+            ? `Format looks good. Availability can’t be checked yet, so @${username} isn’t reserved — you’ll claim your username when usernames launch.`
+            : 'Your unique handle, like @ahmed.khan. Username reservation and availability checks are coming soon.')}
+      </p>
     </div>
   );
 
@@ -229,6 +296,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
 
           {view === 'login' && (
             <form onSubmit={handleLogin} noValidate className="flex flex-col gap-4">
+              <LinkedInOption mode="login" />
               {emailField}
               {passwordField('current-password')}
               <button type="submit" disabled={submitting} className={`${primaryBtn} mt-1`}>
@@ -242,6 +310,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
 
           {view === 'signup' && (
             <form onSubmit={handleSignup} noValidate className="flex flex-col gap-4">
+              <LinkedInOption mode="signup" />
               <div>
                 <label htmlFor={`${titleId}-name`} className={labelCls}>Full name</label>
                 <input
@@ -256,8 +325,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                 />
                 {fieldError('name')}
               </div>
+              {usernameField}
               {emailField}
               {passwordField('new-password', 'At least 8 characters.')}
+              <p className="rounded-lg bg-soko-mist px-3.5 py-2.5 text-xs leading-relaxed text-soko-muted">
+                This is your personal SOKO identity, with a permanent Personal ID that stays yours. Companies can invite you, but you choose whether to join, and you can belong to more than one company.
+              </p>
               <div>
                 <label className="flex items-start gap-2.5 text-sm leading-relaxed text-soko-muted">
                   <input
