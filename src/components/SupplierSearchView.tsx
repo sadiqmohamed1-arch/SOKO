@@ -47,8 +47,12 @@ import {
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import { SupplierItem, UserProfile } from '../types';
+
+/** Neutralize spreadsheet formula injection in user-/supplier-controlled text. */
+const sanitizeExcelText = (value: string): string =>
+  /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
 
 // Authentic WhatsApp SVG Icon
 const WhatsAppIcon: React.FC<{ className?: string }> = ({ className = 'w-4 h-4' }) => (
@@ -517,82 +521,87 @@ export const SupplierSearchView: React.FC<SupplierSearchViewProps> = ({
     return filteredSuppliers;
   };
 
-  // Download as Excel (.xlsx)
-  const handleDownloadExcel = () => {
+  // Download as Excel (.xlsx) via ExcelJS (replaces vulnerable SheetJS xlsx@0.18.5)
+  const handleDownloadExcel = async () => {
     const targetSuppliers = getSuppliersToExport();
     if (targetSuppliers.length === 0) return;
 
-    const summaryRows = [
-      ['SOKO B2B CONSTRUCTION NETWORK - VERIFIED SUPPLIERS DIRECTORY'],
-      [`Date Range: ${dateRangeLabel}`],
-      [`Generated On: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`],
-      [`Total Selected Suppliers: ${targetSuppliers.length}`],
-      [`Total Directory Profile Views: ${totalMonthlyVisits.toLocaleString()}`],
-      [],
-    ];
+    try {
+      const summaryRows: (string | number)[][] = [
+        ['SOKO B2B CONSTRUCTION NETWORK - VERIFIED SUPPLIERS DIRECTORY'],
+        [`Date Range: ${dateRangeLabel}`],
+        [`Generated On: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`],
+        [`Total Selected Suppliers: ${targetSuppliers.length}`],
+        [`Total Directory Profile Views: ${totalMonthlyVisits.toLocaleString()}`],
+        [],
+      ];
 
-    const headers = [
-      '# Rank',
-      'Company Name',
-      'Category',
-      'Tier Level',
-      'Location',
-      `Profile Views (${dateRange === 'this_month' ? 'Sep 2026 MTD' : dateRangeLabel})`,
-      'Rating (out of 5)',
-      'Verified Reviews',
-      'On-Time Delivery Rate (%)',
-      'Completed Contracts',
-      'ISO Certifications',
-      'Contact Phone',
-      'Capabilities',
-      'Verification Status',
-    ];
+      const headers = [
+        '# Rank',
+        'Company Name',
+        'Category',
+        'Tier Level',
+        'Location',
+        `Profile Views (${dateRange === 'this_month' ? 'Sep 2026 MTD' : dateRangeLabel})`,
+        'Rating (out of 5)',
+        'Verified Reviews',
+        'On-Time Delivery Rate (%)',
+        'Completed Contracts',
+        'ISO Certifications',
+        'Contact Phone',
+        'Capabilities',
+        'Verification Status',
+      ];
 
-    const dataRows = targetSuppliers.map((s, idx) => [
-      idx + 1,
-      s.company,
-      s.category,
-      s.tier,
-      s.location,
-      getSupplierVisits(s),
-      s.rating,
-      s.reviewCount,
-      `${s.otdRate}%`,
-      s.completedContracts,
-      s.isoCertifications.join(', '),
-      s.phone || '+971 4 881 2290',
-      s.capabilities.join(', '),
-      s.verified ? 'Verified & Audited' : 'Standard Registered',
-    ]);
+      const dataRows = targetSuppliers.map((s, idx) => [
+        idx + 1,
+        sanitizeExcelText(s.company),
+        sanitizeExcelText(s.category),
+        sanitizeExcelText(String(s.tier)),
+        sanitizeExcelText(s.location),
+        getSupplierVisits(s),
+        s.rating,
+        s.reviewCount,
+        sanitizeExcelText(`${s.otdRate}%`),
+        s.completedContracts,
+        sanitizeExcelText(s.isoCertifications.join(', ')),
+        sanitizeExcelText(s.phone || '+971 4 881 2290'),
+        sanitizeExcelText(s.capabilities.join(', ')),
+        sanitizeExcelText(s.verified ? 'Verified & Audited' : 'Standard Registered'),
+      ]);
 
-    const allSheetData = [...summaryRows, headers, ...dataRows];
-    const worksheet = XLSX.utils.aoa_to_sheet(allSheetData);
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Suppliers Directory');
 
-    worksheet['!cols'] = [
-      { wch: 8 },
-      { wch: 34 },
-      { wch: 26 },
-      { wch: 18 },
-      { wch: 22 },
-      { wch: 18 },
-      { wch: 10 },
-      { wch: 10 },
-      { wch: 14 },
-      { wch: 14 },
-      { wch: 24 },
-      { wch: 20 },
-      { wch: 38 },
-      { wch: 20 },
-    ];
+      for (const row of [...summaryRows, headers, ...dataRows]) {
+        worksheet.addRow(row);
+      }
 
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Suppliers Directory');
+      const colWidths = [8, 34, 26, 18, 22, 18, 10, 10, 14, 14, 24, 20, 38, 20];
+      colWidths.forEach((width, i) => {
+        worksheet.getColumn(i + 1).width = width;
+      });
 
-    const filename = `soko_suppliers_${dateRange}_${new Date().toISOString().slice(0, 10)}.xlsx`;
-    XLSX.writeFile(workbook, filename);
+      const filename = `soko_suppliers_${dateRange}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
 
-    setExportFeedback(`Successfully downloaded Excel file (${targetSuppliers.length} suppliers)`);
-    setTimeout(() => setExportFeedback(null), 4000);
+      setExportFeedback(`Successfully downloaded Excel file (${targetSuppliers.length} suppliers)`);
+      setTimeout(() => setExportFeedback(null), 4000);
+    } catch {
+      setExportFeedback('Failed to download Excel file. Please try again.');
+      setTimeout(() => setExportFeedback(null), 4000);
+    }
   };
 
   // Download as PDF (.pdf)
