@@ -1,15 +1,17 @@
 import React, { useId, useState } from 'react';
 import { ArrowLeft, CheckCircle2, Info, Loader2 } from 'lucide-react';
+import { CONTACT_SUBMISSIONS_ENABLED } from '../../lib/contactSubmissions';
+import { getSupabaseClient, isSupabaseConfigured } from '../../lib/supabaseClient';
 
 const USER_TYPES = ['Supplier', 'Buyer', 'Contractor', 'Other'];
 const CATEGORIES = ['General Inquiry', 'Supplier Support', 'Buyer Support', 'Contractor Support', 'Partnership', 'Technical Support', 'Other'];
 
-// Flip to true once the inquiry submission service and recipient are configured on the backend.
-const SUBMISSIONS_ENABLED = false;
+// Stays false until staging sets VITE_CONTACT_SUBMISSIONS_ENABLED=true after the backend is verified.
+const SUBMISSIONS_ENABLED = CONTACT_SUBMISSIONS_ENABLED;
 
 type Field = 'fullName' | 'company' | 'email' | 'phone' | 'userType' | 'category' | 'subject' | 'message';
 type Values = Record<Field, string>;
-type Status = 'idle' | 'submitting' | 'sent';
+type Status = 'idle' | 'submitting' | 'sent' | 'error';
 
 const EMPTY: Values = { fullName: '', company: '', email: '', phone: '', userType: '', category: '', subject: '', message: '' };
 
@@ -34,24 +36,63 @@ export const ContactPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [errors, setErrors] = useState<Partial<Record<Field, string>>>({});
   const [status, setStatus] = useState<Status>('idle');
   const [checked, setChecked] = useState(false);
+  const [honeypot, setHoneypot] = useState('');
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [reference, setReference] = useState<string | null>(null);
 
   const set = (k: Field) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setValues((v) => ({ ...v, [k]: e.target.value }));
     if (errors[k]) setErrors((er) => ({ ...er, [k]: undefined }));
   };
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const next = validate(values);
     setErrors(next);
     setChecked(true);
+    setSubmitError(null);
     const firstInvalid = Object.keys(next)[0];
     if (firstInvalid) {
       document.getElementById(`${id}-${firstInvalid}`)?.focus();
       return;
     }
     if (!SUBMISSIONS_ENABLED) return;
+    if (!isSupabaseConfigured) {
+      setStatus('error');
+      setSubmitError('Contact submissions are not configured in this environment.');
+      return;
+    }
     setStatus('submitting');
+    try {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase.rpc('submit_contact_inquiry', {
+        p_full_name: values.fullName.trim(),
+        p_company: values.company.trim(),
+        p_email: values.email.trim(),
+        p_phone: values.phone.trim(),
+        p_user_type: values.userType,
+        p_category: values.category,
+        p_subject: values.subject.trim(),
+        p_message: values.message.trim(),
+        p_honeypot: honeypot,
+      });
+      if (error) throw error;
+      const payload = data && typeof data === 'object' ? (data as { ok?: boolean; ignored?: boolean; reference?: string }) : null;
+      if (payload?.ignored) {
+        setStatus('sent');
+        setReference(null);
+        return;
+      }
+      if (!payload?.ok) throw new Error('Your message could not be sent. Please try again.');
+      setReference(typeof payload.reference === 'string' ? payload.reference : null);
+      setStatus('sent');
+    } catch (err) {
+      const message = err && typeof err === 'object' && 'message' in err ? String((err as { message: unknown }).message) : '';
+      setStatus('error');
+      setSubmitError(message.includes('inquiry limit reached')
+        ? 'Too many messages were sent recently. Please try again later.'
+        : 'Your message could not be sent. Please try again.');
+    }
   };
 
   const field = (k: Field, label: string, required: boolean, control: React.ReactNode, hint?: string) => (
@@ -100,7 +141,13 @@ export const ContactPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           </div>
         </div>
 
-        <form onSubmit={submit} noValidate className="flex flex-col gap-5 rounded-3xl border border-soko-line bg-white p-6 sm:p-8">
+        <form onSubmit={(e) => void submit(e)} noValidate className="relative flex flex-col gap-5 rounded-3xl border border-soko-line bg-white p-6 sm:p-8">
+          <div className="absolute -left-[10000px] h-0 w-0 overflow-hidden" aria-hidden="true">
+            <label>
+              Website
+              <input tabIndex={-1} autoComplete="off" value={honeypot} onChange={(e) => setHoneypot(e.target.value)} />
+            </label>
+          </div>
           <div className="grid gap-5 sm:grid-cols-2">
             {field('fullName', 'Full name', true, <input {...a11y('fullName', true)} value={values.fullName} onChange={set('fullName')} autoComplete="name" placeholder="Your full name" className={inputCls} />)}
             {field('company', 'Company name', false, <input {...a11y('company', false)} value={values.company} onChange={set('company')} autoComplete="organization" placeholder="Company" className={inputCls} />)}
@@ -135,8 +182,14 @@ export const ContactPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
           {status === 'sent' && (
             <p role="status" className="flex items-center gap-2 rounded-lg bg-soko-mist px-4 py-3 text-sm font-medium text-soko-ink">
-              <CheckCircle2 className="h-4 w-4 text-soko-blue" aria-hidden="true" />Thank you — your message has been sent.
+              <CheckCircle2 className="h-4 w-4 text-soko-blue" aria-hidden="true" />
+              {reference
+                ? `Thank you — your message has been sent. Reference ${reference}.`
+                : 'Thank you — your message has been sent.'}
             </p>
+          )}
+          {status === 'error' && submitError && (
+            <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{submitError}</p>
           )}
 
           {!SUBMISSIONS_ENABLED && allValid && (

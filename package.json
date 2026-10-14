@@ -9,7 +9,11 @@
     "start": "node server.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test:contact-csv": "tsx src/lib/csvExport.test.ts",
+    "test:contact-migration": "node scripts/check-contact-migration.mjs",
+    "guard:staging": "node scripts/require-staging-supabase.mjs",
+    "test:contact": "npm run test:contact-csv && npm run test:contact-migration"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

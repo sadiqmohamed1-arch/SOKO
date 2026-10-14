@@ -22,6 +22,7 @@ Apply strictly in filename order. Each file depends on the ones before it.
 | 10 | `migrations/20261011001000_market_hub.sql` | opportunities, interests, saved opportunities, campaigns, recipients, responses, events, buyer preferences, supplier mutes |
 | 11 | `migrations/20261011001100_intelligence.sql` | company profile views, `supplier_metrics_daily`, nightly aggregation function |
 | 12 | `migrations/20261011001200_admin_moderation.sql` | content reports, platform-admin moderation and stats RPCs |
+| 13 | `migrations/20261013000100_contact_inquiries.sql` | Contact Us inquiries, notes, submit/admin RPCs, metadata-only audit, admin notifications |
 
 Recommended apply procedure (when approved):
 
@@ -35,7 +36,7 @@ Recommended apply procedure (when approved):
 
 ## Rollback and recovery
 
-- Each migration has a matching `rollback/<name>.down.sql`. Roll back **in reverse order** (12 → 01),
+- Each migration has a matching `rollback/<name>.down.sql`. Roll back **in reverse order** (13 → 01),
   only as far as needed.
 - Rollbacks **destroy data** in the tables they drop. Each file header says what is lost. Export first.
 - `07` will not delete Storage buckets that still contain files. Empty them through the Storage API
@@ -73,11 +74,30 @@ Current allowlist: 41 public RPCs for `authenticated`, 25 private RLS helpers fo
 
 ## Security tests
 
+`tests/contact_inquiry_tests.sql` covers Contact Us submit/admin/RLS/audit/rate-limit checks in one
+transaction that always `ROLLBACK`. Run it only against staging, after migration 13.
+
 `tests/security_tests.sql` runs 122 checks (unauthorised attempts plus positive controls) inside one
 transaction that always ends in `ROLLBACK`, so its fixture users and records never persist. It
 switches to the `authenticated` / `anon` roles and sets `request.jwt.claims` to impersonate users.
 
 Run it only against a staging database or Supabase branch, never production.
+
+## Staging apply (Contact Us and later modules)
+
+Do not paste SQL in the dashboard unless a guard has failed closed. Local helper:
+
+```
+node scripts/require-staging-supabase.mjs
+```
+
+That script never opens a network connection. It allows only project `iqzvlsgwphmjuornlbmj`, rejects production `rzcsdilzpqvwjmzdxwyf`, and rejects Vercel project `soko`. After you approve:
+
+```
+node scripts/require-staging-supabase.mjs --approve-staging-migration
+```
+
+Then, separately and only when linked to staging, inspect `supabase migration list` so 01–12 are not re-applied, and push pending migrations. Public form submits stay off until `VITE_CONTACT_SUBMISSIONS_ENABLED=true` is set on **soko-staging** after that verification. Production Vercel `soko` must not receive that flag from this work.
 
 ### Static verification performed
 

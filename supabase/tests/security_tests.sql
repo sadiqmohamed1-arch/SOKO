@@ -1168,7 +1168,9 @@ select soko_test.expect_count('AU: no audit row is missing its entity id',
   $$select count(*) from public.audit_log a
     where a.entity in (select table_name from private.audit_config) and a.entity_id is null$$, 0);
 select soko_test.expect_count('AU: every company-owned audit row names its company',
-  $$select count(*) from public.audit_log where entity <> 'platform_admins' and company_id is null$$, 0);
+  $$select count(*) from public.audit_log
+     where entity not in ('platform_admins', 'contact_inquiries', 'contact_inquiry_notes')
+       and company_id is null$$, 0);
 select soko_test.expect_count('AU: a visit is audited once for each party',
   format($$select count(distinct company_id) from public.audit_log
     where entity = 'visits' and entity_id = %L and action = 'insert'$$, soko_test.id('visit')), 2);
