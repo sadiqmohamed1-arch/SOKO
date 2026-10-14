@@ -104,27 +104,27 @@ const NetworkVisual: React.FC = () => {
                 initial={reduce ? false : { opacity: 0, scale: 0.85, y: 8 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 transition={{ duration: 0.45, delay: 0.1 + i * 0.08, ease: [0.22, 1, 0.36, 1] }}
-                className={`flex w-28 items-center gap-2 rounded-xl border bg-white p-2 text-left shadow-sm transition-[border-color,box-shadow,transform] duration-300 hover:-translate-y-0.5 sm:w-44 sm:gap-2.5 sm:p-2.5 ${
+                className={`flex w-28 items-center gap-2 rounded-xl border bg-white p-2 text-left shadow-sm transition-[border-color,box-shadow,transform] duration-300 hover:-translate-y-0.5 sm:w-44 sm:gap-2.5 sm:p-2.5 xl:w-48 2xl:w-52 2xl:gap-3 2xl:rounded-2xl 2xl:p-3 ${
                   on ? 'border-soko-blue shadow-[0_8px_24px_-8px_rgba(37,99,235,0.45)]' : 'border-soko-line'
                 }`}
               >
                 <span
-                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors duration-300 sm:h-9 sm:w-9 ${
+                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors duration-300 sm:h-9 sm:w-9 2xl:h-11 2xl:w-11 2xl:rounded-xl ${
                     on ? 'bg-soko-blue text-white' : 'bg-soko-mist text-soko-ink'
                   }`}
                 >
-                  <Icon className="h-4 w-4" aria-hidden="true" />
+                  <Icon className="h-4 w-4 2xl:h-5 2xl:w-5" aria-hidden="true" />
                 </span>
                 <span className="min-w-0">
-                  <span className="block text-[10px] font-semibold uppercase tracking-wider text-soko-muted sm:text-[11px]">{n.kind}</span>
-                  <span className="block truncate text-xs font-semibold text-soko-ink sm:text-sm">{n.label}</span>
+                  <span className="block text-[10px] font-semibold uppercase tracking-wider text-soko-muted sm:text-[11px] 2xl:text-xs">{n.kind}</span>
+                  <span className="block truncate text-xs font-semibold text-soko-ink sm:text-sm 2xl:text-base">{n.label}</span>
                 </span>
               </motion.button>
             </div>
           );
         })}
       </div>
-      <figcaption className="mt-3 flex items-center justify-between gap-3 text-xs text-soko-muted sm:text-sm">
+      <figcaption className="mt-3 flex items-center justify-between gap-3 text-xs text-soko-muted sm:text-sm xl:mt-4">
         <span className="flex min-w-0 items-center gap-2">
           <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-soko-blue" aria-hidden="true" />
           <span className="truncate">{caption}</span>
@@ -150,35 +150,35 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onExplore, onJoin }) =
 
   return (
     <section id="top" aria-labelledby="hero-heading" className="relative overflow-hidden">
-      <div className="mx-auto grid max-w-7xl items-center gap-10 px-5 py-10 lg:grid-cols-[1fr_1.05fr] lg:gap-14 lg:px-8 lg:py-14">
+      <div className="mx-auto grid max-w-7xl items-center gap-10 px-5 py-10 lg:grid-cols-[1fr_1.1fr] lg:gap-12 lg:px-8 lg:py-12 xl:max-w-[92rem] xl:gap-16 xl:px-10">
         <div>
-          <motion.p {...enter(0)} className="inline-flex items-center gap-2 rounded-full border border-soko-line bg-white px-3 py-1 text-xs font-medium text-soko-muted">
+          <motion.p {...enter(0)} className="inline-flex items-center gap-2 rounded-full border border-soko-line bg-white px-3 py-1 text-xs font-medium text-soko-muted 2xl:px-4 2xl:py-1.5 2xl:text-sm">
             <span className="h-1.5 w-1.5 rounded-full bg-soko-blue" aria-hidden="true" />
             Built in the UAE. Designed for the global construction industry.
           </motion.p>
           <motion.h1
             {...enter(0.06)}
             id="hero-heading"
-            className="mt-5 font-[Outfit] text-4xl font-bold leading-[1.05] tracking-tight text-soko-ink text-balance sm:text-5xl lg:text-6xl"
+            className="mt-5 font-[Outfit] text-4xl font-bold leading-[1.05] tracking-tight text-soko-ink text-balance sm:text-5xl lg:text-6xl 2xl:mt-6 2xl:text-7xl"
           >
             Your Construction Network. <span className="text-soko-blue">Finally Connected.</span>
           </motion.h1>
-          <motion.p {...enter(0.12)} className="mt-5 max-w-xl text-lg leading-relaxed text-soko-muted text-pretty">
+          <motion.p {...enter(0.12)} className="mt-5 max-w-xl text-lg leading-relaxed text-soko-muted text-pretty 2xl:mt-6 2xl:max-w-2xl 2xl:text-xl">
             Still managing suppliers, contacts and products across spreadsheets, messages and disconnected systems? Meet SOKO — one intelligent network for the people and businesses that build.
           </motion.p>
-          <motion.div {...enter(0.18)} className="mt-8 flex flex-col gap-3 sm:flex-row">
+          <motion.div {...enter(0.18)} className="mt-8 flex flex-col gap-3 sm:flex-row 2xl:mt-10 2xl:gap-4">
             <button
               type="button"
               onClick={onExplore}
-              className="group inline-flex items-center justify-center gap-2 rounded-lg bg-soko-blue px-6 py-3.5 font-semibold text-white shadow-[0_10px_30px_-10px_rgba(37,99,235,0.7)] transition-all hover:-translate-y-0.5 hover:bg-soko-blue/90"
+              className="group inline-flex items-center justify-center gap-2 rounded-lg bg-soko-blue px-6 py-3.5 font-semibold text-white shadow-[0_10px_30px_-10px_rgba(37,99,235,0.7)] transition-all hover:-translate-y-0.5 hover:bg-soko-blue/90 2xl:rounded-xl 2xl:px-8 2xl:py-4 2xl:text-lg"
             >
               Explore SOKO Free
-              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5 2xl:h-5 2xl:w-5" aria-hidden="true" />
             </button>
             <button
               type="button"
               onClick={onJoin}
-              className="inline-flex items-center justify-center rounded-lg border border-soko-line bg-white px-6 py-3.5 font-semibold text-soko-ink transition-all hover:-translate-y-0.5 hover:border-soko-ink"
+              className="inline-flex items-center justify-center rounded-lg border border-soko-line bg-white px-6 py-3.5 font-semibold text-soko-ink transition-all hover:-translate-y-0.5 hover:border-soko-ink 2xl:rounded-xl 2xl:px-8 2xl:py-4 2xl:text-lg"
             >
               Create Your SOKO Account
             </button>
