@@ -137,7 +137,8 @@ type AdminSection =
   | 'contact_inbox'
   | 'settings';
 
-// live: reads authorized Supabase data in live mode. demo_only: demo records in demo mode, not yet connected live.
+// live: connected (or live-only) module — always listed for demo and live admins; data loads only when isLive.
+// demo_only: demo records in demo mode; hidden from the live sidebar so they are never mistaken for production.
 // placeholder: UI-only shell with no data and no actions until its data model and permissions exist.
 type ModuleAvailability = 'live' | 'demo_only' | 'placeholder';
 
@@ -149,6 +150,12 @@ interface AdminModule {
   icon: LucideIcon;
   availability: ModuleAvailability;
   planned?: string[];
+}
+
+/** Sidebar rules: Contact Inbox and other live modules stay visible in both modes; demo_only only in demo. */
+function isAdminNavModuleVisible(module: AdminModule, isLive: boolean): boolean {
+  if (module.availability === 'demo_only') return !isLive;
+  return true;
 }
 
 const ADMIN_NAV_GROUPS: { label: string; modules: AdminModule[] }[] = [
@@ -519,6 +526,12 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
     fetchAdminData();
   }, [isLive]);
 
+  // Drop demo-only sections when entering live mode so the sidebar and content stay aligned.
+  useEffect(() => {
+    const active = ADMIN_SECTIONS.find((m) => m.id === section);
+    if (active && !isAdminNavModuleVisible(active, isLive)) setSection('overview');
+  }, [isLive, section]);
+
   useEffect(() => {
     if (!mobileNavOpen) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -814,7 +827,10 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
 
       <nav aria-label="Admin Panel sections" className="flex-1 overflow-y-auto py-3 px-3">
         <div className="flex flex-col gap-4">
-          {ADMIN_NAV_GROUPS.map((group, groupIndex) => (
+          {ADMIN_NAV_GROUPS.map((group, groupIndex) => {
+            const visibleModules = group.modules.filter((item) => isAdminNavModuleVisible(item, isLive));
+            if (visibleModules.length === 0) return null;
+            return (
             <div key={group.label} className="flex flex-col gap-1">
               {collapsed ? (
                 groupIndex > 0 && <div className="mx-2 border-t border-white/10" aria-hidden="true" />
@@ -824,7 +840,7 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
                 </h2>
               )}
               <ul className="flex flex-col gap-0.5" aria-label={collapsed ? group.label : undefined}>
-                {group.modules.map((item) => {
+                {visibleModules.map((item) => {
                   const Icon = item.icon;
                   const isActive = section === item.id;
                   const badge = sectionBadges[item.id];
@@ -875,7 +891,8 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
                 })}
               </ul>
             </div>
-          ))}
+            );
+          })}
         </div>
       </nav>
 
@@ -1323,6 +1340,17 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
                 tone: 'text-rose-700 bg-rose-50',
                 onClick: () => goToSection('companies', 'suspended'),
               },
+              ...(isLive
+                ? [
+                    {
+                      label: 'Open contact inquiries',
+                      value: liveStats?.openContactInquiries ?? null,
+                      icon: Inbox,
+                      tone: 'text-sky-700 bg-sky-50',
+                      onClick: () => goToSection('contact_inbox'),
+                    },
+                  ]
+                : []),
               {
                 label: isLive ? 'Open moderation reports' : 'Pending moderation cases',
                 value: moderationCount,
@@ -1970,8 +1998,11 @@ const SuperAdminRestrictedGate: React.FC<{
 );
 
 export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = (props) => {
-  const { user, refreshAccess } = useAuth();
-  const isAdmin = props.currentUser.role === 'admin' || user?.role === 'admin';
+  const { user, refreshAccess, isAuthenticated, isPlatformAdmin } = useAuth();
+  // Demo persona OR a signed-in platform_admins row — never invent a Zackary / demo identity for live sessions.
+  const isDemoAdmin = Boolean(props.isDemo) && (props.currentUser.role === 'admin' || user?.role === 'admin');
+  const isLiveAdmin = isAuthenticated && isPlatformAdmin;
+  const canEnterAdmin = isDemoAdmin || isLiveAdmin;
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Platform admin is granted only in public.platform_admins; this re-reads it for the current session.
@@ -1981,7 +2012,7 @@ export const SuperAdminPortal: React.FC<SuperAdminPortalProps> = (props) => {
     setIsRefreshing(false);
   };
 
-  if (!isAdmin) {
+  if (!canEnterAdmin) {
     return (
       <SuperAdminRestrictedGate
         onLogin={handleQuickAdminLogin}
