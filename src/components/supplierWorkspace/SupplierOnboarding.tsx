@@ -1,10 +1,21 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { ArrowLeft, ArrowRight, Building2, Check, CheckCircle2, Copy, MailCheck, Search, ShieldAlert, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Building2, Check, CheckCircle2, Copy, Loader2, MailCheck, Search, ShieldAlert, X } from 'lucide-react';
 import { BUYER_SUPPLIERS, supplierShareUrl } from '../../data/buyerSuppliers';
-import { CompanyProfile, CompanyRecord, roleMeta, SessionUser, CompanyRole, SupplierStore, SUPPLIER_ROLES } from '../../data/supplierTypes';
+import { CompanyProfile, CompanyRecord, roleMeta, SessionUser, CompanyRole, SupplierStore, SUPPLIER_ROLES, CONTRACTOR_ROLES } from '../../data/supplierTypes';
 import { findDuplicateCompanies, profileChecklist, searchCompanies } from '../../data/supplierStore';
 import { registerCompany, requestAccess } from '../../data/supplierService';
+import {
+  clearOnboardingDraft,
+  findLiveDuplicateCompanies,
+  loadOnboardingDraft,
+  registerLiveCompany,
+  requestLiveJoin,
+  saveOnboardingDraft,
+  searchLiveCompanies,
+  type LiveCompanyHit,
+  type OnboardingIntent,
+} from '../../lib/companyOnboarding';
 import { btnPrimary, btnSecondary, inputCls, labelCls } from '../NetworkShared';
 import { ChipToggle, DemoNote } from '../marketHub/MarketHubShared';
 import { CompanyInfoFields, SUPPLIER_TYPE_OPTIONS, TaxonomyFields } from './ProfileEditors';
@@ -26,7 +37,13 @@ type Props = {
   onCancel: () => void;
   notify: (m: string) => void;
   /** 'join' focuses the flow on finding an existing company; 'contractor' registers a Contractor / Developer company. */
-  intent?: 'join' | 'supplier' | 'contractor';
+  intent?: OnboardingIntent;
+  /** Authenticated Supabase session — uses RPCs instead of the local demo store. */
+  isLive?: boolean;
+  /** True when auth.users.email_confirmed_at is set (or demo has verified). */
+  emailVerified?: boolean;
+  /** Re-read memberships after create/join so the workspace switcher updates. */
+  onRefreshAccess?: () => Promise<void>;
 };
 
 const INTENT_COPY = {
@@ -35,27 +52,133 @@ const INTENT_COPY = {
   contractor: { eyebrow: 'Contractor onboarding', title: 'Set up your contractor or developer company on SOKO' },
 } as const;
 
-export const SupplierOnboarding: React.FC<Props> = ({ store, user, onStoreChange, onOpenWorkspace, onCancel, notify, intent = 'supplier' }) => {
+export const SupplierOnboarding: React.FC<Props> = ({
+  store,
+  user,
+  onStoreChange,
+  onOpenWorkspace,
+  onCancel,
+  notify,
+  intent = 'supplier',
+  isLive = false,
+  emailVerified = false,
+  onRefreshAccess,
+}) => {
   const companyKind = intent === 'contractor' ? 'contractor' : 'supplier';
   const copy = INTENT_COPY[intent];
+  const joinRoles = companyKind === 'contractor'
+    ? CONTRACTOR_ROLES.filter((r) => r !== 'contractor_admin')
+    : SUPPLIER_ROLES.filter((r) => r !== 'supplier_admin');
+
   const [step, setStep] = useState(0);
-  const [verified, setVerified] = useState(false);
+  const [verified, setVerified] = useState(Boolean(isLive && emailVerified));
   const [code, setCode] = useState('');
   const [codeSent, setCodeSent] = useState(false);
   const [q, setQ] = useState('');
   const [selected, setSelected] = useState<{ id: string; name: string; managed: boolean } | null>(null);
-  const [role, setRole] = useState<CompanyRole>('sales_rep');
+  const [role, setRole] = useState<CompanyRole>(companyKind === 'contractor' ? 'procurement_officer' : 'sales_rep');
   const [note, setNote] = useState('');
   const [outcome, setOutcome] = useState<'requested' | 'claimed' | null>(null);
   const [profile, setProfile] = useState<CompanyProfile>(blankProfile);
   const [error, setError] = useState('');
   const [company, setCompany] = useState<CompanyRecord | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [liveHits, setLiveHits] = useState<LiveCompanyHit[]>([]);
+  const [liveDupes, setLiveDupes] = useState<{ id: string; name: string; reason: string }[]>([]);
+  const [draftReady, setDraftReady] = useState(!isLive);
 
-  const results = searchCompanies(store, q);
-  const duplicates = profile.tradingName || profile.licenseNo ? findDuplicateCompanies(store, profile.tradingName || profile.legalName, profile.licenseNo) : [];
+  // Restore in-progress live onboarding for this account (local draft only — no schema change).
+  useEffect(() => {
+    if (!isLive) {
+      setDraftReady(true);
+      return;
+    }
+    if (emailVerified) setVerified(true);
+    const draft = loadOnboardingDraft(user.id);
+    if (draft && draft.intent === intent && draft.step < 5) {
+      setStep(draft.step);
+      setProfile(draft.profile);
+      setQ(draft.q);
+    }
+    setDraftReady(true);
+  }, [isLive, user.id, intent, emailVerified]);
 
-  const sendRequest = () => {
+  useEffect(() => {
+    if (!isLive || !draftReady || step >= 5) return;
+    saveOnboardingDraft(user.id, { intent, step, profile, q });
+  }, [isLive, draftReady, user.id, intent, step, profile, q]);
+
+  const demoResults = useMemo(() => (isLive ? [] : searchCompanies(store, q)), [isLive, store, q]);
+  const demoDuplicates = !isLive && (profile.tradingName || profile.licenseNo)
+    ? findDuplicateCompanies(store, profile.tradingName || profile.legalName, profile.licenseNo)
+    : [];
+  const duplicates = isLive ? liveDupes : demoDuplicates;
+  const results = isLive
+    ? liveHits.map((r) => ({ id: r.id, name: r.name, location: r.location, sokoId: r.sokoId, managed: r.managed }))
+    : demoResults;
+
+  useEffect(() => {
+    if (!isLive) return;
+    const qTrim = q.trim();
+    if (qTrim.length < 2) {
+      setLiveHits([]);
+      return;
+    }
+    let cancelled = false;
+    const t = window.setTimeout(() => {
+      void (async () => {
+        const r = await searchLiveCompanies(qTrim);
+        if (cancelled) return;
+        if (!r.ok) {
+          setError(r.error);
+          setLiveHits([]);
+          return;
+        }
+        setError('');
+        setLiveHits(r.value);
+      })();
+    }, 280);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [isLive, q]);
+
+  useEffect(() => {
+    if (!isLive || step !== 2) return;
+    const name = profile.tradingName.trim() || profile.legalName.trim();
+    if (name.length < 3) {
+      setLiveDupes([]);
+      return;
+    }
+    let cancelled = false;
+    const t = window.setTimeout(() => {
+      void (async () => {
+        const r = await findLiveDuplicateCompanies(profile.tradingName, profile.legalName);
+        if (cancelled) return;
+        if (r.ok) setLiveDupes(r.value);
+      })();
+    }, 350);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [isLive, step, profile.tradingName, profile.legalName]);
+
+  const sendRequest = async () => {
     if (!selected) return;
+    if (isLive) {
+      setBusy(true);
+      setError('');
+      const r = await requestLiveJoin(selected.id);
+      setBusy(false);
+      if (!r.ok) return setError(r.error);
+      if (onRefreshAccess) await onRefreshAccess();
+      clearOnboardingDraft(user.id);
+      setOutcome('requested');
+      notify(`Access request sent to ${selected.name}. An admin must approve before you join.`);
+      return;
+    }
     const r = requestAccess(store, user, selected.id, role, note);
     if (!r.ok) return setError(r.error);
     onStoreChange(r.store);
@@ -71,7 +194,26 @@ export const SupplierOnboarding: React.FC<Props> = ({ store, user, onStoreChange
     setStep(3);
   };
 
-  const register = (licenseFile?: { name: string; sizeMb: number }) => {
+  const register = async (licenseFile?: { name: string; sizeMb: number }) => {
+    if (isLive) {
+      setBusy(true);
+      setError('');
+      const r = await registerLiveCompany({
+        kind: companyKind,
+        profile,
+        submitForVerification: Boolean(licenseFile),
+      });
+      setBusy(false);
+      if (!r.ok) return setError(r.error);
+      if (onRefreshAccess) await onRefreshAccess();
+      clearOnboardingDraft(user.id);
+      setCompany(r.value);
+      setStep(5);
+      notify(r.value.verification.status === 'pending'
+        ? 'Company created. Verification is pending SOKO review.'
+        : 'Company workspace created on SOKO.');
+      return;
+    }
     const r = registerCompany(store, user, { profile, licenseFile, kind: companyKind });
     if (!r.ok) return setError(r.error);
     setError('');
@@ -81,7 +223,16 @@ export const SupplierOnboarding: React.FC<Props> = ({ store, user, onStoreChange
   };
 
   const directory = company ? BUYER_SUPPLIERS.find((s) => s.id === company.id) : undefined;
-  const shareUrl = directory ? supplierShareUrl(directory) : '';
+  const shareUrl = directory ? supplierShareUrl(directory) : company?.sokoId ? `https://soko.ae/s/${company.sokoId}` : '';
+
+  if (!draftReady) {
+    return (
+      <div className="max-w-3xl mx-auto py-16 flex flex-col items-center gap-3 text-slate-600">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <p className="text-sm font-medium">Loading onboarding…</p>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -118,6 +269,10 @@ export const SupplierOnboarding: React.FC<Props> = ({ store, user, onStoreChange
             <div className="mt-4">
               {verified ? (
                 <p className="text-sm font-medium text-emerald-700 flex items-center gap-1.5"><MailCheck className="w-4 h-4" /> Email verified</p>
+              ) : isLive ? (
+                <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  Confirm your email, then sign in again to continue company onboarding.
+                </p>
               ) : !codeSent ? (
                 <button type="button" onClick={() => { setCodeSent(true); notify('Verification code sent (simulated — enter any 6 digits)'); }} className={btnSecondary}><MailCheck className="w-4 h-4" /> Send email verification code</button>
               ) : (
@@ -139,7 +294,11 @@ export const SupplierOnboarding: React.FC<Props> = ({ store, user, onStoreChange
         {step === 1 && !outcome && (
           <div>
             <h2 className="text-lg font-semibold text-slate-900">Find your company</h2>
-            <p className="mt-1 text-sm text-slate-600">Check whether your company is already on SOKO before registering it.</p>
+            <p className="mt-1 text-sm text-slate-600">
+              {isLive
+                ? 'Search the public SOKO company directory before registering a new company.'
+                : 'Check whether your company is already on SOKO before registering it.'}
+            </p>
             <div className="relative mt-4">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input autoFocus value={q} onChange={(e) => { setQ(e.target.value); setSelected(null); }} placeholder="Company name or SOKO ID" className={`${inputCls} pl-9`} />
@@ -160,33 +319,54 @@ export const SupplierOnboarding: React.FC<Props> = ({ store, user, onStoreChange
                 ))}
               </ul>
             )}
-            {q.trim().length >= 2 && results.length === 0 && <p className="mt-3 text-sm text-slate-500">No matching company on SOKO.</p>}
+            {q.trim().length >= 2 && results.length === 0 && <p className="mt-3 text-sm text-slate-500">No matching public company on SOKO.</p>}
 
             {selected && (
               <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
                 {selected.managed ? (
                   <>
                     <p className="text-sm font-semibold text-slate-900">Request access to {selected.name}</p>
-                    <p className="mt-1 text-xs text-slate-600">A Supplier Admin of this company must approve your request. Admin rights are never granted automatically.</p>
-                    <div className="mt-3 grid sm:grid-cols-2 gap-3">
-                      <label className="block">
-                        <span className={labelCls}>Requested role</span>
-                        <select value={role} onChange={(e) => setRole(e.target.value as CompanyRole)} className={inputCls}>
-                          {SUPPLIER_ROLES.filter((r) => r !== 'supplier_admin').map((r) => <option key={r} value={r}>{roleMeta(r).label}</option>)}
-                        </select>
-                      </label>
-                      <label className="block">
-                        <span className={labelCls}>Note to admin (optional)</span>
-                        <input value={note} onChange={(e) => setNote(e.target.value)} className={inputCls} placeholder="e.g. I joined the sales team in May" />
-                      </label>
-                    </div>
-                    <button type="button" onClick={sendRequest} className={`${btnPrimary} mt-3`}>Send access request</button>
+                    <p className="mt-1 text-xs text-slate-600">
+                      {isLive
+                        ? 'Your request starts as Viewer. A company admin must approve and assign your real role. Admin rights are never granted automatically.'
+                        : 'A Supplier Admin of this company must approve your request. Admin rights are never granted automatically.'}
+                    </p>
+                    {!isLive && (
+                      <div className="mt-3 grid sm:grid-cols-2 gap-3">
+                        <label className="block">
+                          <span className={labelCls}>Requested role</span>
+                          <select value={role} onChange={(e) => setRole(e.target.value as CompanyRole)} className={inputCls}>
+                            {joinRoles.map((r) => <option key={r} value={r}>{roleMeta(r).label}</option>)}
+                          </select>
+                        </label>
+                        <label className="block">
+                          <span className={labelCls}>Note to admin (optional)</span>
+                          <input value={note} onChange={(e) => setNote(e.target.value)} className={inputCls} placeholder="e.g. I joined the sales team in May" />
+                        </label>
+                      </div>
+                    )}
+                    <button type="button" disabled={busy} onClick={() => void sendRequest()} className={`${btnPrimary} mt-3`}>
+                      {busy ? <><Loader2 className="w-4 h-4 animate-spin" /> Sending</> : 'Send access request'}
+                    </button>
                   </>
                 ) : (
                   <>
                     <p className="text-sm font-semibold text-slate-900">Claim {selected.name}</p>
                     <p className="mt-1 text-xs text-slate-600">SOKO will check your authority against the company's trade license before handing over control of this listing.</p>
-                    <button type="button" onClick={() => { setOutcome('claimed'); notify('Claim submitted for SOKO review (simulated)'); }} className={`${btnPrimary} mt-3`}>Submit claim for review</button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isLive) {
+                          setError('Claiming an unclaimed listing is not available yet. Register your company or ask an admin for an invitation.');
+                          return;
+                        }
+                        setOutcome('claimed');
+                        notify('Claim submitted for SOKO review (simulated)');
+                      }}
+                      className={`${btnPrimary} mt-3`}
+                    >
+                      Submit claim for review
+                    </button>
                   </>
                 )}
               </div>
@@ -194,9 +374,11 @@ export const SupplierOnboarding: React.FC<Props> = ({ store, user, onStoreChange
 
             <div className="mt-8 flex flex-col-reverse sm:flex-row justify-between gap-3">
               <button type="button" onClick={() => setStep(0)} className={btnSecondary}><ArrowLeft className="w-4 h-4" /> Back</button>
-              <button type="button" onClick={() => { setProfile({ ...blankProfile(), tradingName: q.trim(), legalName: q.trim() }); setError(''); setStep(2); }} className={btnPrimary}>
-                My company isn't listed — register it <ArrowRight className="w-4 h-4" />
-              </button>
+              {intent !== 'join' && (
+                <button type="button" onClick={() => { setProfile({ ...blankProfile(), tradingName: q.trim(), legalName: q.trim() }); setError(''); setStep(2); }} className={btnPrimary}>
+                  My company isn't listed — register it <ArrowRight className="w-4 h-4" />
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -260,12 +442,25 @@ export const SupplierOnboarding: React.FC<Props> = ({ store, user, onStoreChange
         {step === 4 && (
           <div>
             <h2 className="text-lg font-semibold text-slate-900">Company verification</h2>
-            <p className="mt-1 text-sm text-slate-600">Upload your trade license so SOKO can verify your company. Verification is free and independent of your plan.</p>
+            <p className="mt-1 text-sm text-slate-600">
+              {isLive
+                ? 'Submit your trade license details for SOKO review. File upload to secure storage ships in a follow-up; you can still create the workspace now.'
+                : 'Upload your trade license so SOKO can verify your company. Verification is free and independent of your plan.'}
+            </p>
             <div className="mt-5">
-              <LicenseUpload profile={profile} submitLabel="Submit & create workspace" cancelLabel="Skip for now" onSubmit={(f) => register(f)} onCancel={() => register()} />
+              <LicenseUpload
+                profile={profile}
+                submitLabel={busy ? 'Creating…' : 'Submit & create workspace'}
+                cancelLabel="Skip verification for now"
+                onSubmit={(f) => { void register(f); }}
+                onCancel={() => { void register(); }}
+              />
             </div>
+            {busy && (
+              <p className="mt-3 text-sm text-slate-600 flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin text-blue-600" /> Creating your company workspace…</p>
+            )}
             <p className="mt-3 text-xs text-slate-500">Skipping creates the workspace without verification; you can upload later from Company Profile.</p>
-            <button type="button" onClick={() => setStep(3)} className={`${btnSecondary} mt-6`}><ArrowLeft className="w-4 h-4" /> Back</button>
+            <button type="button" disabled={busy} onClick={() => setStep(3)} className={`${btnSecondary} mt-6`}><ArrowLeft className="w-4 h-4" /> Back</button>
           </div>
         )}
 
@@ -275,19 +470,24 @@ export const SupplierOnboarding: React.FC<Props> = ({ store, user, onStoreChange
               <CheckCircle2 className="w-10 h-10 text-blue-600 mx-auto" />
               <h2 className="mt-3 text-xl font-semibold text-slate-900">{company.profile.tradingName} is on SOKO</h2>
               <p className="mt-1 text-sm text-slate-600">
-                {company.verification.status === 'pending' ? 'Verification is pending SOKO review.' : 'Upload your trade license any time to get verified.'} You are the Supplier Admin on Supplier Free.
+                {company.verification.status === 'pending' ? 'Verification is pending SOKO review.' : 'Upload your trade license any time to get verified.'}
+                {' '}You are the {company.kind === 'contractor' ? 'Company Admin' : 'Supplier Admin'} on the free plan.
               </p>
             </div>
             <div className="mt-6 grid sm:grid-cols-[auto_1fr] gap-5 items-center rounded-xl border border-slate-200 p-5">
               {shareUrl && <QRCodeSVG value={shareUrl} size={96} className="mx-auto" />}
               <div className="min-w-0">
                 <p className="text-xs text-slate-500">SOKO Supplier ID</p>
-                <p className="text-lg font-semibold text-slate-900 tabular-nums">{company.sokoId}</p>
-                <p className="mt-2 text-xs text-slate-500">Public profile link</p>
-                <div className="flex items-center gap-2">
-                  <p className="text-sm text-slate-700 truncate">{shareUrl}</p>
-                  <button type="button" onClick={() => { navigator.clipboard?.writeText(shareUrl).catch(() => undefined); notify('Profile link copied'); }} className="p-1.5 rounded-md hover:bg-slate-100 cursor-pointer" aria-label="Copy profile link"><Copy className="w-4 h-4 text-slate-500" /></button>
-                </div>
+                <p className="text-lg font-semibold text-slate-900 tabular-nums">{company.sokoId || 'Assigned'}</p>
+                {shareUrl && (
+                  <>
+                    <p className="mt-2 text-xs text-slate-500">Public profile link</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm text-slate-700 truncate">{shareUrl}</p>
+                      <button type="button" onClick={() => { navigator.clipboard?.writeText(shareUrl).catch(() => undefined); notify('Profile link copied'); }} className="p-1.5 rounded-md hover:bg-slate-100 cursor-pointer" aria-label="Copy profile link"><Copy className="w-4 h-4 text-slate-500" /></button>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
             <div className="mt-6">
@@ -302,12 +502,16 @@ export const SupplierOnboarding: React.FC<Props> = ({ store, user, onStoreChange
               </ul>
             </div>
             <div className="mt-8 flex justify-center">
-              <button type="button" onClick={() => onOpenWorkspace(company.id)} className={btnPrimary}>Open supplier dashboard <ArrowRight className="w-4 h-4" /></button>
+              <button type="button" onClick={() => onOpenWorkspace(company.id)} className={btnPrimary}>Open company dashboard <ArrowRight className="w-4 h-4" /></button>
             </div>
           </div>
         )}
       </div>
-      <div className="mt-4"><DemoNote>Registration, email verification and license review are simulated in this prototype.</DemoNote></div>
+      {isLive ? (
+        <p className="mt-4 text-xs text-slate-500 text-center">Connected to your SOKO account. Company data is saved under your signed-in session.</p>
+      ) : (
+        <div className="mt-4"><DemoNote>Registration, email verification and license review are simulated in this prototype.</DemoNote></div>
+      )}
     </div>
   );
 };

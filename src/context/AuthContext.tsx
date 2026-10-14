@@ -331,6 +331,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!result.session) {
       return { success: false, message: 'Check your inbox to confirm your email address, then sign in.' };
     }
+    // Persist optional profile fields granted on public.profiles (trigger only sets full_name from metadata).
+    const profilePatch: { title?: string; phone?: string; location?: string; full_name?: string } = {};
+    if (data.title?.trim()) profilePatch.title = data.title.trim();
+    if (data.phone?.trim()) profilePatch.phone = data.phone.trim();
+    if (data.location?.trim()) profilePatch.location = data.location.trim();
+    if (data.name?.trim()) profilePatch.full_name = data.name.trim();
+    if (Object.keys(profilePatch).length && result.user) {
+      const { error: profileErr } = await supabase.from('profiles').update(profilePatch).eq('id', result.user.id);
+      if (profileErr) {
+        // Account exists; profile enrichment is best-effort so signup still succeeds.
+        console.warn('profiles update after signup:', profileErr.message);
+      }
+    }
     await applySession(result.session);
     return { success: true };
   };

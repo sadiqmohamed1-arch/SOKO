@@ -96,6 +96,7 @@ function MainApp() {
     workspacesLoaded,
     authNotice,
     clearAuthNotice,
+    refreshAccess,
   } = useAuth();
   const [viewMode, setViewMode] = useState<'app' | 'landing'>(() =>
     window.location.pathname === PUBLIC_LANDING_PATH ? 'landing' : 'app',
@@ -1162,6 +1163,9 @@ function MainApp() {
               onCancel={() => setActiveTab(activeCompanyId ? 'sw-dashboard' : 'feed')}
               notify={notifyApp}
               intent={onboardingIntent}
+              isLive={Boolean(isAuthenticated && authUser && !demoActive)}
+              emailVerified={Boolean(authUser?.isVerified)}
+              onRefreshAccess={refreshAccess}
             />
           </div>
         )}
