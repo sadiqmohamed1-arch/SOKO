@@ -172,9 +172,10 @@ begin
     v_start := date_trunc('day', now());
   end if;
 
+  -- Two-arg form is (int4, int4) only — not (int, bigint).
   perform pg_advisory_xact_lock(
     813001,
-    ('x' || substr(encode(sha256(convert_to(p_kind || ':' || p_key, 'UTF8')), 'hex'), 1, 16))::bit(64)::bigint);
+    ('x' || substr(encode(sha256(convert_to(p_kind || ':' || p_key, 'UTF8')), 'hex'), 1, 8))::bit(32)::integer);
 
   delete from private.contact_submit_throttle where expires_at < now();
 

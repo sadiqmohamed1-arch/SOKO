@@ -90,8 +90,8 @@ on conflict (user_id) do nothing;
 create function soko_ci.valid_submit(p_email text) returns text language plpgsql as $$
 begin
   return format(
-    $$select public.submit_contact_inquiry('Ada Lovelace', 'SOKO Test LLC', %L, '+971 50 000 0000',
-      'Buyer', 'General Inquiry', 'Need help with access', 'Please help us join the network.', '')$$,
+    $sql$select public.submit_contact_inquiry('Ada Lovelace', 'SOKO Test LLC', %L, '+971 50 000 0000',
+      'Buyer', 'General Inquiry', 'Need help with access', 'Please help us join the network.', '')$sql$,
     p_email);
 end $$;
 
@@ -199,11 +199,20 @@ select n, case when passed then 'PASS' else 'FAIL' end as result, label, detail
 from soko_ci.results order by n;
 
 do $$
-declare v_failed int; v_total int;
+declare
+  v_failed int;
+  v_total int;
+  v_detail text;
 begin
   select count(*) filter (where not passed), count(*) into v_failed, v_total from soko_ci.results;
   if v_failed > 0 then
-    raise exception 'SOKO contact inquiry tests: % of % FAILED', v_failed, v_total;
+    -- Emit names/reasons before ROLLBACK; result-grid rows are often hidden when this raises.
+    select string_agg(n::text || '. FAIL ' || label || ' — ' || coalesce(detail, ''), E'\n' order by n)
+      into v_detail
+    from soko_ci.results
+    where not passed;
+    raise notice 'SOKO contact inquiry tests: % of % FAILED%Detail:%', v_failed, v_total, E'\n', E'\n' || v_detail;
+    raise exception 'SOKO contact inquiry tests: % of % FAILED%Detail:%', v_failed, v_total, E'\n', E'\n' || v_detail;
   end if;
   raise notice 'SOKO contact inquiry tests: all % passed', v_total;
 end $$;
