@@ -44,6 +44,7 @@ import {
   CreditCard,
   ArrowLeft,
   Construction,
+  Inbox,
   type LucideIcon,
 } from 'lucide-react';
 import { UserProfile, UserRole, CompanyProfileAudit, ModerationReportItem, BackendActivityLog, PlatformStats } from '../types';
@@ -58,6 +59,7 @@ import { UsersAccess } from './admin/UsersAccess';
 import { DigitalCards } from './admin/DigitalCards';
 import { SupplierVisits } from './admin/SupplierVisits';
 import { ProductCatalog } from './admin/ProductCatalog';
+import { ContactInbox } from './admin/ContactInbox';
 
 interface SuperAdminPortalProps {
   currentUser: UserProfile;
@@ -111,6 +113,7 @@ interface LivePlatformStats {
   campaignsPending: number | null;
   openReports: number | null;
   publishedProducts: number | null;
+  openContactInquiries: number | null;
 }
 
 const LIVE_UNAVAILABLE_SUBJECT: Record<string, string> = {
@@ -131,6 +134,7 @@ type AdminSection =
   | 'plans'
   | 'moderation'
   | 'audit_logs'
+  | 'contact_inbox'
   | 'settings';
 
 // live: reads authorized Supabase data in live mode. demo_only: demo records in demo mode, not yet connected live.
@@ -259,6 +263,14 @@ const ADMIN_NAV_GROUPS: { label: string; modules: AdminModule[] }[] = [
     label: 'Governance',
     modules: [
       {
+        id: 'contact_inbox',
+        label: 'Contact Inbox',
+        title: 'Contact Inbox',
+        description: 'Public Contact Us inquiries: search, assign, note and close them.',
+        icon: Inbox,
+        availability: 'live',
+      },
+      {
         id: 'moderation',
         label: 'Trust & Moderation',
         title: 'Trust & Moderation',
@@ -343,6 +355,7 @@ function parseLiveStats(data: unknown): LivePlatformStats {
     campaignsPending: toCount(raw.campaigns_pending),
     openReports: toCount(raw.open_reports),
     publishedProducts: toCount(raw.published_products),
+    openContactInquiries: toCount(raw.open_contact_inquiries),
   };
 }
 
@@ -407,6 +420,8 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
   const [suspendReason, setSuspendReason] = useState('');
   const [suspendError, setSuspendError] = useState<string | null>(null);
   const [isSuspending, setIsSuspending] = useState(false);
+  const [inquiryNotices, setInquiryNotices] = useState<{ id: string; inquiryId: string | null }[]>([]);
+  const [focusInquiryId, setFocusInquiryId] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -467,6 +482,25 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
       if (requestId !== requestIdRef.current) return;
       setSyncState('success');
       setLastSyncedAt(new Date());
+      if (isLive) {
+        const supabase = getSupabaseClient();
+        const noticeRes = await supabase
+          .from('notifications')
+          .select('id, payload')
+          .eq('type', 'contact_inquiry.created')
+          .is('read_at', null)
+          .order('created_at', { ascending: false });
+        if (!noticeRes.error) {
+          setInquiryNotices(
+            (noticeRes.data ?? []).map((row: { id: string; payload: { id?: string } | null }) => ({
+              id: row.id,
+              inquiryId: typeof row.payload?.id === 'string' ? row.payload.id : null,
+            })),
+          );
+        }
+      } else {
+        setInquiryNotices([]);
+      }
     } catch (err) {
       if (requestId !== requestIdRef.current) return;
       setSyncState('error');
@@ -707,6 +741,7 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
     companies: companies.length,
     verification: isLive ? liveStats?.pendingVerifications ?? null : awaitingVerificationCount,
     moderation: moderationCount,
+    contact_inbox: isLive ? liveStats?.openContactInquiries ?? null : null,
   };
   const recentCompanies = [...companies]
     .sort((a, b) => (Date.parse(b.registeredDate) || 0) - (Date.parse(a.registeredDate) || 0))
@@ -964,12 +999,42 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
 
             <button
               type="button"
-              disabled
-              aria-label="Notifications (not available yet)"
-              title="Notifications are not available yet"
-              className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-400 bg-slate-50 border border-slate-200 cursor-not-allowed"
+              disabled={!isLive}
+              aria-label={
+                isLive
+                  ? `${inquiryNotices.length} unread contact inquiry notification${inquiryNotices.length === 1 ? '' : 's'}`
+                  : 'Notifications (not available yet)'
+              }
+              title={isLive ? 'Open Contact Inbox' : 'Notifications are not available yet'}
+              onClick={async () => {
+                if (!isLive) return;
+                const first = inquiryNotices[0]?.inquiryId ?? null;
+                setFocusInquiryId(first);
+                goToSection('contact_inbox');
+                if (inquiryNotices.length === 0) return;
+                try {
+                  const supabase = getSupabaseClient();
+                  await supabase
+                    .from('notifications')
+                    .update({ read_at: new Date().toISOString() })
+                    .in('id', inquiryNotices.map((n) => n.id));
+                  setInquiryNotices([]);
+                } catch {
+                  /* keep the badge if mark-read fails */
+                }
+              }}
+              className={`relative w-9 h-9 rounded-lg flex items-center justify-center border ${
+                isLive
+                  ? 'text-slate-600 bg-white border-slate-200 hover:bg-slate-50 cursor-pointer'
+                  : 'text-slate-400 bg-slate-50 border-slate-200 cursor-not-allowed'
+              }`}
             >
               <Bell className="w-4 h-4" />
+              {isLive && inquiryNotices.length > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[9px] font-bold text-white">
+                  {inquiryNotices.length > 9 ? '9+' : inquiryNotices.length}
+                </span>
+              )}
             </button>
 
             <div className="flex items-center gap-2.5 pl-3 border-l border-slate-200">
@@ -1375,6 +1440,15 @@ const SuperAdminDashboard: React.FC<SuperAdminPortalProps> = ({
 
         {section === 'visits' && (
           <SupplierVisits companies={companies} isLive={isLive} syncToken={lastSyncedAt?.getTime() ?? 0} />
+        )}
+
+        {section === 'contact_inbox' && (
+          <ContactInbox
+            isLive={isLive}
+            syncToken={lastSyncedAt?.getTime() ?? 0}
+            openCount={liveStats?.openContactInquiries ?? null}
+            focusId={focusInquiryId}
+          />
         )}
 
         {/* TAB 1: COMPANY PROFILES & VERIFICATION */}
