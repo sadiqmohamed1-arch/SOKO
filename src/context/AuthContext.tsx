@@ -1,6 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import type { AuthError, PostgrestError, Session, User } from '@supabase/supabase-js';
 import { UserRole } from '../types';
+import type { OrgClassification, ProfessionalClassification } from '../data/registrationIdentity';
+import { isProfessionalClassification } from '../data/registrationIdentity';
 import type { CompanyKind, CompanyRole, VerificationStatus } from '../data/supplierTypes';
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabaseClient';
 
@@ -10,6 +12,7 @@ export interface AuthUser {
   email: string;
   role: UserRole;
   company: string;
+  /** Actual job title — not professional classification. */
   title: string;
   phone: string;
   tradeLicenseNo?: string;
@@ -19,16 +22,19 @@ export interface AuthUser {
   isVerified?: boolean;
   rewardPoints?: number;
   streakDays?: number;
+  professionalClassification?: ProfessionalClassification | null;
+  username?: string | null;
 }
 
-/** Company columns granted to `authenticated` in migration 03 (select('*') is not permitted). */
+/** Company columns granted to authenticated (select('*') is not permitted). */
 const COMPANY_COLUMNS =
-  'id, soko_id, kind, legal_name, trading_name, country, emirate, address, website, general_email, phone, established, description, is_public, is_suspended, verification_status, verified_at, created_at, updated_at';
+  'id, soko_id, kind, org_classification, legal_name, trading_name, country, emirate, address, website, general_email, phone, established, description, is_public, is_suspended, verification_status, verified_at, created_at, updated_at';
 
 export interface AuthCompany {
   id: string;
   soko_id: string;
   kind: CompanyKind;
+  org_classification: OrgClassification | string | null;
   legal_name: string;
   trading_name: string | null;
   country: string;
@@ -76,11 +82,14 @@ interface AuthContextType {
     password: string;
     role?: UserRole;
     company?: string;
+    /** Actual job title only. */
     title?: string;
     phone?: string;
     tradeLicenseNo?: string;
     vatTrn?: string;
     location?: string;
+    professionalClassification?: ProfessionalClassification;
+    username?: string;
   }) => Promise<{ success: boolean; message?: string; errors?: Record<string, string> }>;
   logout: () => void;
   updateUserContext: (partial: Partial<AuthUser>) => void;
@@ -133,7 +142,11 @@ async function loadAccess(authUser: User): Promise<LoadedAccess> {
   const uid = authUser.id;
 
   const [profileRes, adminRes, membershipRes] = await Promise.all([
-    supabase.from('profiles').select('id, full_name, title, phone, location').eq('id', uid).maybeSingle(),
+    supabase
+      .from('profiles')
+      .select('id, full_name, title, phone, location, professional_classification, username')
+      .eq('id', uid)
+      .maybeSingle(),
     supabase.from('platform_admins').select('user_id').eq('user_id', uid).maybeSingle(),
     // Teammates' memberships are also visible under RLS, so scope to the caller explicitly.
     supabase
@@ -183,6 +196,12 @@ async function loadAccess(authUser: User): Promise<LoadedAccess> {
       role: isPlatformAdmin ? 'admin' : 'buyer',
       company: primary ? primary.trading_name || primary.legal_name : '',
       title: profile?.title ?? '',
+      professionalClassification:
+        typeof profile?.professional_classification === 'string' &&
+        isProfessionalClassification(profile.professional_classification)
+          ? profile.professional_classification
+          : null,
+      username: (profile?.username as string | null | undefined) ?? null,
       phone: profile?.phone ?? '',
       location: profile?.location ?? undefined,
       avatarUrl: '',
@@ -331,20 +350,64 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!result.session) {
       return { success: false, message: 'Check your inbox to confirm your email address, then sign in.' };
     }
-    // Persist optional profile fields granted on public.profiles (trigger only sets full_name from metadata).
-    const profilePatch: { title?: string; phone?: string; location?: string; full_name?: string } = {};
+    // Persist optional profile fields (trigger only sets full_name from metadata).
+    // professional_classification and username are permanent identity columns; title is job title only.
+    const profilePatch: {
+      title?: string;
+      phone?: string;
+      location?: string;
+      full_name?: string;
+      professional_classification?: string;
+      username?: string;
+    } = {};
     if (data.title?.trim()) profilePatch.title = data.title.trim();
     if (data.phone?.trim()) profilePatch.phone = data.phone.trim();
     if (data.location?.trim()) profilePatch.location = data.location.trim();
     if (data.name?.trim()) profilePatch.full_name = data.name.trim();
+    if (data.professionalClassification && isProfessionalClassification(data.professionalClassification)) {
+      profilePatch.professional_classification = data.professionalClassification;
+    }
+    if (data.username?.trim()) {
+      profilePatch.username = data.username.trim().toLowerCase();
+    }
+    const fieldErrors: Record<string, string> = {};
     if (Object.keys(profilePatch).length && result.user) {
       const { error: profileErr } = await supabase.from('profiles').update(profilePatch).eq('id', result.user.id);
       if (profileErr) {
-        // Account exists; profile enrichment is best-effort so signup still succeeds.
-        console.warn('profiles update after signup:', profileErr.message);
+        const msg = profileErr.message || '';
+        const details = `${msg} ${profileErr.code ?? ''} ${profileErr.details ?? ''} ${profileErr.hint ?? ''}`;
+        if (/profiles_username_uq|duplicate key.*username|username.*already|23505/i.test(details) && /username/i.test(details)) {
+          fieldErrors.username = 'That username is already taken. Try another.';
+          const { username: _drop, ...rest } = profilePatch;
+          if (Object.keys(rest).length) {
+            await supabase.from('profiles').update(rest).eq('id', result.user.id);
+          }
+        } else if (/profiles_username_format|23514/i.test(details)) {
+          fieldErrors.username = 'Use 3–30 lowercase letters, numbers, dots or underscores.';
+          const { username: _drop, ...rest } = profilePatch;
+          if (Object.keys(rest).length) {
+            await supabase.from('profiles').update(rest).eq('id', result.user.id);
+          }
+        } else if (/23505/i.test(details) && profilePatch.username) {
+          // Unique violation while setting username — treat as taken.
+          fieldErrors.username = 'That username is already taken. Try another.';
+          const { username: _drop, ...rest } = profilePatch;
+          if (Object.keys(rest).length) {
+            await supabase.from('profiles').update(rest).eq('id', result.user.id);
+          }
+        } else {
+          console.warn('profiles update after signup:', profileErr.message);
+        }
       }
     }
     await applySession(result.session);
+    if (Object.keys(fieldErrors).length) {
+      return {
+        success: true,
+        message: fieldErrors.username,
+        errors: fieldErrors,
+      };
+    }
     return { success: true };
   };
 

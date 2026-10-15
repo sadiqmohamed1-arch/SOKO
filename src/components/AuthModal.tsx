@@ -4,14 +4,15 @@ import { useAuth } from '../context/AuthContext';
 import {
   ORG_CLASSIFICATIONS,
   PROFESSIONAL_CLASSIFICATIONS,
+  USERNAME_RE,
   companyKindForOrgClassification,
-  orgClassificationTaxonomyValue,
+  normalizeUsername,
   saveOrgBootstrap,
   saveProfessionalRole,
   type OrgClassification,
   type ProfessionalClassification,
 } from '../data/registrationIdentity';
-import { bootstrapOrganization } from '../lib/companyOnboarding';
+import { bootstrapOrganization, updateOwnProfile } from '../lib/companyOnboarding';
 import { isSupabaseConfigured } from '../lib/supabaseClient';
 
 export type AuthIntent = 'personal' | 'join' | 'supplier' | 'contractor';
@@ -36,7 +37,6 @@ const primaryBtn =
 const linkBtn = 'font-semibold text-soko-blue hover:underline cursor-pointer';
 
 const isEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
-const USERNAME_RE = /^[a-z0-9](?:[a-z0-9._]{1,28})[a-z0-9]$/;
 
 const LinkedInMark: React.FC = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4" fill="currentColor">
@@ -83,6 +83,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   const [emirate, setEmirate] = useState('Dubai');
   const [activity, setActivity] = useState('');
   const [proRole, setProRole] = useState<ProfessionalClassification>('Sales / Business Development');
+  /** Individual signup created the auth user but username still needs a unique value. */
+  const [indivAccountReady, setIndivAccountReady] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
 
@@ -94,6 +96,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
     setPassword('');
     setShowPassword(false);
     setAcceptedTerms(false);
+    setIndivAccountReady(false);
   }, [isOpen, initialMode]);
 
   useEffect(() => {
@@ -171,7 +174,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         kind,
         legalName: companyName.trim(),
         tradingName: companyName.trim(),
-        orgClassificationLabel: orgClassificationTaxonomyValue(orgClass),
+        orgClassification: orgClass,
         emirate,
         generalEmail: email.trim(),
         description: activity.trim(),
@@ -222,10 +225,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   const handleIndivSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     const next: Record<string, string> = {};
+    const normalizedUsername = username.trim() ? normalizeUsername(username) : '';
     if (name.trim().length < 2) next.name = 'Enter your full name.';
     if (!isEmail(email)) next.email = 'Enter a valid email address.';
     if (password.length < 8) next.password = 'Use at least 8 characters.';
-    if (username && !USERNAME_RE.test(username)) next.username = 'Use 3–30 lowercase letters, numbers, dots or underscores.';
+    if (normalizedUsername && !USERNAME_RE.test(normalizedUsername)) {
+      next.username = 'Use 3–30 lowercase letters, numbers, dots or underscores.';
+    }
     if (!proRole) next.proRole = 'Select your primary professional role.';
     if (!acceptedTerms) next.terms = 'Please accept the terms to continue.';
     setErrors(next);
@@ -233,15 +239,42 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
     if (Object.keys(next).length) return;
 
     setSubmitting(true);
+    if (indivAccountReady) {
+      const patch = await updateOwnProfile({
+        professional_classification: proRole,
+        username: normalizedUsername || null,
+      });
+      setSubmitting(false);
+      if (!patch.ok) {
+        if (/already taken|username/i.test(patch.error)) {
+          setErrors((prev) => ({ ...prev, username: patch.error }));
+        }
+        return setFormError(patch.error);
+      }
+      saveProfessionalRole(proRole);
+      onSuccess?.('personal');
+      onClose();
+      return;
+    }
+
     const r = await register({
       name: name.trim(),
       email: email.trim(),
       password,
-      title: proRole,
+      professionalClassification: proRole,
+      username: normalizedUsername || undefined,
     });
     setSubmitting(false);
     if (!r.success) return setFormError(r.message || 'We could not create your account.');
     saveProfessionalRole(proRole);
+    if (r.errors?.username) {
+      setIndivAccountReady(true);
+      setErrors((prev) => ({ ...prev, username: r.errors!.username }));
+      setFormError(
+        `${r.errors.username} Your account was created — pick a different username or continue without one.`,
+      );
+      return;
+    }
     onSuccess?.('personal');
     onClose();
   };
@@ -513,9 +546,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                   />
                 </div>
                 {fieldError('username') || (
-                  <p className="mt-1.5 text-xs text-soko-muted">Username reservation needs an approved profiles column — not stored yet.</p>
+                  <p className="mt-1.5 text-xs text-soko-muted">3–30 lowercase letters, numbers, dots or underscores. Unique across SOKO.</p>
                 )}
               </div>
+              {formError && errors.username && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onSuccess?.('personal');
+                    onClose();
+                  }}
+                  className="text-sm font-semibold text-soko-blue hover:underline cursor-pointer self-start"
+                >
+                  Continue without this username
+                </button>
+              )}
               <p className="rounded-lg bg-soko-mist px-3.5 py-2.5 text-xs leading-relaxed text-soko-muted">
                 After signup you can join an existing organization, create one later, or continue independently. Multiple authorized memberships are supported.
               </p>

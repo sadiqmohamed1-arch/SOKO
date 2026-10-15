@@ -9,6 +9,8 @@ import { registerCompany, requestAccess } from '../../data/supplierService';
 import { CONTRACTOR_CLASSIFICATIONS, normalizeContractorProfile } from '../../data/contractorTaxonomy';
 import {
   clearOnboardingDraft,
+  fetchCompanyOrgClassification,
+  fetchOwnIdentityProfile,
   findLiveDuplicateCompanies,
   loadOnboardingDraft,
   registerLiveCompany,
@@ -19,7 +21,17 @@ import {
   type LiveCompanyHit,
   type OnboardingIntent,
 } from '../../lib/companyOnboarding';
-import { clearOrgBootstrap, clearProfessionalRole, loadOrgBootstrap, loadProfessionalRole } from '../../data/registrationIdentity';
+import {
+  PROFESSIONAL_CLASSIFICATIONS,
+  clearOrgBootstrap,
+  clearProfessionalRole,
+  isProfessionalClassification,
+  loadOrgBootstrap,
+  loadProfessionalRole,
+  parseOrgClassificationLabel,
+  saveProfessionalRole,
+  type ProfessionalClassification,
+} from '../../data/registrationIdentity';
 import { btnPrimary, btnSecondary, inputCls, labelCls } from '../NetworkShared';
 import { ChipToggle, DemoNote } from '../marketHub/MarketHubShared';
 import {
@@ -143,8 +155,11 @@ export const SupplierOnboarding: React.FC<Props> = ({
   const [liveHits, setLiveHits] = useState<LiveCompanyHit[]>([]);
   const [liveDupes, setLiveDupes] = useState<{ id: string; name: string; reason: string }[]>([]);
   const [draftReady, setDraftReady] = useState(!isLive);
-  const [proTitle, setProTitle] = useState(user.title || '');
-  const [proPhone, setProPhone] = useState('');
+  const [proRole, setProRole] = useState<ProfessionalClassification | ''>(() => loadProfessionalRole() || '');
+  const [proTitle, setProTitle] = useState(() =>
+    user.title && !isProfessionalClassification(user.title) ? user.title : '',
+  );
+  const [proPhone, setProPhone] = useState(user.phone || '');
   const [proLocation, setProLocation] = useState('');
   const [brandDraft, setBrandDraft] = useState('');
   const [serviceDraft, setServiceDraft] = useState('');
@@ -153,6 +168,7 @@ export const SupplierOnboarding: React.FC<Props> = ({
   /** Organization already bootstrapped at signup — skip find/re-create. */
   const [existingCompanyId, setExistingCompanyId] = useState<string | null>(null);
   const [orgPrefillDone, setOrgPrefillDone] = useState(false);
+  const [identityPrefillDone, setIdentityPrefillDone] = useState(false);
 
   const activeSteps = useMemo(() => {
     if (intent === 'personal' && proJoining) return ['account', 'pro_profile', 'find', 'join_done'] as StepId[];
@@ -176,12 +192,13 @@ export const SupplierOnboarding: React.FC<Props> = ({
 
   useEffect(() => {
     if (emailVerified) setVerified(true);
-    const pro = loadProfessionalRole();
-    if (pro && intent === 'personal') setProTitle(pro);
+    const sessionPro = loadProfessionalRole();
+    if (sessionPro && intent === 'personal') setProRole(sessionPro);
 
     const boot = loadOrgBootstrap();
     if (boot && (intent === 'supplier' || intent === 'contractor') && !orgPrefillDone) {
       setExistingCompanyId(boot.companyId);
+      const classLabel = parseOrgClassificationLabel(boot.classification);
       setProfile((prev) => ({
         ...prev,
         legalName: boot.legalName || prev.legalName,
@@ -190,7 +207,7 @@ export const SupplierOnboarding: React.FC<Props> = ({
         country: boot.countryLabel || prev.country,
         generalEmail: boot.generalEmail || prev.generalEmail,
         description: boot.description || prev.description,
-        types: boot.classification ? [boot.classification.replace(/^OrgType:\s*/, '')] : prev.types,
+        types: classLabel ? [classLabel] : prev.types,
       }));
       // Org signup created the company shell (or failed soft) — collect license/details then taxonomy.
       setVerified(true);
@@ -213,6 +230,38 @@ export const SupplierOnboarding: React.FC<Props> = ({
     }
     setDraftReady(true);
   }, [isLive, user.id, intent, emailVerified, orgPrefillDone]);
+
+  // Returning users: hydrate org / professional classifications from permanent columns.
+  useEffect(() => {
+    if (!isLive || identityPrefillDone || !draftReady) return;
+    let cancelled = false;
+    void (async () => {
+      if (intent === 'personal') {
+        const r = await fetchOwnIdentityProfile();
+        if (cancelled) return;
+        if (r.ok && r.value) {
+          if (r.value.professional_classification) setProRole(r.value.professional_classification);
+          if (r.value.title && !isProfessionalClassification(r.value.title)) setProTitle(r.value.title);
+          if (r.value.phone) setProPhone(r.value.phone);
+          if (r.value.location) setProLocation(r.value.location);
+        }
+      }
+      const companyId = existingCompanyId;
+      if (companyId && (intent === 'supplier' || intent === 'contractor')) {
+        const r = await fetchCompanyOrgClassification(companyId);
+        if (!cancelled && r.ok && r.value) {
+          setProfile((prev) => ({
+            ...prev,
+            types: prev.types.length ? prev.types : [r.value as string],
+          }));
+        }
+      }
+      if (!cancelled) setIdentityPrefillDone(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isLive, identityPrefillDone, draftReady, intent, existingCompanyId]);
 
   useEffect(() => {
     if (!isLive || !draftReady || stepId === 'complete' || stepId === 'join_done') return;
@@ -352,10 +401,12 @@ export const SupplierOnboarding: React.FC<Props> = ({
   };
 
   const saveProfessionalProfile = async () => {
-    if (proTitle.trim().length < 2) return setError('Enter your professional title.');
+    if (!proRole) return setError('Select your primary professional role.');
+    if (proTitle.trim().length < 2) return setError('Enter your job title (e.g. Procurement Manager).');
     if (isLive) {
       setBusy(true);
       const r = await updateOwnProfile({
+        professional_classification: proRole,
         title: proTitle.trim(),
         phone: proPhone.trim(),
         location: proLocation.trim(),
@@ -363,7 +414,10 @@ export const SupplierOnboarding: React.FC<Props> = ({
       });
       setBusy(false);
       if (!r.ok) return setError(r.error);
+      saveProfessionalRole(proRole);
       if (onRefreshAccess) await onRefreshAccess();
+    } else {
+      saveProfessionalRole(proRole);
     }
     setError('');
     nextAfter('pro_profile');
@@ -455,9 +509,29 @@ export const SupplierOnboarding: React.FC<Props> = ({
         {stepId === 'pro_profile' && (
           <div>
             <h2 className="text-lg font-semibold text-slate-900">Professional profile</h2>
-            <p className="mt-1 text-sm text-slate-600">Saved to your personal SOKO profile. Companies you join later will see these details.</p>
+            <p className="mt-1 text-sm text-slate-600">
+              Role is your SOKO classification. Job title is your free-text designation — companies you join later will see both.
+            </p>
             <div className="mt-5 grid sm:grid-cols-2 gap-3">
-              <TextField label="Professional title" value={proTitle} onChange={setProTitle} placeholder="e.g. Procurement Manager" required />
+              <label className="block">
+                <span className={labelCls}>Primary professional role</span>
+                <select
+                  value={proRole}
+                  onChange={(e) => setProRole(e.target.value as ProfessionalClassification)}
+                  className={inputCls}
+                  required
+                >
+                  <option value="" disabled>
+                    Select role
+                  </option>
+                  {PROFESSIONAL_CLASSIFICATIONS.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <TextField label="Job title" value={proTitle} onChange={setProTitle} placeholder="e.g. Procurement Manager" required />
               <TextField label="Phone" value={proPhone} onChange={setProPhone} placeholder="+971 …" />
               <div className="sm:col-span-2">
                 <TextField label="Location" value={proLocation} onChange={setProLocation} placeholder="Dubai, UAE" />

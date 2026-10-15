@@ -1,7 +1,10 @@
 /**
  * Module 1B registration identity taxonomy.
- * Maps product classifications onto existing company_kind (supplier | contractor)
- * until a dedicated org_classification column is approved.
+ * Permanent columns (staging migration 14):
+ *   companies.org_classification
+ *   profiles.professional_classification
+ *   profiles.username
+ * company_kind remains supplier | contractor for workspace/roles.
  */
 import type { CompanyKind } from './supplierTypes';
 
@@ -28,7 +31,10 @@ export const PROFESSIONAL_CLASSIFICATIONS = [
 
 export type ProfessionalClassification = (typeof PROFESSIONAL_CLASSIFICATIONS)[number];
 
-/** Workspace kind for create_company — only two values exist in staging schema today. */
+/** Matches AuthModal + profiles_username_format_check (3–30 chars). */
+export const USERNAME_RE = /^[a-z0-9](?:[a-z0-9._]{1,28})[a-z0-9]$/;
+
+/** Workspace kind for create_company — only two values in schema. */
 export function companyKindForOrgClassification(c: OrgClassification): CompanyKind {
   switch (c) {
     case 'Supplier / Manufacturer':
@@ -52,9 +58,24 @@ export function isProfessionalClassification(v: string): v is ProfessionalClassi
   return (PROFESSIONAL_CLASSIFICATIONS as readonly string[]).includes(v);
 }
 
-/** Persisted on company_taxonomy as capability until company_type kind is approved. */
-export function orgClassificationTaxonomyValue(c: OrgClassification): string {
-  return `OrgType: ${c}`;
+/** Normalize optional username for storage (trim + lowercase). */
+export function normalizeUsername(raw: string): string {
+  return raw.trim().toLowerCase();
+}
+
+export function isValidUsername(raw: string): boolean {
+  const v = normalizeUsername(raw);
+  return v.length > 0 && USERNAME_RE.test(v);
+}
+
+/**
+ * Parse a legacy session/bootstrap value that may still carry an "OrgType:" prefix.
+ * Prefer companies.org_classification going forward.
+ */
+export function parseOrgClassificationLabel(raw: string | null | undefined): OrgClassification | null {
+  if (!raw) return null;
+  const cleaned = raw.replace(/^OrgType:\s*/i, '').trim();
+  return isOrgClassification(cleaned) ? cleaned : null;
 }
 
 export const ORG_BOOTSTRAP_KEY = 'soko_org_bootstrap_v1';
@@ -84,7 +105,10 @@ export function loadOrgBootstrap(): OrgBootstrapDraft | null {
   try {
     const raw = sessionStorage.getItem(ORG_BOOTSTRAP_KEY);
     if (!raw) return null;
-    return JSON.parse(raw) as OrgBootstrapDraft;
+    const parsed = JSON.parse(raw) as OrgBootstrapDraft;
+    const classification = parseOrgClassificationLabel(parsed.classification);
+    if (!classification) return null;
+    return { ...parsed, classification };
   } catch {
     return null;
   }

@@ -12,6 +12,7 @@
     "lint": "tsc --noEmit",
     "test:contact-csv": "tsx src/lib/csvExport.test.ts",
     "test:contact-migration": "node scripts/check-contact-migration.mjs",
+    "test:identity-migration": "node scripts/check-identity-classification-migration.mjs",
     "test:onboarding": "tsx src/lib/companyOnboarding.test.ts && tsx src/lib/registrationIdentity.test.ts",
     "guard:staging": "node scripts/require-staging-supabase.mjs",
     "test:contact": "npm run test:contact-csv && npm run test:contact-migration"

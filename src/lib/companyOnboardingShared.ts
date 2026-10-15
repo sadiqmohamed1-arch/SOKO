@@ -21,6 +21,12 @@ export function mapOnboardingError(message: string): string {
   if (/company not found/i.test(message)) {
     return 'That company is not open for join requests. Ask an admin for an invitation.';
   }
+  if (/profiles_username_uq|username.*unique|unique.*username/i.test(m) || (/23505/.test(m) && /username/i.test(m))) {
+    return 'That username is already taken. Try another.';
+  }
+  if (/profiles_username_format|username.*check|23514.*username/i.test(m)) {
+    return 'Use 3–30 lowercase letters, numbers, dots or underscores.';
+  }
   if (/duplicate key|23505|already exists/i.test(m)) {
     return 'This company or membership already exists. Search for it and request access instead.';
   }

@@ -3,6 +3,14 @@
  * Demo mode continues to use src/data/supplierService.ts; never mix the two paths.
  */
 import type { CompanyKind, CompanyProfile, CompanyRecord } from '../data/supplierTypes';
+import {
+  isOrgClassification,
+  isProfessionalClassification,
+  isValidUsername,
+  normalizeUsername,
+  type OrgClassification,
+  type ProfessionalClassification,
+} from '../data/registrationIdentity';
 import { getSupabaseClient, isSupabaseConfigured } from './supabaseClient';
 import {
   clearOnboardingDraft,
@@ -23,7 +31,7 @@ export {
 };
 
 const COMPANY_COLUMNS =
-  'id, soko_id, kind, legal_name, trading_name, country, emirate, address, website, general_email, phone, established, description, is_public, is_suspended, verification_status, verified_at, created_at, updated_at';
+  'id, soko_id, kind, org_classification, legal_name, trading_name, country, emirate, address, website, general_email, phone, established, description, is_public, is_suspended, verification_status, verified_at, created_at, updated_at';
 
 export interface LiveCompanyHit {
   id: string;
@@ -123,25 +131,104 @@ export async function findLiveDuplicateCompanies(
 
 export async function updateOwnProfile(fields: {
   full_name?: string;
-  title?: string;
+  /** Actual job title only — not professional classification. */
+  title?: string | null;
   phone?: string;
   location?: string;
+  professional_classification?: ProfessionalClassification | null;
+  username?: string | null;
 }): Promise<LiveResult<void>> {
   try {
     const supabase = requireClient();
     const { data: auth, error: authErr } = await supabase.auth.getUser();
     if (authErr || !auth.user) return fail(authErr?.message || 'Not signed in.');
-    const patch: Record<string, string> = {};
+    const patch: Record<string, string | null> = {};
     if (fields.full_name !== undefined) patch.full_name = fields.full_name.trim();
-    if (fields.title !== undefined) patch.title = fields.title.trim();
+    if (fields.title !== undefined) patch.title = fields.title === null ? null : fields.title.trim() || null;
     if (fields.phone !== undefined) patch.phone = fields.phone.trim();
     if (fields.location !== undefined) patch.location = fields.location.trim();
+    if (fields.professional_classification !== undefined) {
+      if (fields.professional_classification === null) {
+        patch.professional_classification = null;
+      } else if (!isProfessionalClassification(fields.professional_classification)) {
+        return fail('Select a valid professional role.');
+      } else {
+        patch.professional_classification = fields.professional_classification;
+      }
+    }
+    if (fields.username !== undefined) {
+      if (fields.username === null || !fields.username.trim()) {
+        patch.username = null;
+      } else {
+        const u = normalizeUsername(fields.username);
+        if (!isValidUsername(u)) {
+          return fail('Use 3–30 lowercase letters, numbers, dots or underscores.');
+        }
+        patch.username = u;
+      }
+    }
     if (!Object.keys(patch).length) return ok(undefined);
     const { error } = await supabase.from('profiles').update(patch).eq('id', auth.user.id);
     if (error) return fail(error.message);
     return ok(undefined);
   } catch (err) {
     return fail(err instanceof Error ? err.message : 'Could not update profile.');
+  }
+}
+
+export interface OwnIdentityProfile {
+  full_name: string | null;
+  title: string | null;
+  phone: string | null;
+  location: string | null;
+  professional_classification: ProfessionalClassification | null;
+  username: string | null;
+}
+
+/** Load permanent identity fields for returning users (RLS: own / teammates). */
+export async function fetchOwnIdentityProfile(): Promise<LiveResult<OwnIdentityProfile | null>> {
+  try {
+    const supabase = requireClient();
+    const { data: auth, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !auth.user) return fail(authErr?.message || 'Not signed in.');
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('full_name, title, phone, location, professional_classification, username')
+      .eq('id', auth.user.id)
+      .maybeSingle();
+    if (error) return fail(error.message);
+    if (!data) return ok(null);
+    const pro = data.professional_classification;
+    return ok({
+      full_name: (data.full_name as string) ?? null,
+      title: (data.title as string) ?? null,
+      phone: (data.phone as string) ?? null,
+      location: (data.location as string) ?? null,
+      professional_classification:
+        typeof pro === 'string' && isProfessionalClassification(pro) ? pro : null,
+      username: (data.username as string) ?? null,
+    });
+  } catch (err) {
+    return fail(err instanceof Error ? err.message : 'Could not load profile.');
+  }
+}
+
+/** Read company.org_classification for onboarding prefill / returning users. */
+export async function fetchCompanyOrgClassification(
+  companyId: string,
+): Promise<LiveResult<OrgClassification | null>> {
+  try {
+    const supabase = requireClient();
+    const { data, error } = await supabase
+      .from('companies')
+      .select('org_classification')
+      .eq('id', companyId)
+      .maybeSingle();
+    if (error) return fail(error.message);
+    const v = data?.org_classification;
+    return ok(typeof v === 'string' && isOrgClassification(v) ? v : null);
+  } catch (err) {
+    return fail(err instanceof Error ? err.message : 'Could not load organization type.');
   }
 }
 
@@ -245,7 +332,8 @@ export interface BootstrapOrganizationInput {
   kind: CompanyKind;
   legalName: string;
   tradingName?: string;
-  orgClassificationLabel: string;
+  /** Permanent product classification → companies.org_classification (not taxonomy). */
+  orgClassification: OrgClassification;
   emirate?: string;
   generalEmail?: string;
   description?: string;
@@ -254,8 +342,12 @@ export interface BootstrapOrganizationInput {
 export async function bootstrapOrganization(input: BootstrapOrganizationInput): Promise<LiveResult<{ companyId: string }>> {
   const legal = input.legalName.trim();
   if (legal.length < 2) return fail('Registered company name is required.');
+  if (!isOrgClassification(input.orgClassification)) {
+    return fail('Select a valid organization type.');
+  }
   try {
     const supabase = requireClient();
+    // Keep the existing 6-arg create_company RPC; set org_classification on the follow-up UPDATE.
     const { data: companyId, error: createErr } = await supabase.rpc('create_company', {
       p_kind: input.kind,
       p_legal_name: legal,
@@ -275,19 +367,11 @@ export async function bootstrapOrganization(input: BootstrapOrganizationInput): 
         general_email: input.generalEmail?.trim() || null,
         description: input.description?.trim() || null,
         is_public: true,
+        org_classification: input.orgClassification,
       })
       .eq('id', companyId);
     if (updErr) return fail(updErr.message);
 
-    const orgTag = input.orgClassificationLabel.trim().slice(0, 120);
-    if (orgTag) {
-      const { error: taxErr } = await supabase.from('company_taxonomy').insert({
-        company_id: companyId,
-        kind: 'capability',
-        value: orgTag.startsWith('OrgType:') ? orgTag : `OrgType: ${orgTag}`,
-      });
-      if (taxErr) return fail(taxErr.message);
-    }
     return ok({ companyId });
   } catch (err) {
     return fail(err instanceof Error ? err.message : 'Organization registration failed.');

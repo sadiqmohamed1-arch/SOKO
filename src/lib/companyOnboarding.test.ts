@@ -58,6 +58,16 @@ assert(
 );
 assert(mapOnboardingError('company not found').includes('invitation'), 'maps private/non-public join');
 assert(mapOnboardingError('not allowed').includes('not allowed'), 'maps permission denial');
+assert(
+  mapOnboardingError('duplicate key value violates unique constraint "profiles_username_uq"').includes('already taken'),
+  'maps username uniqueness',
+);
+assert(
+  mapOnboardingError('new row for relation "profiles" violates check constraint "profiles_username_format_check"').includes(
+    '3–30',
+  ),
+  'maps username format check',
+);
 assert(mapOnboardingError('weird backend blob XYZ').includes('weird backend blob XYZ'), 'passes through unknown errors');
 
 const mem = new Map<string, string>();
