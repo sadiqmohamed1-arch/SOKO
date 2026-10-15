@@ -1,6 +1,6 @@
 import type { CompanyProfile } from '../data/supplierTypes';
 
-export type OnboardingIntent = 'join' | 'supplier' | 'contractor';
+export type OnboardingIntent = 'join' | 'supplier' | 'contractor' | 'personal';
 
 export interface OnboardingDraft {
   intent: OnboardingIntent;

@@ -1,6 +1,18 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Building2, Check, Eye, EyeOff, HardHat, Loader2, Truck, User, UserPlus, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Building2, Check, Eye, EyeOff, HardHat, Loader2, User, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import {
+  ORG_CLASSIFICATIONS,
+  PROFESSIONAL_CLASSIFICATIONS,
+  companyKindForOrgClassification,
+  orgClassificationTaxonomyValue,
+  saveOrgBootstrap,
+  saveProfessionalRole,
+  type OrgClassification,
+  type ProfessionalClassification,
+} from '../data/registrationIdentity';
+import { bootstrapOrganization } from '../lib/companyOnboarding';
+import { isSupabaseConfigured } from '../lib/supabaseClient';
 
 export type AuthIntent = 'personal' | 'join' | 'supplier' | 'contractor';
 
@@ -11,16 +23,10 @@ interface AuthModalProps {
   onSuccess?: (intent: AuthIntent) => void;
 }
 
-type View = 'login' | 'signup' | 'choose' | 'forgot';
+type View = 'login' | 'path' | 'signup_org' | 'signup_indiv' | 'forgot';
+type RegPath = 'organization' | 'individual';
 
-const CHOICES: { intent: AuthIntent; icon: React.ElementType; title: string; body: string }[] = [
-  { intent: 'personal', icon: User, title: 'Continue with my personal workspace', body: 'Network, keep your digital business card and explore the marketplace. You can add a company any time.' },
-  { intent: 'join', icon: UserPlus, title: 'Join an existing company', body: 'Find your company on SOKO and request access. A company admin approves every request.' },
-  { intent: 'supplier', icon: Truck, title: 'Register a supplier company', body: 'List your products and services and respond to contractor RFQs.' },
-  { intent: 'contractor', icon: HardHat, title: 'Register a contractor or developer company', body: 'Source materials, run RFQs and manage approved suppliers for your projects.' },
-];
-
-const SIGNUP_STEPS = ['Account', 'Get Started'] as const;
+const EMIRATE_OPTIONS = ['Dubai', 'Abu Dhabi', 'Sharjah', 'Ajman', 'Ras Al Khaimah', 'Al Ain', 'Fujairah', 'Umm Al Quwain', 'Other'];
 
 const inputCls =
   'w-full rounded-lg border border-soko-line bg-white px-3.5 py-2.5 text-sm text-soko-ink placeholder:text-soko-muted/70 outline-none transition focus:border-soko-blue focus:ring-2 focus:ring-soko-blue/20 aria-[invalid=true]:border-red-500';
@@ -51,7 +57,7 @@ const LinkedInOption: React.FC<{ mode: 'login' | 'signup' }> = ({ mode }) => (
     </div>
     {mode === 'signup' && (
       <p className="-mt-1 text-xs leading-relaxed text-soko-muted">
-        Once connected, you&apos;ll be able to import your name and photo from LinkedIn and review them before finishing sign-up.
+        LinkedIn will sign you into your personal SOKO identity. Organization memberships stay separate and authorized.
       </p>
     )}
     <div className="flex items-center gap-3 text-xs text-soko-muted">
@@ -61,8 +67,8 @@ const LinkedInOption: React.FC<{ mode: 'login' | 'signup' }> = ({ mode }) => (
 );
 
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMode = 'login', onSuccess }) => {
-  const { login, register } = useAuth();
-  const [view, setView] = useState<View>(initialMode);
+  const { login, register, refreshAccess } = useAuth();
+  const [view, setView] = useState<View>(initialMode === 'signup' ? 'path' : 'login');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -72,37 +78,55 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [firstName, setFirstName] = useState('');
+  const [orgClass, setOrgClass] = useState<OrgClassification>('Supplier / Manufacturer');
+  const [companyName, setCompanyName] = useState('');
+  const [emirate, setEmirate] = useState('Dubai');
+  const [activity, setActivity] = useState('');
+  const [proRole, setProRole] = useState<ProfessionalClassification>('Sales / Business Development');
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
 
   useEffect(() => {
     if (!isOpen) return;
-    setView(initialMode);
+    setView(initialMode === 'signup' ? 'path' : 'login');
     setErrors({});
     setFormError('');
     setPassword('');
     setShowPassword(false);
+    setAcceptedTerms(false);
   }, [isOpen, initialMode]);
 
   useEffect(() => {
     if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
     document.addEventListener('keydown', onKey);
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = prevOverflow; };
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
   }, [isOpen, onClose]);
 
   useEffect(() => {
     if (!isOpen) return;
-    const t = window.setTimeout(() => dialogRef.current?.querySelector<HTMLElement>('input, button[data-autofocus]')?.focus(), 30);
+    const t = window.setTimeout(() => dialogRef.current?.querySelector<HTMLElement>('input, button[data-autofocus], select')?.focus(), 30);
     return () => window.clearTimeout(t);
   }, [isOpen, view]);
 
   if (!isOpen) return null;
 
-  const switchView = (next: View) => { setView(next); setErrors({}); setFormError(''); };
+  const switchView = (next: View) => {
+    setView(next);
+    setErrors({});
+    setFormError('');
+  };
+
+  const pickPath = (path: RegPath) => {
+    switchView(path === 'organization' ? 'signup_org' : 'signup_indiv');
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -120,30 +144,107 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
     onClose();
   };
 
-  const handleSignup = async (e: React.FormEvent) => {
+  const handleOrgSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const next: Record<string, string> = {};
+    if (companyName.trim().length < 2) next.companyName = 'Enter the registered company name.';
+    if (!orgClass) next.orgClass = 'Select an organization type.';
+    if (name.trim().length < 2) next.name = 'Enter the authorized representative’s full name.';
+    if (!isEmail(email)) next.email = 'Enter a valid business email.';
+    if (password.length < 8) next.password = 'Use at least 8 characters.';
+    if (!acceptedTerms) next.terms = 'Please accept the terms to continue.';
+    setErrors(next);
+    setFormError('');
+    if (Object.keys(next).length) return;
+
+    setSubmitting(true);
+    const r = await register({ name: name.trim(), email: email.trim(), password, title: 'Authorized representative' });
+    if (!r.success) {
+      setSubmitting(false);
+      return setFormError(r.message || 'We could not create the representative account.');
+    }
+
+    const kind = companyKindForOrgClassification(orgClass);
+    let companyId: string | null = null;
+    if (isSupabaseConfigured) {
+      const boot = await bootstrapOrganization({
+        kind,
+        legalName: companyName.trim(),
+        tradingName: companyName.trim(),
+        orgClassificationLabel: orgClassificationTaxonomyValue(orgClass),
+        emirate,
+        generalEmail: email.trim(),
+        description: activity.trim(),
+      });
+      if (!boot.ok) {
+        setSubmitting(false);
+        setFormError(
+          `${boot.error} Your personal account was created — open company onboarding to finish registering the organization.`,
+        );
+        saveOrgBootstrap({
+          companyId: null,
+          classification: orgClass,
+          legalName: companyName.trim(),
+          tradingName: companyName.trim(),
+          emirate,
+          countryLabel: 'United Arab Emirates',
+          generalEmail: email.trim(),
+          description: activity.trim(),
+          representativeName: name.trim(),
+          kind,
+        });
+        await refreshAccess();
+        onSuccess?.(kind === 'contractor' ? 'contractor' : 'supplier');
+        onClose();
+        return;
+      }
+      companyId = boot.value.companyId;
+      await refreshAccess();
+    }
+
+    saveOrgBootstrap({
+      companyId,
+      classification: orgClass,
+      legalName: companyName.trim(),
+      tradingName: companyName.trim(),
+      emirate,
+      countryLabel: 'United Arab Emirates',
+      generalEmail: email.trim(),
+      description: activity.trim(),
+      representativeName: name.trim(),
+      kind,
+    });
+    setSubmitting(false);
+    onSuccess?.(kind === 'contractor' ? 'contractor' : 'supplier');
+    onClose();
+  };
+
+  const handleIndivSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     const next: Record<string, string> = {};
     if (name.trim().length < 2) next.name = 'Enter your full name.';
     if (!isEmail(email)) next.email = 'Enter a valid email address.';
     if (password.length < 8) next.password = 'Use at least 8 characters.';
     if (username && !USERNAME_RE.test(username)) next.username = 'Use 3–30 lowercase letters, numbers, dots or underscores.';
+    if (!proRole) next.proRole = 'Select your primary professional role.';
     if (!acceptedTerms) next.terms = 'Please accept the terms to continue.';
     setErrors(next);
     setFormError('');
     if (Object.keys(next).length) return;
-    setSubmitting(true);
-    const r = (await register({ name: name.trim(), email: email.trim(), password })) as { success: boolean; message?: string; errors?: Record<string, string> };
-    setSubmitting(false);
-    if (!r.success) {
-      if (r.errors) setErrors(r.errors);
-      return setFormError(r.message || 'We could not create your account. Please try again.');
-    }
-    setFirstName(name.trim().split(/\s+/)[0]);
-    setPassword('');
-    switchView('choose');
-  };
 
-  const choose = (intent: AuthIntent) => { onSuccess?.(intent); onClose(); };
+    setSubmitting(true);
+    const r = await register({
+      name: name.trim(),
+      email: email.trim(),
+      password,
+      title: proRole,
+    });
+    setSubmitting(false);
+    if (!r.success) return setFormError(r.message || 'We could not create your account.');
+    saveProfessionalRole(proRole);
+    onSuccess?.('personal');
+    onClose();
+  };
 
   const fieldError = (key: string) =>
     errors[key] ? <p id={`${titleId}-${key}-err`} className="mt-1.5 text-xs text-red-600">{errors[key]}</p> : null;
@@ -152,7 +253,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
     <div>
       <div className="mb-1.5 flex items-center justify-between">
         <label htmlFor={`${titleId}-password`} className="text-sm font-medium text-soko-ink">Password</label>
-        {view === 'login' && <button type="button" onClick={() => switchView('forgot')} className="text-xs font-medium text-soko-blue hover:underline cursor-pointer">Forgot password?</button>}
+        {view === 'login' && (
+          <button type="button" onClick={() => switchView('forgot')} className="text-xs font-medium text-soko-blue hover:underline cursor-pointer">
+            Forgot password?
+          </button>
+        )}
       </div>
       <div className="relative">
         <input
@@ -162,7 +267,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           onChange={(e) => setPassword(e.target.value)}
           autoComplete={autoComplete}
           aria-invalid={!!errors.password}
-          aria-describedby={errors.password ? `${titleId}-password-err` : undefined}
           className={`${inputCls} pr-11`}
         />
         <button
@@ -178,66 +282,56 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
     </div>
   );
 
-  const emailField = (
+  const emailField = (label: string) => (
     <div>
-      <div className="mb-1.5 flex items-center justify-between gap-2">
-        <label htmlFor={`${titleId}-email`} className="text-sm font-medium text-soko-ink">{view === 'signup' ? 'Professional or company email' : 'Email'}</label>
-        {view === 'signup' && <span className="rounded bg-soko-mist px-1.5 py-0.5 text-[10px] font-medium text-soko-muted">Not verified</span>}
-      </div>
+      <label htmlFor={`${titleId}-email`} className={labelCls}>{label}</label>
       <input
         id={`${titleId}-email`}
         type="email"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
         autoComplete="email"
-        placeholder="you@example.com"
+        placeholder="you@company.com"
         aria-invalid={!!errors.email}
-        aria-describedby={errors.email ? `${titleId}-email-err` : undefined}
         className={inputCls}
       />
-      {errors.email ? fieldError('email') : view === 'signup' ? (
-        <p className="mt-1.5 text-xs text-soko-muted">Company email verification is coming soon. Companies will be able to invite you through a verified work email.</p>
-      ) : null}
+      {fieldError('email')}
     </div>
   );
 
-  const usernameField = (
+  const termsField = (
     <div>
-      <div className="mb-1.5 flex items-center justify-between gap-2">
-        <label htmlFor={`${titleId}-username`} className="text-sm font-medium text-soko-ink">
-          SOKO username <span className="font-normal text-soko-muted">(optional)</span>
-        </label>
-        <span className="rounded bg-soko-mist px-1.5 py-0.5 text-[10px] font-medium text-soko-muted">Preview</span>
-      </div>
-      <div className="relative">
-        <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center text-sm text-soko-muted">@</span>
+      <label className="flex items-start gap-2.5 text-sm leading-relaxed text-soko-muted">
         <input
-          id={`${titleId}-username`}
-          value={username}
-          onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/\s/g, ''))}
-          autoComplete="username"
-          placeholder="ahmed.khan"
-          maxLength={30}
-          aria-invalid={!!errors.username}
-          aria-describedby={`${titleId}-username-help`}
-          className={`${inputCls} pl-8`}
+          type="checkbox"
+          checked={acceptedTerms}
+          onChange={(e) => setAcceptedTerms(e.target.checked)}
+          className="mt-1 h-4 w-4 shrink-0 rounded border-soko-line accent-soko-blue"
         />
-      </div>
-      <p id={`${titleId}-username-help`} className={`mt-1.5 text-xs ${errors.username ? 'text-red-600' : 'text-soko-muted'}`}>
-        {errors.username ||
-          (username && USERNAME_RE.test(username)
-            ? `Format looks good. Availability can’t be checked yet, so @${username} isn’t reserved — you’ll claim your username when usernames launch.`
-            : 'Your unique handle, like @ahmed.khan. Username reservation and availability checks are coming soon.')}
-      </p>
+        <span>I agree to the SOKO Terms of Service and Privacy Policy.</span>
+      </label>
+      {fieldError('terms')}
     </div>
   );
 
   const heading: Record<View, { title: string; sub: string }> = {
     login: { title: 'Sign in to SOKO', sub: 'Welcome back to the construction network.' },
-    signup: { title: 'Create your SOKO account', sub: 'Your account is personal. Add or join a company in the next step.' },
-    choose: { title: firstName ? `Welcome, ${firstName}` : 'Welcome to SOKO', sub: 'How would you like to start? You can change this later.' },
+    path: {
+      title: 'Create your SOKO account',
+      sub: 'Choose an organization identity or an independent professional identity. They stay separate — one person can belong to many companies.',
+    },
+    signup_org: {
+      title: 'Register an organization',
+      sub: 'Creates a permanent company identity on SOKO, plus an authorized representative account that administers it.',
+    },
+    signup_indiv: {
+      title: 'Register as an individual',
+      sub: 'Creates your portable professional identity. Join companies later without losing your personal profile or connections.',
+    },
     forgot: { title: 'Reset your password', sub: 'Password resets are handled by the SOKO team for now.' },
   };
+
+  const wide = view === 'path' || view === 'signup_org';
 
   return (
     <div className="fixed inset-0 z-[100] isolate flex items-end justify-center p-0 sm:items-center sm:p-4">
@@ -247,7 +341,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className={`relative max-h-[100dvh] w-full overflow-y-auto rounded-t-2xl bg-white shadow-2xl sm:max-h-[92vh] sm:rounded-2xl ${view === 'choose' ? 'sm:max-w-xl' : 'sm:max-w-md'}`}
+        className={`relative max-h-[100dvh] w-full overflow-y-auto rounded-t-2xl bg-white shadow-2xl sm:max-h-[92vh] sm:rounded-2xl ${wide ? 'sm:max-w-xl' : 'sm:max-w-md'}`}
       >
         <button type="button" onClick={onClose} aria-label="Close" className="absolute right-3 top-3 rounded-lg p-2 text-soko-muted transition hover:bg-soko-mist hover:text-soko-ink cursor-pointer">
           <X className="h-5 w-5" />
@@ -256,36 +350,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         <div className="flex flex-col gap-6 px-6 pb-7 pt-7 sm:px-8">
           <div className="flex flex-col gap-4">
             <img src="/soko-lockup.png" alt="SOKO" width={720} height={156} className="h-7 w-auto self-start" draggable={false} />
-            {view === 'signup' || view === 'choose' ? (
-              <ol className="flex items-center gap-3 text-sm font-medium" aria-label={`Sign-up progress, step ${view === 'signup' ? 1 : 2} of 2`}>
-                {SIGNUP_STEPS.map((label, i) => {
-                  const current = (view === 'signup' ? 0 : 1) === i;
-                  const done = view === 'choose' && i === 0;
-                  return (
-                    <React.Fragment key={label}>
-                      {i > 0 && <li aria-hidden="true" className={`h-0.5 w-10 rounded-full ${view === 'choose' ? 'bg-soko-blue' : 'bg-soko-line'}`} />}
-                      <li className="flex items-center gap-2" aria-current={current ? 'step' : undefined}>
-                        <span
-                          className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${
-                            done
-                              ? 'bg-soko-blue text-white'
-                              : current
-                                ? 'bg-soko-blue text-white ring-4 ring-soko-blue/15'
-                                : 'border border-soko-line bg-white text-soko-muted'
-                          }`}
-                        >
-                          {done ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : i + 1}
-                        </span>
-                        <span className={current || done ? 'text-soko-ink' : 'text-soko-muted'}>
-                          {label}
-                          {done && <span className="sr-only"> (completed)</span>}
-                        </span>
-                      </li>
-                    </React.Fragment>
-                  );
-                })}
-              </ol>
-            ) : null}
             <div>
               <h2 id={titleId} className="text-xl font-semibold tracking-tight text-soko-ink text-balance">{heading[view].title}</h2>
               <p className="mt-1 text-sm leading-relaxed text-soko-muted text-pretty">{heading[view].sub}</p>
@@ -295,92 +359,174 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           {formError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-sm text-red-700">{formError}</p>}
 
           {view === 'login' && (
-            <form onSubmit={handleLogin} noValidate className="flex flex-col gap-4">
+            <form onSubmit={(e) => void handleLogin(e)} noValidate className="flex flex-col gap-4">
               <LinkedInOption mode="login" />
-              {emailField}
+              {emailField('Email')}
               {passwordField('current-password')}
               <button type="submit" disabled={submitting} className={`${primaryBtn} mt-1`}>
                 {submitting ? <><Loader2 className="h-4 w-4 animate-spin" /> Signing in</> : 'Sign in'}
               </button>
               <p className="text-center text-sm text-soko-muted">
-                New to SOKO? <button type="button" onClick={() => switchView('signup')} className={linkBtn}>Create an account</button>
+                New to SOKO? <button type="button" onClick={() => switchView('path')} className={linkBtn}>Create an account</button>
               </p>
             </form>
           )}
 
-          {view === 'signup' && (
-            <form onSubmit={handleSignup} noValidate className="flex flex-col gap-4">
-              <LinkedInOption mode="signup" />
-              <div>
-                <label htmlFor={`${titleId}-name`} className={labelCls}>Full name</label>
-                <input
-                  id={`${titleId}-name`}
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  autoComplete="name"
-                  placeholder="Ahmed Al Mansoori"
-                  aria-invalid={!!errors.name}
-                  aria-describedby={errors.name ? `${titleId}-name-err` : undefined}
-                  className={inputCls}
-                />
-                {fieldError('name')}
-              </div>
-              {usernameField}
-              {emailField}
-              {passwordField('new-password', 'At least 8 characters.')}
-              <p className="rounded-lg bg-soko-mist px-3.5 py-2.5 text-xs leading-relaxed text-soko-muted">
-                This is your personal SOKO identity, with a permanent Personal ID that stays yours. Companies can invite you, but you choose whether to join, and you can belong to more than one company.
-              </p>
-              <div>
-                <label className="flex items-start gap-2.5 text-sm leading-relaxed text-soko-muted">
-                  <input
-                    type="checkbox"
-                    checked={acceptedTerms}
-                    onChange={(e) => setAcceptedTerms(e.target.checked)}
-                    aria-invalid={!!errors.terms}
-                    className="mt-1 h-4 w-4 shrink-0 rounded border-soko-line accent-soko-blue"
-                  />
-                  <span>I agree to the SOKO Terms of Service and Privacy Policy.</span>
-                </label>
-                {fieldError('terms')}
-              </div>
-              <button type="submit" disabled={submitting} className={`${primaryBtn} mt-1`}>
-                {submitting ? <><Loader2 className="h-4 w-4 animate-spin" /> Creating account</> : <>Create account <ArrowRight className="h-4 w-4" /></>}
-              </button>
+          {view === 'path' && (
+            <div className="flex flex-col gap-3">
+              <ul className="flex flex-col gap-2.5">
+                <li>
+                  <button
+                    type="button"
+                    data-autofocus=""
+                    onClick={() => pickPath('organization')}
+                    className="group flex w-full items-start gap-3.5 rounded-xl border border-soko-line bg-white p-4 text-left transition hover:border-soko-blue hover:bg-soko-mist cursor-pointer"
+                  >
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-soko-mist text-soko-blue">
+                      <Building2 className="h-5 w-5" aria-hidden="true" />
+                    </span>
+                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span className="text-sm font-semibold text-soko-ink">Register an Organization</span>
+                      <span className="text-sm leading-relaxed text-soko-muted">
+                        Permanent company identity with its own SOKO ID. Products, certifications and company records stay with the organization — independent of any employee.
+                      </span>
+                    </span>
+                    <ArrowRight className="mt-2.5 h-4 w-4 shrink-0 text-soko-muted group-hover:text-soko-blue" aria-hidden="true" />
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => pickPath('individual')}
+                    className="group flex w-full items-start gap-3.5 rounded-xl border border-soko-line bg-white p-4 text-left transition hover:border-soko-blue hover:bg-soko-mist cursor-pointer"
+                  >
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-soko-mist text-soko-blue">
+                      <User className="h-5 w-5" aria-hidden="true" />
+                    </span>
+                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span className="text-sm font-semibold text-soko-ink">Register as an Individual</span>
+                      <span className="text-sm leading-relaxed text-soko-muted">
+                        Portable professional identity. Join existing companies, create one later, or continue independently. Your personal role stays separate from company type.
+                      </span>
+                    </span>
+                    <ArrowRight className="mt-2.5 h-4 w-4 shrink-0 text-soko-muted group-hover:text-soko-blue" aria-hidden="true" />
+                  </button>
+                </li>
+              </ul>
               <p className="text-center text-sm text-soko-muted">
                 Already have an account? <button type="button" onClick={() => switchView('login')} className={linkBtn}>Sign in</button>
               </p>
+            </div>
+          )}
+
+          {view === 'signup_org' && (
+            <form onSubmit={(e) => void handleOrgSignup(e)} noValidate className="flex flex-col gap-4">
+              <LinkedInOption mode="signup" />
+              <div>
+                <label htmlFor={`${titleId}-company`} className={labelCls}>Registered company name</label>
+                <input id={`${titleId}-company`} value={companyName} onChange={(e) => setCompanyName(e.target.value)} className={inputCls} placeholder="As on the trade license" aria-invalid={!!errors.companyName} />
+                {fieldError('companyName')}
+              </div>
+              <div>
+                <label htmlFor={`${titleId}-orgclass`} className={labelCls}>Organization type</label>
+                <select id={`${titleId}-orgclass`} value={orgClass} onChange={(e) => setOrgClass(e.target.value as OrgClassification)} className={inputCls}>
+                  {ORG_CLASSIFICATIONS.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+                <p className="mt-1.5 text-xs text-soko-muted">Primary classification now. Additional activities can be added after setup. Maps to SOKO workspace kind (supplier or contractor) until extended kinds are approved.</p>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <div>
+                  <label className={labelCls}>Country</label>
+                  <input value="United Arab Emirates" readOnly className={`${inputCls} bg-soko-mist`} />
+                </div>
+                <div>
+                  <label htmlFor={`${titleId}-emirate`} className={labelCls}>City / Emirate</label>
+                  <select id={`${titleId}-emirate`} value={emirate} onChange={(e) => setEmirate(e.target.value)} className={inputCls}>
+                    {EMIRATE_OPTIONS.map((c) => <option key={c}>{c}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label htmlFor={`${titleId}-activity`} className={labelCls}>Basic business activity <span className="font-normal text-soko-muted">(optional)</span></label>
+                <textarea id={`${titleId}-activity`} rows={2} value={activity} onChange={(e) => setActivity(e.target.value)} className={inputCls} placeholder="What the organization does" />
+              </div>
+              <div className="rounded-xl border border-soko-line bg-soko-mist/60 p-3.5 space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-soko-muted">Authorized representative</p>
+                <div>
+                  <label htmlFor={`${titleId}-name`} className={labelCls}>Full name</label>
+                  <input id={`${titleId}-name`} value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" className={inputCls} aria-invalid={!!errors.name} />
+                  {fieldError('name')}
+                </div>
+                {emailField('Business email')}
+                {passwordField('new-password', 'At least 8 characters. This signs in the representative’s personal SOKO account.')}
+              </div>
+              <p className="rounded-lg bg-soko-mist px-3.5 py-2.5 text-xs leading-relaxed text-soko-muted flex gap-2">
+                <HardHat className="h-4 w-4 shrink-0 text-soko-blue mt-0.5" aria-hidden="true" />
+                <span>The organization receives its own SOKO company ID. The representative becomes Company Admin. Trade license, products and certifications are collected next — company data stays with the organization if the representative leaves.</span>
+              </p>
+              {termsField}
+              <button type="submit" disabled={submitting} className={`${primaryBtn} mt-1`}>
+                {submitting ? <><Loader2 className="h-4 w-4 animate-spin" /> Creating organization</> : <>Create organization <ArrowRight className="h-4 w-4" /></>}
+              </button>
+              <button type="button" onClick={() => switchView('path')} className="inline-flex items-center gap-1.5 self-start text-sm font-semibold text-soko-blue hover:underline cursor-pointer">
+                <ArrowLeft className="h-4 w-4" /> Back
+              </button>
             </form>
           )}
 
-          {view === 'choose' && (
-            <div className="flex flex-col gap-3">
-              <ul className="flex flex-col gap-2.5">
-                {CHOICES.map(({ intent, icon: Icon, title, body }, i) => (
-                  <li key={intent}>
-                    <button
-                      type="button"
-                      data-autofocus={i === 0 ? '' : undefined}
-                      onClick={() => choose(intent)}
-                      className="group flex w-full items-start gap-3.5 rounded-xl border border-soko-line bg-white p-4 text-left transition hover:border-soko-blue hover:bg-soko-mist focus-visible:border-soko-blue focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-soko-blue/20 cursor-pointer"
-                    >
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-soko-mist text-soko-blue transition group-hover:bg-white">
-                        <Icon className="h-5 w-5" aria-hidden="true" />
-                      </span>
-                      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                        <span className="text-sm font-semibold text-soko-ink">{title}</span>
-                        <span className="text-sm leading-relaxed text-soko-muted">{body}</span>
-                      </span>
-                      <ArrowRight className="mt-2.5 h-4 w-4 shrink-0 text-soko-muted transition group-hover:translate-x-0.5 group-hover:text-soko-blue" aria-hidden="true" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-              <p className="flex items-center gap-1.5 text-xs leading-relaxed text-soko-muted">
-                <Building2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                New companies are reviewed by SOKO before they receive a Verified badge.
+          {view === 'signup_indiv' && (
+            <form onSubmit={(e) => void handleIndivSignup(e)} noValidate className="flex flex-col gap-4">
+              <LinkedInOption mode="signup" />
+              <div>
+                <label htmlFor={`${titleId}-name`} className={labelCls}>Full name</label>
+                <input id={`${titleId}-name`} value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" className={inputCls} aria-invalid={!!errors.name} />
+                {fieldError('name')}
+              </div>
+              {emailField('Email')}
+              {passwordField('new-password', 'At least 8 characters.')}
+              <div>
+                <label htmlFor={`${titleId}-prorole`} className={labelCls}>Primary professional role</label>
+                <select id={`${titleId}-prorole`} value={proRole} onChange={(e) => setProRole(e.target.value as ProfessionalClassification)} className={inputCls}>
+                  {PROFESSIONAL_CLASSIFICATIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+                </select>
+                <p className="mt-1.5 text-xs text-soko-muted">Independent of any company type. Editable later without creating a new account.</p>
+                {fieldError('proRole')}
+              </div>
+              <div>
+                <div className="mb-1.5 flex items-center justify-between gap-2">
+                  <label htmlFor={`${titleId}-username`} className="text-sm font-medium text-soko-ink">
+                    SOKO username <span className="font-normal text-soko-muted">(optional)</span>
+                  </label>
+                  <span className="rounded bg-soko-mist px-1.5 py-0.5 text-[10px] font-medium text-soko-muted">Preview</span>
+                </div>
+                <div className="relative">
+                  <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center text-sm text-soko-muted">@</span>
+                  <input
+                    id={`${titleId}-username`}
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/\s/g, ''))}
+                    maxLength={30}
+                    className={`${inputCls} pl-8`}
+                    placeholder="ahmed.khan"
+                  />
+                </div>
+                {fieldError('username') || (
+                  <p className="mt-1.5 text-xs text-soko-muted">Username reservation needs an approved profiles column — not stored yet.</p>
+                )}
+              </div>
+              <p className="rounded-lg bg-soko-mist px-3.5 py-2.5 text-xs leading-relaxed text-soko-muted">
+                After signup you can join an existing organization, create one later, or continue independently. Multiple authorized memberships are supported.
               </p>
-            </div>
+              {termsField}
+              <button type="submit" disabled={submitting} className={`${primaryBtn} mt-1`}>
+                {submitting ? <><Loader2 className="h-4 w-4 animate-spin" /> Creating account</> : <>Create account <ArrowRight className="h-4 w-4" /></>}
+              </button>
+              <button type="button" onClick={() => switchView('path')} className="inline-flex items-center gap-1.5 self-start text-sm font-semibold text-soko-blue hover:underline cursor-pointer">
+                <ArrowLeft className="h-4 w-4" /> Back
+              </button>
+            </form>
           )}
 
           {view === 'forgot' && (

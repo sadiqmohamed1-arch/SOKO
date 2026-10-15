@@ -135,11 +135,16 @@ function MainApp() {
   };
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'signup'>('login');
-  const [onboardingIntent, setOnboardingIntent] = useState<'join' | 'supplier' | 'contractor'>('supplier');
+  const [onboardingIntent, setOnboardingIntent] = useState<'join' | 'supplier' | 'contractor' | 'personal'>('supplier');
   const handleAuthSuccess = (intent: AuthIntent) => {
     enterApp();
-    if (intent === 'personal') return;
-    setOnboardingIntent(intent);
+    // 'join' remains available from in-app menus; post-signup "personal" opens Individual Professional onboarding.
+    if (intent === 'join') {
+      setOnboardingIntent('join');
+      setActiveTab('supplier-onboarding');
+      return;
+    }
+    setOnboardingIntent(intent === 'personal' ? 'personal' : intent);
     setActiveTab('supplier-onboarding');
   };
 

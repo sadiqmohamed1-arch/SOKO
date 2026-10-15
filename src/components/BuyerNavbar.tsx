@@ -60,12 +60,13 @@ interface BuyerNavbarProps {
 
 type OpenMenu = 'none' | 'notifications' | 'profile' | 'sections';
 
-export type CompanyOnboardingIntent = 'join' | 'supplier' | 'contractor';
+export type CompanyOnboardingIntent = 'join' | 'supplier' | 'contractor' | 'personal';
 
 const COMPANY_ONBOARDING_OPTIONS: { intent: CompanyOnboardingIntent; label: string }[] = [
+  { intent: 'supplier', label: 'Register as a Supplier' },
+  { intent: 'contractor', label: 'Register as a Contractor / Buyer' },
   { intent: 'join', label: 'Join an Existing Company' },
-  { intent: 'supplier', label: 'Register a Supplier Company' },
-  { intent: 'contractor', label: 'Register a Contractor / Developer Company' },
+  { intent: 'personal', label: 'Individual Professional Profile' },
 ];
 
 const NAV_ITEMS = [

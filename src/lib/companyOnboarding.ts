@@ -236,6 +236,62 @@ export interface RegisterLiveInput {
   profile: CompanyProfile;
   /** When true, calls submit_verification (document upload is a known follow-up). */
   submitForVerification: boolean;
+  /** When set, updates an org already created at signup instead of calling create_company again. */
+  existingCompanyId?: string | null;
+}
+
+/** Minimal org create after Option A signup — license/taxonomy completed in progressive onboarding. */
+export interface BootstrapOrganizationInput {
+  kind: CompanyKind;
+  legalName: string;
+  tradingName?: string;
+  orgClassificationLabel: string;
+  emirate?: string;
+  generalEmail?: string;
+  description?: string;
+}
+
+export async function bootstrapOrganization(input: BootstrapOrganizationInput): Promise<LiveResult<{ companyId: string }>> {
+  const legal = input.legalName.trim();
+  if (legal.length < 2) return fail('Registered company name is required.');
+  try {
+    const supabase = requireClient();
+    const { data: companyId, error: createErr } = await supabase.rpc('create_company', {
+      p_kind: input.kind,
+      p_legal_name: legal,
+      p_trading_name: (input.tradingName || legal).trim(),
+      p_license_no: null,
+      p_issuing_authority: null,
+      p_emirate: input.emirate?.trim() || null,
+    });
+    if (createErr) return fail(createErr.message);
+    if (!companyId || typeof companyId !== 'string') return fail('Company creation did not return an id.');
+
+    const { error: updErr } = await supabase
+      .from('companies')
+      .update({
+        trading_name: (input.tradingName || legal).trim(),
+        emirate: input.emirate?.trim() || null,
+        general_email: input.generalEmail?.trim() || null,
+        description: input.description?.trim() || null,
+        is_public: true,
+      })
+      .eq('id', companyId);
+    if (updErr) return fail(updErr.message);
+
+    const orgTag = input.orgClassificationLabel.trim().slice(0, 120);
+    if (orgTag) {
+      const { error: taxErr } = await supabase.from('company_taxonomy').insert({
+        company_id: companyId,
+        kind: 'capability',
+        value: orgTag.startsWith('OrgType:') ? orgTag : `OrgType: ${orgTag}`,
+      });
+      if (taxErr) return fail(taxErr.message);
+    }
+    return ok({ companyId });
+  } catch (err) {
+    return fail(err instanceof Error ? err.message : 'Organization registration failed.');
+  }
 }
 
 /**
@@ -245,22 +301,33 @@ export interface RegisterLiveInput {
 export async function registerLiveCompany(input: RegisterLiveInput): Promise<LiveResult<CompanyRecord>> {
   const p = input.profile;
   if (!p.legalName.trim() || !p.tradingName.trim()) return fail('Legal and trading names are required.');
-  if (!p.licenseNo.trim()) return fail('Trade license number is required.');
-  if (!p.categories.length) return fail('Choose at least one trade category.');
-  if (input.kind === 'supplier' && !p.types.length) return fail('Choose at least one supplier type.');
+  if (input.submitForVerification && !p.licenseNo.trim()) {
+    return fail('Trade license number is required to submit verification.');
+  }
+  if (!p.categories.length) {
+    return fail(input.kind === 'contractor' ? 'Choose at least one construction discipline.' : 'Choose at least one trade category.');
+  }
+  if (!p.types.length) {
+    return fail(input.kind === 'contractor' ? 'Choose at least one contractor type.' : 'Choose at least one supplier type.');
+  }
 
   try {
     const supabase = requireClient();
-    const { data: companyId, error: createErr } = await supabase.rpc('create_company', {
-      p_kind: input.kind,
-      p_legal_name: p.legalName.trim(),
-      p_trading_name: p.tradingName.trim(),
-      p_license_no: p.licenseNo.trim(),
-      p_issuing_authority: p.issuingAuthority.trim() || null,
-      p_emirate: p.emirate.trim() || null,
-    });
-    if (createErr) return fail(createErr.message);
-    if (!companyId || typeof companyId !== 'string') return fail('Company creation did not return an id.');
+    let companyId = input.existingCompanyId?.trim() || '';
+
+    if (!companyId) {
+      const { data: createdId, error: createErr } = await supabase.rpc('create_company', {
+        p_kind: input.kind,
+        p_legal_name: p.legalName.trim(),
+        p_trading_name: p.tradingName.trim(),
+        p_license_no: p.licenseNo.trim() || null,
+        p_issuing_authority: p.issuingAuthority.trim() || null,
+        p_emirate: p.emirate.trim() || null,
+      });
+      if (createErr) return fail(createErr.message);
+      if (!createdId || typeof createdId !== 'string') return fail('Company creation did not return an id.');
+      companyId = createdId;
+    }
 
     const { error: updErr } = await supabase
       .from('companies')
@@ -278,6 +345,8 @@ export async function registerLiveCompany(input: RegisterLiveInput): Promise<Liv
       })
       .eq('id', companyId);
     if (updErr) return fail(updErr.message);
+
+    // License fields are written only through submit_verification (not client UPDATE grants).
 
     const tax = await replaceTaxonomy(companyId, p);
     if (!tax.ok) return tax;
