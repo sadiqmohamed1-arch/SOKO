@@ -4,6 +4,8 @@ dist/
 coverage/
 .DS_Store
 *.log
+playwright-report/
+test-results/
 .env*
 !.env.example
 # Dev-server only (loaded in Vite development mode, never by `vite build`); holds no secrets.

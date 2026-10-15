@@ -2,9 +2,18 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import type { AuthError, PostgrestError, Session, User } from '@supabase/supabase-js';
 import { UserRole } from '../types';
 import type { OrgClassification, ProfessionalClassification } from '../data/registrationIdentity';
-import { isProfessionalClassification } from '../data/registrationIdentity';
+import {
+  isProfessionalClassification,
+  isValidUsername,
+  normalizeUsername,
+} from '../data/registrationIdentity';
 import type { CompanyKind, CompanyRole, VerificationStatus } from '../data/supplierTypes';
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabaseClient';
+import {
+  buildSignupUserMetadata,
+  clearPendingIdentityMetadata,
+  syncPendingProfileIdentity,
+} from '../lib/profileIdentitySync';
 
 export interface AuthUser {
   id: string;
@@ -244,6 +253,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
       try {
+        // Apply signup identity from auth metadata into profiles (no-op when already set).
+        // Do not clear metadata until after this load finishes — updateUser fires USER_UPDATED
+        // and would bump loadSeq, aborting this applySession.
+        const db = getSupabaseClient() as unknown as import('../lib/profileIdentitySync').ProfileIdentitySyncClient;
+        const sync = await syncPendingProfileIdentity(db, data.user);
+        if (sync.errors?.username) {
+          setAuthNotice(sync.errors.username);
+        }
         const access = await loadAccess(data.user);
         if (seq !== loadSeq.current) return;
         setSession(next);
@@ -252,6 +269,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setWorkspaces(access.workspaces);
         setWorkspacesLoaded(true);
         setStatus('signed_in');
+        if (sync.clearMetadata) {
+          void clearPendingIdentityMetadata(db);
+        }
       } catch (err) {
         if (seq !== loadSeq.current) return;
         if (err instanceof SessionExpiredError) {
@@ -333,11 +353,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!isSupabaseConfigured) return { success: false, message: NOT_CONFIGURED_MESSAGE };
     setAuthNotice(null);
     const supabase = getSupabaseClient();
-    // The profile row is created by the on_auth_user_created trigger from full_name metadata.
+
+    const normalizedUsername = data.username?.trim() ? normalizeUsername(data.username) : '';
+    if (normalizedUsername && !isValidUsername(normalizedUsername)) {
+      return {
+        success: false,
+        message: 'Use 3–30 lowercase letters, numbers, dots or underscores.',
+        errors: { username: 'Use 3–30 lowercase letters, numbers, dots or underscores.' },
+      };
+    }
+    if (data.professionalClassification && !isProfessionalClassification(data.professionalClassification)) {
+      return { success: false, message: 'Select a valid professional role.' };
+    }
+
+    // Identity travels in user_metadata so it survives email confirmation (no session at signUp).
+    // private.handle_new_user (migration pending) may also copy these; client sync is the fallback.
     const { data: result, error } = await supabase.auth.signUp({
       email: data.email,
       password: data.password,
-      options: { data: { full_name: data.name } },
+      options: {
+        data: buildSignupUserMetadata({
+          fullName: data.name,
+          professionalClassification: data.professionalClassification,
+          username: normalizedUsername || null,
+        }),
+      },
     });
     if (error) {
       return {
@@ -348,65 +388,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
     }
     if (!result.session) {
+      // Account created; profiles sync runs on first confirmed sign-in via applySession.
       return { success: false, message: 'Check your inbox to confirm your email address, then sign in.' };
     }
-    // Persist optional profile fields (trigger only sets full_name from metadata).
-    // professional_classification and username are permanent identity columns; title is job title only.
+
+    // Session available (confirm-email off): patch non-identity profile fields, then sync identity.
     const profilePatch: {
       title?: string;
       phone?: string;
       location?: string;
       full_name?: string;
-      professional_classification?: string;
-      username?: string;
     } = {};
     if (data.title?.trim()) profilePatch.title = data.title.trim();
     if (data.phone?.trim()) profilePatch.phone = data.phone.trim();
     if (data.location?.trim()) profilePatch.location = data.location.trim();
     if (data.name?.trim()) profilePatch.full_name = data.name.trim();
-    if (data.professionalClassification && isProfessionalClassification(data.professionalClassification)) {
-      profilePatch.professional_classification = data.professionalClassification;
-    }
-    if (data.username?.trim()) {
-      profilePatch.username = data.username.trim().toLowerCase();
-    }
-    const fieldErrors: Record<string, string> = {};
     if (Object.keys(profilePatch).length && result.user) {
       const { error: profileErr } = await supabase.from('profiles').update(profilePatch).eq('id', result.user.id);
-      if (profileErr) {
-        const msg = profileErr.message || '';
-        const details = `${msg} ${profileErr.code ?? ''} ${profileErr.details ?? ''} ${profileErr.hint ?? ''}`;
-        if (/profiles_username_uq|duplicate key.*username|username.*already|23505/i.test(details) && /username/i.test(details)) {
-          fieldErrors.username = 'That username is already taken. Try another.';
-          const { username: _drop, ...rest } = profilePatch;
-          if (Object.keys(rest).length) {
-            await supabase.from('profiles').update(rest).eq('id', result.user.id);
-          }
-        } else if (/profiles_username_format|23514/i.test(details)) {
-          fieldErrors.username = 'Use 3–30 lowercase letters, numbers, dots or underscores.';
-          const { username: _drop, ...rest } = profilePatch;
-          if (Object.keys(rest).length) {
-            await supabase.from('profiles').update(rest).eq('id', result.user.id);
-          }
-        } else if (/23505/i.test(details) && profilePatch.username) {
-          // Unique violation while setting username — treat as taken.
-          fieldErrors.username = 'That username is already taken. Try another.';
-          const { username: _drop, ...rest } = profilePatch;
-          if (Object.keys(rest).length) {
-            await supabase.from('profiles').update(rest).eq('id', result.user.id);
-          }
-        } else {
-          console.warn('profiles update after signup:', profileErr.message);
-        }
-      }
+      if (profileErr) console.warn('profiles update after signup:', profileErr.message);
     }
+
     await applySession(result.session);
-    if (Object.keys(fieldErrors).length) {
-      return {
-        success: true,
-        message: fieldErrors.username,
-        errors: fieldErrors,
-      };
+
+    // AuthModal needs a synchronous username field error when the chosen handle was not stored.
+    if (normalizedUsername && result.user) {
+      const { data: row } = await supabase
+        .from('profiles')
+        .select('username')
+        .eq('id', result.user.id)
+        .maybeSingle();
+      if (row?.username !== normalizedUsername) {
+        return {
+          success: true,
+          message: 'That username is already taken. Try another.',
+          errors: { username: 'That username is already taken. Try another.' },
+        };
+      }
     }
     return { success: true };
   };

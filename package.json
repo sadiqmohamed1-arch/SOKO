@@ -13,9 +13,11 @@
     "test:contact-csv": "tsx src/lib/csvExport.test.ts",
     "test:contact-migration": "node scripts/check-contact-migration.mjs",
     "test:identity-migration": "node scripts/check-identity-classification-migration.mjs",
-    "test:onboarding": "tsx src/lib/companyOnboarding.test.ts && tsx src/lib/registrationIdentity.test.ts",
+    "test:onboarding": "tsx src/lib/companyOnboarding.test.ts && tsx src/lib/registrationIdentity.test.ts && tsx src/lib/profileIdentitySync.test.ts",
     "guard:staging": "node scripts/require-staging-supabase.mjs",
-    "test:contact": "npm run test:contact-csv && npm run test:contact-migration"
+    "test:contact": "npm run test:contact-csv && npm run test:contact-migration",
+    "test:e2e": "playwright test",
+    "test:e2e:staging": "playwright test --project=chromium"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -40,6 +42,7 @@
     "vite": "^8.3.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@types/bcryptjs": "^3.0.0",
     "@types/express": "^4.17.21",
     "@types/jsonwebtoken": "^9.0.10",

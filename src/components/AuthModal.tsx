@@ -467,7 +467,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                     <option key={c} value={c}>{c}</option>
                   ))}
                 </select>
-                <p className="mt-1.5 text-xs text-soko-muted">Primary classification now. Additional activities can be added after setup. Maps to SOKO workspace kind (supplier or contractor) until extended kinds are approved.</p>
+                <p className="mt-1.5 text-xs text-soko-muted">Saved to the company as organization type. Workspace roles still use supplier or contractor kind under the hood.</p>
               </div>
               <div className="grid sm:grid-cols-2 gap-3">
                 <div>
@@ -528,12 +528,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                 {fieldError('proRole')}
               </div>
               <div>
-                <div className="mb-1.5 flex items-center justify-between gap-2">
-                  <label htmlFor={`${titleId}-username`} className="text-sm font-medium text-soko-ink">
-                    SOKO username <span className="font-normal text-soko-muted">(optional)</span>
-                  </label>
-                  <span className="rounded bg-soko-mist px-1.5 py-0.5 text-[10px] font-medium text-soko-muted">Preview</span>
-                </div>
+                <label htmlFor={`${titleId}-username`} className={labelCls}>
+                  SOKO username <span className="font-normal text-soko-muted">(optional)</span>
+                </label>
                 <div className="relative">
                   <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center text-sm text-soko-muted">@</span>
                   <input
@@ -543,10 +540,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                     maxLength={30}
                     className={`${inputCls} pl-8`}
                     placeholder="ahmed.khan"
+                    autoComplete="username"
+                    aria-invalid={!!errors.username}
+                    aria-describedby={`${titleId}-username-help`}
                   />
                 </div>
                 {fieldError('username') || (
-                  <p className="mt-1.5 text-xs text-soko-muted">3–30 lowercase letters, numbers, dots or underscores. Unique across SOKO.</p>
+                  <p id={`${titleId}-username-help`} className="mt-1.5 text-xs text-soko-muted">
+                    Saved to your profile. 3–30 lowercase letters, numbers, dots or underscores. Must be unique.
+                  </p>
                 )}
               </div>
               {formError && errors.username && (

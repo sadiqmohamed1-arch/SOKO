@@ -133,10 +133,21 @@ export const ContactPage: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           <div className="flex items-start gap-3 rounded-2xl border border-soko-line bg-white p-4">
             <Info className="mt-0.5 h-5 w-5 shrink-0 text-soko-blue" aria-hidden="true" />
             <div className="flex flex-col gap-1">
-              <p className="text-sm font-semibold text-soko-ink">Online inquiries open soon</p>
-              <p className="text-sm leading-relaxed text-soko-muted">
-                Our contact form is being connected to the SOKO support team. You can prepare your message now, but submissions are not yet being sent or stored.
-              </p>
+              {SUBMISSIONS_ENABLED ? (
+                <>
+                  <p className="text-sm font-semibold text-soko-ink">We read every message</p>
+                  <p className="text-sm leading-relaxed text-soko-muted">
+                    Send your inquiry below. You will receive a reference number when it is stored securely with the SOKO support team.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-semibold text-soko-ink">Online inquiries open soon</p>
+                  <p className="text-sm leading-relaxed text-soko-muted">
+                    Our contact form is being connected to the SOKO support team. You can prepare your message now, but submissions are not yet being sent or stored.
+                  </p>
+                </>
+              )}
             </div>
           </div>
         </div>
